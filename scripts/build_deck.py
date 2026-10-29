@@ -21,6 +21,7 @@ TEMPLATE = ROOT / "deliverables" / "template_source.pptx"
 OUT = ROOT / "deliverables" / "KAVACH_Solution_Deck.pptx"
 RES = json.loads((ROOT / "bench" / "results" / "results.json").read_text())
 MS = json.loads((ROOT / "bench" / "results" / "multiseed.json").read_text())
+IC = json.loads((ROOT / "bench" / "results" / "infosys_compare.json").read_text())
 
 INK, BODY, MUTED = "111827", "1F2937", "5B6573"
 BLUE, PURPLE, ORANGE, GREEN, RED = "007CC3", "5417A8", "F28C28", "63A845", "D64545"
@@ -261,8 +262,8 @@ def build():
 
     # ---------------------------------------------------------------- 7 future
     s = S[6]
-    for nm, txt in [("Text 9", "Infosys Foundry plug-in: KAVACH as the MCP endpoint; Tool Interrupt fires only on ESCALATE"),
-                    ("Text 12", "Port AgentDojo + AmPermBench; RAI Toolkit Privacy API as the PII detector"),
+    for nm, txt in [("Text 9", "Infosys AgentOS hook (built): DENY blocks, ESCALATE → #approvals queue; next: live tenant run"),
+                    ("Text 12", "Port AgentDojo + AmPermBench; RAI injection classifier applied to tool outputs"),
                     ("Text 15", "UNO Q hardware approval button; NL policy drafting on Qualcomm (human-reviewed)"),
                     ("Text 20", "Stateless decision service, per-tenant policy + model; horizontal scale"),
                     ("Text 23", "Cost-ordered: ~1 ms gates for all; sandbox for writes; LLM only for the ambiguous few"),
@@ -272,8 +273,8 @@ def build():
                     ("Text 37", "Fail-closed; hash-chained receipts; versioned policy; human override always")]:
         put(shape(s, nm), txt, size=10)
     put(shape(s, "Text 43"), "NOW vs NEXT", size=9, color=GREEN, bold=True)
-    put(shape(s, "Text 44"), ["**Works now:** gateway, 12 rules, provenance, SQL/file sandbox, calibrated risk + HITL, receipts, undo, MCP front door, Qualcomm client, benchmark.",
-                              "**Next:** Foundry plug-in and published-benchmark ports. **Key safeguard:** an LLM can never turn a DENY into an ALLOW."], size=10)
+    put(shape(s, "Text 44"), ["**Works now:** gateway, 12 rules, provenance, SQL/file sandbox, calibrated risk + HITL, receipts, undo, MCP front door, Infosys AgentOS hook adapter, Qualcomm client, benchmark.",
+                              "**Next:** live AgentOS tenant run and published-benchmark ports. **Key safeguard:** an LLM can never turn a DENY into an ALLOW."], size=10)
 
     # ---------------------------------------------------------------- 8 demo
     s = S[7]
@@ -333,7 +334,7 @@ def build():
             ["Progent", "Least-privilege policies", "AgentDojo ASR 41.2% → 2.2%"],
             ["Microsoft Fides Gateway", "MCP proxy, IFC labels, Rego", "Labels + policy; no consequence estimation"],
             ["Cordon (2026)", "Shadow state + effect outbox, validate before commit", "Lineage/authority; no magnitude or calibrated strictness"],
-            ["Infosys Agentic AI Foundry", "Tool Interrupt, validators, plan verifier, RBAC", "Manual step-by-step approval; no automated risk triage"],
+            ["Infosys Foundry + Topaz AgentOS", "Tool Interrupt; regex pre-tool gate + hooks → approvals queue; moderation of user text", "Run on our suite: defaults pass 95% of unsafe actions; hardened stops them by escalating 86.5% (Appendix F)"],
             ["KAVACH", "Gates + provenance + measured effect + calibrated, reversibility-conditioned risk", "Combines the above at one control point; HITL only when uncertain"]]
     table(s, 475488, 1000000, 11240000, rows, [2100000, 3900000, 5240000], size=8.5, row_h=330000)
 
@@ -353,7 +354,27 @@ def build():
             size=10)
 
     s = prs.slides.add_slide(blank)
-    title(s, "Appendix F · References")
+    title(s, "Appendix F · Infosys’s own guardrails, run on our suite",
+          "Their code, loaded from the repo (commit 49fe687), on the same 222 held-out test scenarios")
+    rows = [["System", "Unsafe auto-allowed", "Injection success", "Safe work automated", "Sent to a human"]]
+    for name, label in [("Foundry PromptGuard (user query at agent start)", "PromptGuard (scans user query only)"),
+                        ("RAI moderation via LiteLLM proxy (perfect-classifier upper bound)", "RAI moderation (perfect-classifier bound)"),
+                        ("AgentOS pre-tool gate, default config, autonomous", "AgentOS gate, default config"),
+                        ("AgentOS pre-tool gate, hardened config, autonomous", "AgentOS gate, hardened (SQL + sends + payments)"),
+                        ("Foundry selective Tool Interrupt on every state-changing tool", "Tool Interrupt on every state change"),
+                        ("KAVACH (full)", "KAVACH")]:
+        m = IC["seed0"][name]
+        rows.append([label, pct(m["UAR"], 1), pct(m["ASR_injection"]), pct(m["safe_auto"], 1), pct(m["escalation_rate"], 1)])
+    table(s, 475488, 1050000, 11240000, rows, [4040000, 1800000, 1800000, 1800000, 1800000], size=9.5, row_h=330000)
+    textbox(s, 475488, 3500000, 11240000, 2300000, [
+        "**Authorized:** PromptGuard and the RAI proxy scan only the user’s text; tool outputs (where indirect injections live) are never sent, so even a perfect classifier misses them.",
+        "**Safe:** the AgentOS gate matches command text (regex), not effects; the SQL gate is empty by default. Business thresholds in approval_rules are enforced by the agent’s own LLM.",
+        "**Explainable / reversible:** approval cards show tool + 200-char preview; no provenance, blast radius, undo or tamper-evident audit.",
+        "**Fit:** KAVACH runs as an AgentOS PreToolUse hook (integrations/agentos_hook.py). AgentOS keeps routing, sandbox and the approvals queue; KAVACH decides what goes into it."],
+        size=10)
+
+    s = prs.slides.add_slide(blank)
+    title(s, "Appendix G · References")
     textbox(s, 475488, 900000, 11240000, 5000000, [
         "AgentDojo, NeurIPS 2024 D&B (arXiv 2406.13352) · CaMeL, arXiv 2503.18813 · LlamaFirewall, arXiv 2505.03574 · Progent, arXiv 2504.11703",
         "Design Patterns for Securing LLM Agents against Prompt Injections, arXiv 2506.08837 · Cordon, arXiv 2606.17573 · Revisable by Design, arXiv 2604.23283",
@@ -361,7 +382,7 @@ def build():
         "KnowNo: Robots That Ask For Help, CoRL 2023 (arXiv 2307.01928) · OWASP Top 10 for Agentic Applications (Dec 2025) · UK AISI × Gray Swan Agent Red-Teaming results (2025)",
         "Gartner press release 25 Jun 2025 · EchoLeak CVE-2025-32711 · Invariant Labs: GitHub MCP exploit (May 2025), MCP tool poisoning (Apr 2025) · Replit incident (Jul 2025)",
         "Simon Willison, The lethal trifecta (Jun 2025) · NVIDIA NeMo Guardrails tool-calling docs · AWS Bedrock AgentCore Policy docs · microsoft/fides-gateway",
-        "Infosys Agentic AI Foundry (v1.6–1.9 release notes) · Infosys Responsible AI Toolkit · Qualcomm python-imagine-sdk 0.5.0",
+        "Infosys Agentic AI Foundry (commit 49fe687: v1.9 + Topaz AgentOS 1.0.0 source) · Infosys Responsible AI Toolkit 2.2.1 · Qualcomm python-imagine-sdk 0.5.0",
         "EU AI Act Art. 14 · RBI FREE-AI framework (Aug 2025) · MeitY India AI Governance Guidelines (Nov 2025)",
         "Code, benchmark and full blueprint: github.com/VismayHS/Kavach_Guardrail"], size=10.5)
 

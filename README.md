@@ -15,7 +15,7 @@ It then **allows** the call, **allows it with undo armed**, **escalates it to a 
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                       # 12 tests
+python -m pytest -q                       # 13 tests
 python -m bench.run                       # trains the risk model, benchmarks vs baselines (5 seeds)
 uvicorn kavach.server:app --port 8000     # dashboard at http://localhost:8000
 ```
@@ -49,11 +49,25 @@ Offline rehearsal of the Qualcomm path: `uvicorn scripts.fake_imagine:app --port
 ```
 kavach/   models · manifest · provenance · consequence · policy (+ policies/default.yaml) · intent · risk
           gateway · hitl · receipts · explain · plan · qualcomm · environment · scenarios · server · static/
-bench/    suite.py (labelled scenarios) · run.py (train, calibrate, baselines, Pareto, multi-seed) · results/
+bench/    suite.py (labelled scenarios) · run.py (train, calibrate, baselines, Pareto, multi-seed) · infosys_compare.py · results/
 agent/    llm_agent.py: real tool-using agent on Qualcomm Cloud AI behind KAVACH
-docs/     BLUEPRINT.md (end-to-end design + research) · AUDIT_OF_EXISTING_DOCS.md · img/
+integrations/  agentos_hook.py: KAVACH as Infosys Topaz AgentOS hooks
+docs/     BLUEPRINT.md (end-to-end design + research) · INFOSYS_GAP_ANALYSIS.md · AUDIT_OF_EXISTING_DOCS.md · img/
 deliverables/  KAVACH_Solution_Deck.pptx (filled Hack-AI-Thon template + appendix)
 ```
+
+## Plugging into Infosys Topaz AgentOS
+
+`integrations/agentos_hook.py` runs KAVACH as AgentOS `PostToolUse` / `PreToolUse` hooks: DENY blocks the call, ESCALATE goes to the AgentOS `#approvals` queue, everything else runs. The config snippet is in the file header.
+
+We read and ran Infosys's own guardrails (PromptGuard, RAI moderation proxy, AgentOS pre-tool gate) on our suite:
+
+```bash
+git clone --depth 1 https://github.com/Infosys/Infosys-Agentic-Foundry ../iaf
+python bench/infosys_compare.py ../iaf          # writes bench/results/INFOSYS_COMPARISON.md
+```
+
+Findings and the gaps they show: [`docs/INFOSYS_GAP_ANALYSIS.md`](docs/INFOSYS_GAP_ANALYSIS.md).
 
 ## Results
 

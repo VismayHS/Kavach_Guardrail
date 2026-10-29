@@ -14,7 +14,7 @@ Naming: *Kavach* (कवच, "armour") is also the name of Indian Railways' auto
 | Gateway: 12 deterministic policy rules, provenance/taint by value lineage, plan validator | Full MCP streamable-HTTP transport (via FastMCP); today: MCP JSON-RPC `tools/list` + `tools/call` |
 | Consequence engine: SQL + file sandbox diff, typed prediction for email / payments | OPA/Rego or AWS Cedar compilation of the YAML policy |
 | Calibrated risk model (18 features, bootstrap ensemble, isotonic), confidence interval, τ(a) | Port AgentDojo + AmPermBench scenarios into the harness |
-| HITL queue: consequence card, approve / draft / deny, four-eyes, timeout = deny | Infosys Foundry plug-in (MCP endpoint + Tool Interrupt only on ESCALATE) |
+| HITL queue: consequence card, approve / draft / deny, four-eyes, timeout = deny; Topaz AgentOS hook adapter | Live AgentOS tenant run; Foundry LangGraph Tool Interrupt adapter |
 | Hash-chained HMAC receipts + verifier; undo from snapshot; post-execution check | RAI Toolkit privacy API as the PII detector; UNO Q hardware approval token |
 | Qualcomm Cloud AI client (Imagine API), reasoning-blind judge, faithfulness-checked explainer, live LLM agent | Learned blast-radius predictor for unstageable tools |
 | Dashboard, raw JSON checker, 10 demo scenarios, benchmark (740 scenarios × 5 seeds), 12 tests | Multi-tenant deployment, policy UI |
@@ -74,7 +74,12 @@ KAVACH's receipt chain + HITL queue is how a bank deploying Infosys agents *prov
 | ASI09 Human-Agent Trust Exploitation | Consequence card shows evidence, not agent prose; four-eyes |
 | ASI10 Rogue Agents | Every action passes the gateway; receipts; kill switch (circuit breaker) |
 
-**Why Infosys specifically.** Infosys open-sourced **Agentic AI Foundry** (v1.9.0, May 2026; 8 agent templates; MCP registry; RBAC; Tool Interrupt; validators; plan verifier). It also open-sourced the **Responsible AI Toolkit** (moderation of prompts and responses: PII, toxicity, injection/jailbreak scores). Foundry's Tool Interrupt asks a human to approve tool calls step by step. At enterprise scale that becomes "approve everything" (unsafe) or "approve nothing" (useless). The RAI toolkit moderates *text*, not *actions*. **KAVACH is the missing layer between them:** it auto-resolves the clear cases and sends only the genuinely uncertain ones to Foundry's Tool Interrupt, with a consequence card.
+**Why Infosys specifically.** Infosys open-sourced **Agentic AI Foundry** (v1.9.0 plus the new **Topaz AgentOS** v1.0.0, Oct 2026) and the **Responsible AI Toolkit** (v2.2.1). We read and ran their guardrail code (`docs/INFOSYS_GAP_ANALYSIS.md`). They have strong approval *operations* (Tool Interrupt, an approvals queue with SLAs, a deterministic regex pre-tool gate, SafeKernel sandbox, RBAC). They have no *judgment* about the action:
+- PromptGuard and the RAI moderation proxy scan only the user's text, never tool outputs, so indirect injections are invisible to them.
+- The pre-tool gate matches command text, not effects.
+- Business thresholds are left to the agent's own LLM.
+
+On our suite: with defaults, 95% of unsafe actions pass; hardened, injection success is 0% but 86.5% of all actions go to a human. **KAVACH is the judgment layer they lack.** It plugs in as an AgentOS `PreToolUse` hook (`integrations/agentos_hook.py`): AgentOS keeps routing, sandboxing and the approval queue, and the queue now fills only with KAVACH's genuine ESCALATEs, each with a consequence card.
 
 ---
 
@@ -111,7 +116,7 @@ KAVACH's receipt chain + HITL queue is how a bank deploying Infosys agents *prov
 | **Cordon** (arXiv 2606.17573) | Semantic transactions: shadow state for reversible effects, effect outbox for external ones, validated before commit | Validates lineage/authority; does not estimate consequence magnitude or calibrate strictness |
 | **GoEx** (Berkeley) | Post-facto validation: undo + damage confinement | Undo only for supported operations |
 | **ToolEmu** (ICLR 2024) | LM-emulated sandbox for risk discovery | Offline testing, 36 toolkits / 144 cases; 68.8% of found failures valid |
-| **Infosys Agentic AI Foundry** | Tool Interrupt (manual), validators, plan verifier, tool sandbox, RBAC, audit | Manual approval; no automated risk triage |
+| **Infosys Agentic AI Foundry + Topaz AgentOS** | Tool Interrupt; regex pre-tool gate + PreToolUse hooks → approvals queue; PromptGuard + RAI moderation on user text; SafeKernel | Measured on our suite with their code: defaults let 95% of unsafe actions through; hardened config stops them by escalating 86.5% of actions. No provenance, consequence, undo or confidence (`docs/INFOSYS_GAP_ANALYSIS.md`) |
 
 **How guardrails are improving (the trajectory):**
 1. text filters (2023)
@@ -132,6 +137,7 @@ What's still missing is the step from *labels* ("this tool is destructive") to *
 1. The uniform-threshold dilemma is visible in Anthropic's own two-stage numbers.
 2. Tool-type gating leaks: AmPermBench's 36.8% Tier-2 bypass.
 3. Raising caution destroys usability: AmPermBench FPR 9.2% → 34.8% from low- to high-risk environments.
+4. Infosys's own stack shows the same dilemma. We ran their guardrail code on our suite: defaults let 95% of unsafe actions through; the hardened config gets 0% injection success only by escalating 86.5% of actions (`docs/INFOSYS_GAP_ANALYSIS.md`).
 
 **We do NOT claim:** to be first to intercept tool calls, to track provenance, to use policy-as-code, to sandbox, or to undo. All exist (above). **Our contribution is the combination and its measurement:**
 - one action-control plane that runs deterministic gates → measured/predicted effect → calibrated p with an interval → reversibility-conditioned threshold → HITL only on uncertainty;
@@ -278,7 +284,7 @@ else:                                        -> ESCALATE (interval straddles tau
 | **Safety** | Default-deny on timeout (300 s); four-eyes for irreversible actions with H > 0.5 (the requester cannot approve their own); every decision is a receipt |
 | **Learning** | Each approval or denial is stored as a labelled example → periodic recalibration (shrinks the uncertainty band where humans keep agreeing) |
 | **Fatigue metric** | Escalation rate and safe-escalated rate are first-class benchmark metrics; the operating point is chosen to minimise human load at zero unsafe auto-allows |
-| **Integration** | Foundry Tool Interrupt becomes *selective*: fires only for KAVACH ESCALATE |
+| **Integration** | Topaz AgentOS `PreToolUse` hooks (built: `integrations/agentos_hook.py`): KAVACH DENY → hard block, ESCALATE → AgentOS `#approvals` queue, everything else runs |
 
 ---
 
@@ -305,6 +311,8 @@ else:                                        -> ESCALATE (interval straddles tau
 - 17 attack families: injection exfil (incl. obfuscated addresses that defeat value lineage), injected payments, overeager deletes, misaligned writes, DDL, secrets, rug pull, freeze, RBAC, path escape, injected SQL, extra PII, hallucinated amounts, wrong recipients…
 - Split 50/20/30 (train / calibration / test), stratified by family; **5 independent seeds**.
 - Families mirror AgentDojo's (attacker goal × injection vector) and AmPermBench's (scope × blast radius × env risk) axes. **Synthetic, so not comparable to published numbers.**
+
+**Infosys's own guardrails** (PromptGuard, RAI proxy, AgentOS gate) were run from their source on the same split: see `bench/results/INFOSYS_COMPARISON.md` and `docs/INFOSYS_GAP_ANALYSIS.md`.
 
 **Baselines (one harness, same protocol):** no guardrail; static text denylist (Cursor-style); tool-type gating (reads/internal auto, external escalated); approve-every-write (Foundry Tool Interrupt / "confirm high-impact" style); KAVACH ablations (rules only, no provenance, fixed threshold).
 
@@ -341,8 +349,8 @@ else:                                        -> ESCALATE (interval straddles tau
 ---
 
 ## 13. Future enhancements
-1. **Infosys Foundry plug-in**: KAVACH as the MCP endpoint for Foundry agents; selective Tool Interrupt.
-2. **RAI Toolkit integration**: its Privacy API as the PII detector, its injection score as a feature.
+1. **Infosys plug-in, hardened**: the AgentOS hook adapter is built and contract-tested; next, run it inside a live AgentOS tenant, show KAVACH's consequence card in the `#approvals` panel, and add the same adapter for Foundry LangGraph templates (selective Tool Interrupt driven by KAVACH).
+2. **RAI Toolkit integration**: its Privacy API as the PII detector, and its injection classifier applied to *tool outputs* (which the proxy never scans today) as one more risk feature.
 3. **Policy compiler**: YAML → OPA/Rego / Cedar; natural-language policy drafting on Qualcomm (human-reviewed, regression-tested before promotion).
 4. **Exact IFC mode**: run agents inside a CaMeL-style interpreter for value-level labels instead of lineage matching.
 5. **Learned blast-radius predictor** for unstageable APIs; conformal intervals.
@@ -378,6 +386,11 @@ else:                                        -> ESCALATE (interval straddles tau
   - NeMo IORails checks names and schemas.
   - Fides enforces labels and Rego.
   - KAVACH measures what this specific call will do, traces each argument's origin, and sets strictness from reversibility, with calibrated confidence.
+- **"Infosys already has guardrails. Why this?"** We read and ran them.
+  - PromptGuard and the RAI proxy scan only the user's text. A perfect classifier there still misses 100% of indirect injections, because tool outputs are never sent to it.
+  - The AgentOS gate matches command text.
+  - Thresholds in `approval_rules` are enforced by the agent's own LLM.
+  - We don't replace any of it. KAVACH plugs into their `PreToolUse` hook and fills their existing approvals queue with fewer, better-explained requests.
 - **"Your benchmark is synthetic."** Yes, and labelled as such. Families mirror AgentDojo/AmPermBench axes; operating points are chosen on a calibration split; results are reported over 5 seeds. Porting both benchmarks is next.
 - **"What if the agent splits a big delete into small ones?"** Task-level harm budget + circuit breaker.
 - **"What about tools you can't model?"** Fail-closed: unknown means irreversible, external, untrusted.
@@ -404,6 +417,6 @@ else:                                        -> ESCALATE (interval straddles tau
 - Replit incident (Jul 2025): AI Incident Database, The Register, Heise
 - Simon Willison, "The lethal trifecta" (16 Jun 2025)
 - NVIDIA NeMo Guardrails tool-calling rails docs; AWS Bedrock AgentCore Policy docs; Microsoft fides-gateway README
-- Infosys Agentic AI Foundry README + release notes v1.6–v1.9; Infosys Responsible AI Toolkit README
+- Infosys Agentic AI Foundry (commit 49fe687, 27 Oct 2026: README, release notes v1.6–v1.9, Topaz AgentOS v1.0.0 source and docs); Infosys Responsible AI Toolkit v2.2.1 (commit 5d65aef)
 - Qualcomm `python-imagine-sdk` 0.5.0 (PyPI wheel source)
 - EU AI Act Art. 14 (dates: verify); RBI FREE-AI (13 Aug 2025); MeitY AI Governance Guidelines (5 Nov 2025)

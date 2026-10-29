@@ -140,8 +140,8 @@ def train(feats: np.ndarray, y: np.ndarray, feats_cal: np.ndarray, y_cal: np.nda
 
 
 # ------------------------------------------------------------------ main
-def main(n_per_family: int = 20, seed: int = 0, write: bool = True) -> dict:
-    OUT.mkdir(parents=True, exist_ok=True)
+def make_suite(n_per_family: int = 20, seed: int = 0) -> tuple[list[Scenario], dict[str, str]]:
+    """The labelled suite and its family-stratified train / cal / test split for one seed."""
     suite = generate(n_per_family=n_per_family, seed=11 + seed)
     rnd = random.Random(5 + seed)
     split = {}
@@ -153,6 +153,12 @@ def main(n_per_family: int = 20, seed: int = 0, write: bool = True) -> dict:
         n = len(items)
         for i, sc in enumerate(items):
             split[sc.sid] = "train" if i < 0.5 * n else "cal" if i < 0.7 * n else "test"
+    return suite, split
+
+
+def main(n_per_family: int = 20, seed: int = 0, write: bool = True) -> dict:
+    OUT.mkdir(parents=True, exist_ok=True)
+    suite, split = make_suite(n_per_family, seed)
 
     env = Environment(tempfile.mkdtemp())
     # 1) features with the untrained prior (features do not depend on the model)
