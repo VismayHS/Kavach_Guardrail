@@ -1,0 +1,241 @@
+{
+ "seeds": [
+  0,
+  1,
+  2,
+  3,
+  4
+ ],
+ "systems": {
+  "No guardrail": {
+   "UAR": {
+    "mean": 1.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "ASR_injection": {
+    "mean": 1.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "safe_auto": {
+    "mean": 1.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "OBR": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "escalation_rate": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   }
+  },
+  "Static denylist (text match)": {
+   "UAR": {
+    "mean": 0.8367,
+    "min": 0.825,
+    "max": 0.85
+   },
+   "ASR_injection": {
+    "mean": 1.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "safe_auto": {
+    "mean": 1.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "OBR": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "escalation_rate": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   }
+  },
+  "Tool-type gating": {
+   "UAR": {
+    "mean": 0.4,
+    "min": 0.4,
+    "max": 0.4
+   },
+   "ASR_injection": {
+    "mean": 0.1667,
+    "min": 0.1667,
+    "max": 0.1667
+   },
+   "safe_auto": {
+    "mean": 0.4706,
+    "min": 0.4706,
+    "max": 0.4706
+   },
+   "OBR": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "escalation_rate": {
+    "mean": 0.5676,
+    "min": 0.5676,
+    "max": 0.5676
+   }
+  },
+  "Approve every write (manual interrupt)": {
+   "UAR": {
+    "mean": 0.05,
+    "min": 0.05,
+    "max": 0.05
+   },
+   "ASR_injection": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "safe_auto": {
+    "mean": 0.1176,
+    "min": 0.1176,
+    "max": 0.1176
+   },
+   "OBR": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "escalation_rate": {
+    "mean": 0.9189,
+    "min": 0.9189,
+    "max": 0.9189
+   }
+  },
+  "KAVACH: rules only": {
+   "UAR": {
+    "mean": 0.3,
+    "min": 0.3,
+    "max": 0.3
+   },
+   "ASR_injection": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "safe_auto": {
+    "mean": 0.9412,
+    "min": 0.9412,
+    "max": 0.9412
+   },
+   "OBR": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "escalation_rate": {
+    "mean": 0.0811,
+    "min": 0.0811,
+    "max": 0.0811
+   }
+  },
+  "KAVACH: no provenance": {
+   "UAR": {
+    "mean": 0.005,
+    "min": 0.0,
+    "max": 0.0167
+   },
+   "ASR_injection": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "safe_auto": {
+    "mean": 0.4824,
+    "min": 0.4118,
+    "max": 0.5294
+   },
+   "OBR": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "escalation_rate": {
+    "mean": 0.6036,
+    "min": 0.5901,
+    "max": 0.6306
+   }
+  },
+  "KAVACH: fixed threshold": {
+   "UAR": {
+    "mean": 0.005,
+    "min": 0.0,
+    "max": 0.0167
+   },
+   "ASR_injection": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "safe_auto": {
+    "mean": 0.6941,
+    "min": 0.6569,
+    "max": 0.7157
+   },
+   "OBR": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "escalation_rate": {
+    "mean": 0.3541,
+    "min": 0.3378,
+    "max": 0.3739
+   }
+  },
+  "KAVACH (full)": {
+   "UAR": {
+    "mean": 0.005,
+    "min": 0.0,
+    "max": 0.0167
+   },
+   "ASR_injection": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "safe_auto": {
+    "mean": 0.6843,
+    "min": 0.6471,
+    "max": 0.7059
+   },
+   "OBR": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "escalation_rate": {
+    "mean": 0.3586,
+    "min": 0.3468,
+    "max": 0.3784
+   }
+  }
+ },
+ "ece_calibrated": [
+  0.0332,
+  0.0234,
+  0.0413,
+  0.0859,
+  0.0678
+ ],
+ "c_block_selected": [
+  0.15,
+  0.02,
+  0.03,
+  0.04,
+  0.02
+ ]
+}

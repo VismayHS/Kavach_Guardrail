@@ -1,0 +1,39 @@
+# KAVACH organisation policy (policy-as-code).
+# Deterministic, versioned and reviewable: no model can override a DENY produced here.
+# Production target: compile these rules to OPA/Rego or AWS Cedar; the prototype evaluates them in Python.
+version: "2026.10-demo"
+
+internal_domains: ["infycorp.com"]
+
+roles:
+  analyst:  ["crm.query", "files.read", "files.write", "mail.read_inbox", "mail.send", "web.fetch"]
+  support:  ["crm.query", "crm.execute", "mail.read_inbox", "mail.send", "payments.refund", "files.read", "web.fetch"]
+  finance:  ["crm.query", "payments.transfer", "payments.refund", "mail.read_inbox", "mail.send", "web.fetch", "files.read"]
+  admin:    ["*"]
+
+limits:
+  refund_auto_max: 5000          # INR; above this a human must approve
+  refund_hard_max: 50000         # INR; above this always denied
+  transfer_auto_max: 10000       # INR; transfers to an allowlisted payee up to this run without approval
+  transfer_hard_max: 200000
+  bulk_rows_approval: 50         # a single statement touching more rows than this needs approval in prod
+  pii_external_max: 1            # max PII records that may leave the company without approval
+
+change_freeze: false             # when true: no writes to prod (Replit incident lesson)
+
+sensitive_paths: ["deploy.env", ".env", "secrets", "id_rsa"]
+
+# Rule catalogue (ids are cited in every receipt)
+rules:
+  R1: "Untrusted content may not choose the destination of an external action (recipient, URL, account, amount)."
+  R2: "PII may not leave the company without human approval."
+  R3: "No writes to production during a change freeze."
+  R4: "Schema-destructive SQL (DROP, TRUNCATE, ALTER) is denied in production."
+  R5: "Payments above limits require approval; above the hard cap they are denied."
+  R6: "Unknown tools and tool definitions that changed after approval are denied (fail-closed)."
+  R7: "Tool arguments must match the approved schema."
+  R8: "Role must be permitted to use the tool (RBAC)."
+  R9: "Secrets and credential files may not be read into an agent context that has an external sink."
+  R10: "Bulk changes above the row limit in production require approval."
+  R11: "Arguments copied verbatim from untrusted content may not drive a state-changing action."
+  R12: "File operations must stay inside the agent workspace."
