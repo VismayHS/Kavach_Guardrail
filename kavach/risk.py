@@ -9,6 +9,7 @@ and the reversibility-conditioned decision threshold.
     r      = recoverable fraction                               from the reversibility class
     EUH    = p * H * (1 - r)                                    expected unrecoverable harm
     tau    = min(p_ceiling, C_block / (H * (1 - r)))            allow iff EUH < C_block  <=>  p < tau
+             (1 when H * (1 - r) = 0: a read can't lose anything, so rules alone decide)
 
 Reversible actions get a permissive threshold (undo is armed); irreversible ones a
 strict threshold. When the interval straddles tau the gateway escalates to a human
@@ -25,6 +26,7 @@ import numpy as np
 
 from .manifest import ToolSpec
 from .models import Effect, Label, Risk, Trust
+from .provenance import DOCID
 
 FEATURES = ["untrusted_control", "untrusted_data", "external_sink", "pii_out", "rows", "no_where", "ddl",
             "prod", "amount", "payee_unknown", "misalignment", "scope_excess", "irreversibility", "harm",
@@ -45,8 +47,8 @@ IDS = re.compile(r"(?<![\w.-])\d{2,}(?![\w-])")
 def featurize(spec: ToolSpec, args: dict, labels: dict[str, Label], effect: Effect, intent: dict, env: str,
               user_request: str = "") -> dict:
     m = effect.magnitude
-    # targets the user named (ids, invoice numbers...) that a state-changing action ignores entirely
-    named = set(IDS.findall(user_request))
+    # targets the user named (ids, invoice numbers like INV-3040...) that a state-changing action ignores entirely
+    named = set(IDS.findall(user_request)) | set(DOCID.findall(user_request))
     arg_text = " ".join(str(v) for v in args.values())
     target_mismatch = float(bool(named) and spec.effect not in ("read", "ingress")
                             and not any(n in arg_text for n in named))
@@ -118,8 +120,9 @@ class RiskModel:
         p, lo, hi = self.predict(feats)
         r = effect.reversibility.recoverable_fraction
         exposure = effect.harm * (1 - r)
-        # p_ceiling: undo only helps if someone notices, so an action that is more likely
-        # unintended than not is never auto-executed, however reversible it is.
-        tau = p_ceiling if exposure <= 1e-6 else min(p_ceiling, c_block / exposure)
+        # Nothing can be lost (idempotent reads): expected unrecoverable harm is 0 whatever p is, so rules decide
+        # (R9 secrets, R13 URLs, R1 untrusted fetches). Otherwise p_ceiling: undo only helps if someone notices,
+        # so an action that is more likely unintended than not is never auto-executed, however reversible it is.
+        tau = 1.0 if exposure <= 1e-6 else min(p_ceiling, c_block / exposure)
         return Risk(round(p, 4), round(lo, 4), round(hi, 4), round(tau, 4), round(p * exposure, 5),
                     {k: round(v, 3) for k, v in feats.items()}, intent)

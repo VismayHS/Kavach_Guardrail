@@ -10,6 +10,8 @@ roles:
   support:  ["crm.query", "crm.execute", "mail.read_inbox", "mail.send", "payments.refund", "files.read", "web.fetch"]
   finance:  ["crm.query", "payments.transfer", "payments.refund", "mail.read_inbox", "mail.send", "web.fetch", "files.read"]
   admin:    ["*"]
+  ap_supervisor: ["invoice.read", "payment.propose", "payment.release", "vendor.update_bank", "sap.post",
+                  "mail.read_inbox", "mail.send"]
 
 limits:
   refund_auto_max: 5000          # INR; above this a human must approve
@@ -22,6 +24,20 @@ limits:
 
 change_freeze: false             # when true: no writes to prod (Replit incident lesson)
 require_tool_hash: false         # when true: calls must present the pinned tool definition hash (MCP clients)
+
+# Accounts payable, from the rulebook in Infosys AgentOS's sample tenant
+# (Topaz_AgentOS/enterprise_root/tenants/company/shared/contexts/judgment/fa_judgment.md, section L2 AP)
+finance:
+  currency: EUR
+  role_release_limit:            # "≤ €25,000: AP Supervisor (single signatory)"
+    ap_supervisor: 25000
+  release_tiers:                 # "Payment Authorisation Limits"
+    - {max: 25000,  approvers: "AP Supervisor (single signatory)"}
+    - {max: 100000, approvers: "Finance Manager + AP Supervisor (dual control)"}
+    - {max: 500000, approvers: "Finance Director + Finance Manager (dual control)"}
+    - {max: null,   approvers: "CFO + Finance Director (dual control)"}
+  retention_years: 7             # "Invoices (AP and AR): 7 years. Block deletion"
+  retained_tables: ["ap_invoices", "payment_proposals", "sap_documents"]
 
 sensitive_paths: ["deploy.env", ".env", "secrets", "id_rsa"]
 
@@ -41,3 +57,10 @@ rules:
   R12: "File operations must stay inside the agent workspace."
   R13: "A URL to a host the user never named may not carry private values or bulk data; after private data was read, such fetches need approval."
   R14: "Once a task has read private data and untrusted content, outbound actions to destinations the user didn't give need approval (lethal trifecta)."
+  # R15-R17 are reserved for Phase 1 (invented values, scope, third-party PII)
+  R18: "Payment release follows the approval tiers; the amount is read from the invoice record, never from the call."
+  R19: "Separation of duties: whoever proposed a payment may not release it; releasing an unproposed invoice needs approval."
+  R20: "Vendor bank details are never changed from an email or document alone; any change needs verification and AP Manager sign-off."
+  R21: "Payments to sanctioned vendors are blocked; payments to unverified bank accounts need approval."
+  R22: "Invoices, payment records and posted documents may not be deleted (retention)."
+  R23: "Invoices must pass the 3-way match (PO, goods receipt, invoice within 2% or EUR 100) before release."

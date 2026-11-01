@@ -25,6 +25,8 @@ EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 URL = re.compile(r"https?://[^\s\"'<>)]+")
 ACCOUNT = re.compile(r"\bACC-\d{2}-\d{4}\b")
 PHONE = re.compile(r"\+91-9\d{9}")
+IBAN = re.compile(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,3})?\b")   # spaced or not
+DOCID = re.compile(r"\b[A-Z]{1,5}-\d{3,}\b")                                              # INV-3040, PO-3001
 NUMBER = re.compile(r"(?<![\w.-])\d[\d,]*(?:\.\d+)?(?![\w-])")
 
 
@@ -41,6 +43,8 @@ def entities(text: str) -> set[str]:
     out |= {e.lower() for e in EMAIL.findall(text)}
     out |= {u.rstrip(".,") for u in URL.findall(text)}
     out |= set(ACCOUNT.findall(text))
+    out |= {re.sub(r"\s", "", m).upper() for m in IBAN.findall(text)}
+    out |= set(DOCID.findall(text))
     out |= set(PHONE.findall(text))
     out |= {"#" + _norm_num(n) for n in NUMBER.findall(text) if len(n.replace(",", "")) >= 3}
     return out

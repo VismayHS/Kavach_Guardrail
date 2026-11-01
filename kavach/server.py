@@ -28,7 +28,7 @@ from . import auth
 from .environment import Environment
 from .gateway import Kavach
 from .models import ToolCall
-from .scenarios import SCENARIOS, materialize
+from .scenarios import SCENARIOS, materialize, prepare
 
 ROOT = Path(__file__).resolve().parent
 env = Environment(tempfile.mkdtemp(prefix="kavach-"))
@@ -116,7 +116,7 @@ def demo(name: str, reset: bool = True):
     if sc is None:
         raise HTTPException(404, "unknown scenario")
     if reset:
-        env.reset()
+        prepare(env, sc)
     tid, plan_report = gw.start_task(sc["user"][0], sc["user"][1], sc["request"], sc["env"], sc["plan"])
     steps, last = [], None
     for call in sc["steps"]:

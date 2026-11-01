@@ -30,8 +30,8 @@ from .provenance import ProvenanceTracker
 from .receipts import ReceiptLog
 from .risk import RiskModel, featurize
 
-SAFETY_RULES = {"R2", "R9", "R10"}
-AUTH_RULES = {"R1", "R3", "R4", "R5", "R6", "R7", "R8", "R11", "R12"}
+SAFETY_RULES = {"R2", "R9", "R10", "R13", "R22", "R23"}
+AUTH_RULES = {"R1", "R3", "R4", "R5", "R6", "R7", "R8", "R11", "R12", "R14", "R18", "R19", "R20", "R21"}
 
 
 @dataclass
@@ -119,12 +119,13 @@ class Kavach:
         staged = {"rows_affected": effect.magnitude.get("rows_affected", 0) if effect else 0,
                   "payees": self.env.payees, "freeze": self.env.change_freeze,
                   "sql": {k: effect.magnitude.get(k) for k in ("writes", "ddl", "sql_ops")} if effect else {},
+                  "effect": effect.magnitude if effect else {},     # facts the rules read (amounts, payees...)
                   "private_seen": task.prov.private_seen, "untrusted_seen": task.prov.untrusted_seen}
         gates = self.policy.evaluate(ctx, call, spec, self.registry, labels, staged)
         if effect and effect.magnitude.get("inside_workspace") is False:
             gates.append(GateResult("R12", "DENY", "Path escapes the agent workspace."))
         if effect and effect.magnitude.get("error"):
-            gates.append(GateResult("R7", "DENY", f"Statement fails in sandbox: {effect.magnitude['error']}"))
+            gates.append(GateResult("R7", "DENY", f"Fails when staged: {effect.magnitude['error']}"))
         floor = floor_of(gates)
 
         # [5] intent + [6] risk
@@ -217,6 +218,11 @@ class Kavach:
             "R8": "This role cannot perform the action. Hand off to an authorised user.",
             "R9": "Credentials cannot be read by agents. Use the secrets manager reference instead.",
             "R6": "Tool definition changed after approval. Re-approve the tool before use.",
+            "R19": "Ask a second person to release this payment; whoever proposed it may not release it.",
+            "R20": "Don't change bank details from an email or document. Flag it for verification by phone with the "
+                   "vendor's registered number.",
+            "R21": "Don't pay this vendor. Escalate to compliance.",
+            "R22": "Don't delete accounting records; mark them instead (e.g. status = 'void').",
         }.get(rule_id)
 
     @staticmethod
@@ -253,7 +259,8 @@ class Kavach:
         spec = self.registry.get(d.call.tool)
         if d.verdict == Verdict.ALLOW_WITH_SAFEGUARD:
             self.undo[d.receipt_id] = self.env.snapshot()
-        result = self.env.dispatch(d.call.tool, d.call.args)
+        result = self.env.dispatch(d.call.tool, d.call.args,
+                                   actor={"user": task.ctx.principal.user_id, "task": task_id})
         d.executed, d.result = True, result
         # post-condition: actual effect must match the staged prediction
         if d.call.tool == "crm.execute" and d.effect and isinstance(result, dict):
@@ -279,7 +286,7 @@ class Kavach:
                 out["result"] = {"draft_saved": True, "to": call.args.get("to")}
             else:
                 snap = self.env.snapshot()
-                result = self.env.dispatch(call.tool, call.args)
+                result = self.env.dispatch(call.tool, call.args, actor={"user": approver, "task": task_id})
                 self.tasks[task_id].prov.register_output(call.tool, result, spec.output_trust, spec.output_conf)
                 out.update(executed=True, result=str(result)[:300])
                 rec = self.receipts.append({"type": "human-approved-execution", "task_id": task_id, "hitl": hid,

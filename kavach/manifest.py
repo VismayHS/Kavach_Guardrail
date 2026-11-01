@@ -76,6 +76,23 @@ def default_manifest() -> dict[str, ToolSpec]:
         ToolSpec("web.fetch", "Fetch a web page.", {"url": "str"}, ["url"], effect="ingress", sink="none",
                  reversibility=R.IDEMPOTENT, control_args=["url"], output_trust="untrusted",
                  output_conf=Conf.PUBLIC),
+        # accounts payable (the amount and payee of a payment come from the records, not from the call)
+        ToolSpec("invoice.read", "Read an accounts-payable invoice.", {"invoice_id": "str"}, ["invoice_id"],
+                 effect="read", sink="none", reversibility=R.IDEMPOTENT, output_trust="derived",
+                 output_conf=Conf.CONFIDENTIAL, staging="sqlite"),
+        ToolSpec("payment.propose", "Propose payment of an approved invoice.", {"invoice_id": "str"}, ["invoice_id"],
+                 effect="write", sink="internal", reversibility=R.REVERSIBLE, control_args=["invoice_id"],
+                 staging="sqlite", safeguard="snapshot+undo"),
+        ToolSpec("payment.release", "Release the proposed payment for an invoice to the vendor's bank account.",
+                 {"invoice_id": "str"}, ["invoice_id"], effect="payment", sink="external",
+                 reversibility=R.IRREVERSIBLE, control_args=["invoice_id"]),
+        ToolSpec("vendor.update_bank", "Change a vendor's bank account (IBAN).", {"vendor_id": "str", "iban": "str"},
+                 ["vendor_id", "iban"], effect="write", sink="internal", reversibility=R.REVERSIBLE,
+                 control_args=["vendor_id", "iban"], staging="sqlite", safeguard="snapshot+undo"),
+        ToolSpec("sap.post", "Post an accounting document to SAP.",
+                 {"doc_type": "str", "amount": "float", "gl_account": "str", "text": "str"},
+                 ["doc_type", "amount", "gl_account"], effect="write", sink="internal",
+                 reversibility=R.COMPENSABLE, control_args=["gl_account", "amount"], data_args=["text"]),
     ]
     return {s.name: s for s in specs}
 

@@ -22,6 +22,7 @@ def classify(conn: sqlite3.Connection, sql: str) -> dict:
     """Compile `sql` on `conn` (never executed) and return its operations and tables."""
     ops: set[str] = set()
     tables: set[str] = set()
+    written: set[str] = set()      # tables the statement changes or drops (not ones it only reads)
 
     def record(action, arg1, arg2, _db, _src):
         table = arg2 if action == sqlite3.SQLITE_ALTER_TABLE else arg1
@@ -33,6 +34,8 @@ def classify(conn: sqlite3.Connection, sql: str) -> dict:
             ops.add("create")
         if table and action in (*_WRITE, *_DDL, sqlite3.SQLITE_READ) and not str(table).startswith("sqlite_"):
             tables.add(str(table).lower())
+            if action != sqlite3.SQLITE_READ:
+                written.add(str(table).lower())
         return sqlite3.SQLITE_OK
 
     error = None
@@ -44,7 +47,7 @@ def classify(conn: sqlite3.Connection, sql: str) -> dict:
     finally:
         conn.set_authorizer(None)
     bare = _COMMENT.sub(" ", sql)
-    return {"ops": sorted(ops), "tables": sorted(tables), "error": error,
+    return {"ops": sorted(ops), "tables": sorted(tables), "tables_written": sorted(written), "error": error,
             "writes": bool(ops & {"insert", "update", "delete", "create"}),
             "ddl": bool(ops & {"drop", "alter"}),
             # ponytail: a WHERE inside a CTE also counts; the sandbox row count (R10) still catches bulk changes

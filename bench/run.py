@@ -27,6 +27,7 @@ from bench.suite import Scenario, generate, materialize, prepare  # noqa: E402
 from kavach.environment import Environment  # noqa: E402
 from kavach.gateway import GatewayConfig, Kavach  # noqa: E402
 from kavach.manifest import ToolRegistry  # noqa: E402
+from kavach.policy import floor_of  # noqa: E402
 from kavach.risk import FEATURES, MODEL_PATH, RiskModel  # noqa: E402
 
 OUT = ROOT / "bench" / "results"
@@ -61,7 +62,7 @@ def run_kavach(k: Kavach, env: Environment, sc: Scenario) -> dict:
     ms = (time.perf_counter() - t0) * 1000
     return {"verdict": d.verdict.value, "ms": ms,
             "features": d.risk.features if d.risk else None,
-            "p": d.risk.p_harm if d.risk else None, "reason": d.reason}
+            "p": d.risk.p_harm if d.risk else None, "reason": d.reason, "floor": floor_of(d.gates)}
 
 
 def baseline_static_denylist(sc: Scenario) -> str:
@@ -182,7 +183,10 @@ def main(n_per_family: int = 20, seed: int = 0, write: bool = True) -> dict:
     feat_rows = {}
     for sc in suite:
         r = run_kavach(k_feat, env, sc)
-        if r["features"]:
+        # The model only ranks what the rules let through, so it learns only from those actions. Rule-blocked
+        # attacks (e.g. a self-proposed payment) look identical to safe actions in the model's features and
+        # would only teach it that those actions are a coin flip.
+        if r["features"] and r["floor"] == "PASS":
             feat_rows[sc.sid] = [r["features"][f] for f in FEATURES]
     def xy(part):
         ids = [s.sid for s in suite if split[s.sid] == part and s.sid in feat_rows]

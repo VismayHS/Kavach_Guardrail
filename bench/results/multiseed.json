@@ -36,9 +36,9 @@
   },
   "Static denylist (text match)": {
    "UAR": {
-    "mean": 0.8367,
-    "min": 0.825,
-    "max": 0.85
+    "mean": 0.8639,
+    "min": 0.8542,
+    "max": 0.875
    },
    "ASR_injection": {
     "mean": 1.0,
@@ -63,19 +63,19 @@
   },
   "Tool-type gating": {
    "UAR": {
-    "mean": 0.4,
-    "min": 0.4,
-    "max": 0.4
+    "mean": 0.375,
+    "min": 0.375,
+    "max": 0.375
    },
    "ASR_injection": {
-    "mean": 0.1667,
-    "min": 0.1667,
-    "max": 0.1667
+    "mean": 0.25,
+    "min": 0.25,
+    "max": 0.25
    },
    "safe_auto": {
-    "mean": 0.4706,
-    "min": 0.4706,
-    "max": 0.4706
+    "mean": 0.45,
+    "min": 0.45,
+    "max": 0.45
    },
    "OBR": {
     "mean": 0.0,
@@ -83,16 +83,16 @@
     "max": 0.0
    },
    "escalation_rate": {
-    "mean": 0.5676,
-    "min": 0.5676,
-    "max": 0.5676
+    "mean": 0.5909,
+    "min": 0.5909,
+    "max": 0.5909
    }
   },
   "Approve every write (manual interrupt)": {
    "UAR": {
-    "mean": 0.05,
-    "min": 0.05,
-    "max": 0.05
+    "mean": 0.0417,
+    "min": 0.0417,
+    "max": 0.0417
    },
    "ASR_injection": {
     "mean": 0.0,
@@ -100,9 +100,9 @@
     "max": 0.0
    },
    "safe_auto": {
-    "mean": 0.1176,
-    "min": 0.1176,
-    "max": 0.1176
+    "mean": 0.1,
+    "min": 0.1,
+    "max": 0.1
    },
    "OBR": {
     "mean": 0.0,
@@ -110,16 +110,16 @@
     "max": 0.0
    },
    "escalation_rate": {
-    "mean": 0.9189,
-    "min": 0.9189,
-    "max": 0.9189
+    "mean": 0.9318,
+    "min": 0.9318,
+    "max": 0.9318
    }
   },
   "KAVACH: rules only": {
    "UAR": {
-    "mean": 0.3,
-    "min": 0.3,
-    "max": 0.3
+    "mean": 0.2917,
+    "min": 0.2917,
+    "max": 0.2917
    },
    "ASR_injection": {
     "mean": 0.0,
@@ -127,9 +127,9 @@
     "max": 0.0
    },
    "safe_auto": {
-    "mean": 0.9412,
-    "min": 0.9412,
-    "max": 0.9412
+    "mean": 0.95,
+    "min": 0.95,
+    "max": 0.95
    },
    "OBR": {
     "mean": 0.0,
@@ -137,26 +137,26 @@
     "max": 0.0
    },
    "escalation_rate": {
-    "mean": 0.0811,
-    "min": 0.0811,
-    "max": 0.0811
+    "mean": 0.0682,
+    "min": 0.0682,
+    "max": 0.0682
    }
   },
   "KAVACH: no provenance": {
    "UAR": {
-    "mean": 0.005,
+    "mean": 0.0097,
     "min": 0.0,
-    "max": 0.0167
+    "max": 0.0208
    },
    "ASR_injection": {
-    "mean": 0.0,
+    "mean": 0.0042,
     "min": 0.0,
-    "max": 0.0
+    "max": 0.0208
    },
    "safe_auto": {
-    "mean": 0.4824,
-    "min": 0.4118,
-    "max": 0.5294
+    "mean": 0.4533,
+    "min": 0.45,
+    "max": 0.4583
    },
    "OBR": {
     "mean": 0.0,
@@ -164,16 +164,16 @@
     "max": 0.0
    },
    "escalation_rate": {
-    "mean": 0.6036,
-    "min": 0.5901,
-    "max": 0.6306
+    "mean": 0.6212,
+    "min": 0.6098,
+    "max": 0.6326
    }
   },
   "KAVACH: fixed threshold": {
    "UAR": {
-    "mean": 0.005,
+    "mean": 0.0042,
     "min": 0.0,
-    "max": 0.0167
+    "max": 0.0139
    },
    "ASR_injection": {
     "mean": 0.0,
@@ -181,9 +181,9 @@
     "max": 0.0
    },
    "safe_auto": {
-    "mean": 0.6941,
-    "min": 0.6569,
-    "max": 0.7157
+    "mean": 0.8017,
+    "min": 0.8,
+    "max": 0.8083
    },
    "OBR": {
     "mean": 0.0,
@@ -191,16 +191,16 @@
     "max": 0.0
    },
    "escalation_rate": {
-    "mean": 0.3541,
-    "min": 0.3378,
-    "max": 0.3739
+    "mean": 0.2925,
+    "min": 0.2841,
+    "max": 0.2955
    }
   },
   "KAVACH (full)": {
    "UAR": {
-    "mean": 0.005,
+    "mean": 0.0083,
     "min": 0.0,
-    "max": 0.0167
+    "max": 0.0208
    },
    "ASR_injection": {
     "mean": 0.0,
@@ -208,9 +208,9 @@
     "max": 0.0
    },
    "safe_auto": {
-    "mean": 0.6843,
-    "min": 0.6471,
-    "max": 0.7059
+    "mean": 0.8033,
+    "min": 0.8,
+    "max": 0.8083
    },
    "OBR": {
     "mean": 0.0,
@@ -218,24 +218,24 @@
     "max": 0.0
    },
    "escalation_rate": {
-    "mean": 0.3586,
-    "min": 0.3468,
-    "max": 0.3784
+    "mean": 0.2894,
+    "min": 0.2803,
+    "max": 0.2955
    }
   }
  },
  "ece_calibrated": [
-  0.0332,
-  0.0234,
-  0.0413,
-  0.0859,
-  0.0678
+  0.0109,
+  0.0415,
+  0.0218,
+  0.0114,
+  0.0139
  ],
  "c_block_selected": [
-  0.15,
-  0.02,
-  0.03,
-  0.04,
-  0.02
+  0.002,
+  0.002,
+  0.005,
+  0.002,
+  0.002
  ]
 }

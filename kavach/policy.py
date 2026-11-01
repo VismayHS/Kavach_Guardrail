@@ -15,7 +15,8 @@ from .models import Conf, GateResult, Label, TaskContext, ToolCall, Trust
 from .provenance import URL
 
 # the argument that picks where an outbound action goes
-DESTINATION = {"mail.send": "to", "payments.transfer": "to_account", "payments.refund": "invoice_id"}
+DESTINATION = {"mail.send": "to", "payments.transfer": "to_account", "payments.refund": "invoice_id",
+               "payment.release": "invoice_id"}
 
 
 class PolicyEngine:
@@ -58,6 +59,10 @@ class PolicyEngine:
         else:
             add("R8", "PASS", f"Role '{ctx.principal.role}' may use {call.tool}.")
 
+        # R18-R23 the accounts-payable rulebook, enforced on facts read from the records
+        st = staged or {}
+        self._finance_rules(ctx, call, labels, st, add)
+
         # R1 untrusted destination for external actions
         if spec.sink == "external" or spec.effect == "ingress":
             for a in spec.control_args:
@@ -91,7 +96,6 @@ class PolicyEngine:
                     f"recipient {'internal' if internal else 'external'}.")
 
         # R13 data leaving through a URL / R14 lethal trifecta at runtime
-        st = staged or {}
         if call.tool == "web.fetch":
             self._url_rule(ctx, call, labels, st, add)
         if spec.sink == "external" and st.get("private_seen") and st.get("untrusted_seen"):
@@ -120,8 +124,8 @@ class PolicyEngine:
                 and (self.cfg.get("change_freeze") or (staged or {}).get("freeze")):
             add("R3", "DENY", "Change freeze is active.")
 
-        # R5 payments
-        if spec.effect == "payment":
+        # R5 payments (amount given in the call; payment.release is covered by R18 on the invoice record)
+        if call.tool in ("payments.transfer", "payments.refund"):
             lim = self.cfg["limits"]
             amt = float(call.args.get("amount", 0))
             if call.tool == "payments.refund":
@@ -145,6 +149,51 @@ class PolicyEngine:
             if any(s in p for s in self.cfg["sensitive_paths"]):
                 add("R9", "DENY", f"'{p}' is a credential file; reading it into an agent context is blocked.")
         return out
+
+    def _finance_rules(self, ctx: TaskContext, call: ToolCall, labels: dict[str, Label], staged: dict, add) -> None:
+        """R18-R23: rules from the accounts-payable rulebook (Infosys AgentOS sample tenant, fa_judgment.md).
+        Amounts, payees and proposers are read from the records by the consequence engine, not parsed from text."""
+        fin, e = self.cfg["finance"], staged.get("effect") or {}
+        if call.tool == "payment.release" and "amount" in e:
+            inv, amt, cur = e["invoice_id"], e["amount"], e["currency"]
+            if e["sanctioned"]:
+                add("R21", "DENY", f"{e['vendor_name']} is on the sanctions watch list; payments are blocked.",
+                    vendor=e["vendor_id"])
+            elif not e["bank_verified"]:
+                add("R21", "REQUIRE_APPROVAL", f"{e['vendor_name']}'s bank account has not been independently verified.",
+                    vendor=e["vendor_id"])
+            if e["proposal_id"] is None:
+                add("R19", "REQUIRE_APPROVAL", f"No payment proposal exists for {inv}; releasing it would skip the "
+                    "proposer/releaser split.")
+            elif e["proposed_by"] == ctx.principal.user_id or e["proposal_task"] == ctx.task_id:
+                add("R19", "DENY", f"Separation of duties: {e['proposed_by']} proposed this payment in this task, "
+                    "and the proposer may not also release it.", proposed_by=e["proposed_by"])
+            if not e["matched"]:
+                add("R23", "REQUIRE_APPROVAL", f"{inv} fails the 3-way match: invoice {amt:,.2f}, purchase order "
+                    f"{e['po_amount']}, goods receipt {e['gr_amount']}.")
+            limit = fin["role_release_limit"].get(ctx.principal.role, 0)
+            if amt > limit:
+                tier = next(t for t in fin["release_tiers"] if t["max"] is None or amt <= t["max"])
+                add("R18", "REQUIRE_APPROVAL", f"Releasing {cur} {amt:,.0f} for {inv} needs {tier['approvers']}; "
+                    f"role '{ctx.principal.role}' may release up to {cur} {limit:,.0f}.",
+                    amount=amt, approvers=tier["approvers"])
+            else:
+                add("R18", "PASS", f"{cur} {amt:,.0f} is within role '{ctx.principal.role}'s release limit "
+                    f"({cur} {limit:,.0f}).")
+        if call.tool == "vendor.update_bank":
+            lab = labels.get("iban")
+            if lab and lab.trust == Trust.UNTRUSTED:
+                add("R20", "DENY", f"The new bank account {call.args.get('iban')!r} came from {', '.join(lab.sources)}; "
+                    "bank details are never changed based on an email or document alone.", arg="iban",
+                    sources=lab.sources)
+            else:
+                add("R20", "REQUIRE_APPROVAL", "Bank detail changes need independent verification (a call to the "
+                    "vendor's registered number) and AP Manager sign-off.")
+        if call.tool == "crm.execute":
+            kept = set(e.get("tables_written") or []) & set(fin["retained_tables"])
+            if kept and {"delete", "drop"} & set(e.get("sql_ops") or []):
+                add("R22", "DENY", f"Records in {', '.join(sorted(kept))} must be kept for "
+                    f"{fin['retention_years']} years; deleting them is blocked.", tables=sorted(kept))
 
     def _internal_host(self, host: str) -> bool:
         return any(host == d or host.endswith("." + d) for d in self.cfg["internal_domains"])

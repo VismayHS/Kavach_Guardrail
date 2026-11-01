@@ -15,7 +15,7 @@ It then **allows** the call, **allows it with undo armed**, **escalates it to a 
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                       # 26 tests (+1 expected failure until reply-to-sender lands)
+python -m pytest -q                       # 57 tests (+1 expected failure until reply-to-sender lands)
 python -m bench.run                       # trains the risk model, benchmarks vs baselines (5 seeds)
 python -m uvicorn kavach.server:app --port 8000   # then open http://localhost:8000
 ```

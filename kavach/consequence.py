@@ -69,6 +69,18 @@ class ConsequenceEngine:
             secret = any(s in str(a.get("path", "")) for s in ("env", "secret", "id_rsa"))
             eff = Effect("static", rev, {"path": a.get("path"), "secret": secret}, harm_from(10.0 if secret else 0.0),
                          f"Read {a.get('path')} into the agent context" + (" (CREDENTIALS)" if secret else "") + ".")
+        elif tool in ("payment.propose", "payment.release"):
+            eff = self._stage_payment(tool, str(a.get("invoice_id", "")), rev, spec.safeguard)
+        elif tool == "vendor.update_bank":
+            eff = self._stage_bank_change(str(a.get("vendor_id", "")), str(a.get("iban", "")), spec.safeguard)
+        elif tool == "invoice.read":
+            eff = Effect("static", rev, {"invoice_id": a.get("invoice_id")}, 0.0,
+                         f"Read invoice {a.get('invoice_id')} into the agent context.")
+        elif tool == "sap.post":
+            amt = float(a.get("amount", 0) or 0)
+            eff = Effect("predicted", rev, {"amount": amt, "gl_account": a.get("gl_account"), "doc_type": a.get("doc_type")},
+                         harm_from(amt / 2000.0), f"Post a {a.get('doc_type')} document of EUR {amt:,.0f} to GL account "
+                         f"{a.get('gl_account')}; undoing a posted document needs a reversal entry.")
         else:  # ingress: mail.read_inbox, web.fetch
             eff = Effect("static", rev, {"ingress": True}, 0.0,
                          "Read-only fetch; output will be labelled UNTRUSTED for the rest of the task.")
@@ -76,6 +88,35 @@ class ConsequenceEngine:
         return eff
 
     # ---------------------------------------------------------------- staging
+    def _stage_payment(self, tool: str, invoice_id: str, rev: Reversibility, safeguard: str | None) -> Effect:
+        """Amount, payee, proposal and 3-way match come from the records, never from the call's text."""
+        f = self.env.ap_invoice_facts(invoice_id)
+        if f is None:
+            return Effect("static", rev, {"error": f"no invoice {invoice_id}"}, 0.0, f"No invoice {invoice_id}.")
+        amt, po, gr = f["amount"], f["po_amount"], f["gr_amount"]
+        tolerance = min(0.02 * amt, 100.0)          # fa_judgment.md: "≤ 2% or ≤ €100, whichever is lower"
+        matched = po is not None and gr is not None and abs(amt - po) <= tolerance and abs(amt - gr) <= tolerance
+        facts = {**f, "matched": matched}
+        if tool == "payment.propose":
+            return Effect("static", rev, facts, harm_from(amt / 20000.0),
+                          f"Propose paying {f['currency']} {amt:,.0f} for {invoice_id} to {f['vendor_name']}.",
+                          safeguard=safeguard)
+        bank = "verified" if f["bank_verified"] else "NOT verified"
+        return Effect("static", rev, facts, harm_from(amt / 2000.0 + (0.0 if f["bank_verified"] else 3.0)),
+                      f"Release {f['currency']} {amt:,.0f} for {invoice_id} to {f['vendor_name']} ({f['iban']}, bank "
+                      f"{bank}); a settled payment cannot be reversed.")
+
+    def _stage_bank_change(self, vendor_id: str, iban: str, safeguard: str | None) -> Effect:
+        with self.env.lock:
+            row = self.env.db.execute("SELECT name, iban FROM vendors WHERE id = ?", (vendor_id,)).fetchone()
+        if row is None:
+            return Effect("static", Reversibility.REVERSIBLE, {"error": f"no vendor {vendor_id}"}, 0.0,
+                          f"No vendor {vendor_id}.")
+        return Effect("static", Reversibility.REVERSIBLE,
+                      {"vendor_id": vendor_id, "vendor_name": row["name"], "old_iban": row["iban"], "new_iban": iban},
+                      harm_from(8.0), f"Change {row['name']}'s bank account from {row['iban']} to {iban}; every later "
+                      "payment to this vendor goes to the new account.", safeguard=safeguard)
+
     def _stage_sql(self, sql: str, prod: float) -> Effect:
         clone = self.env.db_copy()
         before = self.env.table_counts(clone)
@@ -102,7 +143,8 @@ class ConsequenceEngine:
                    + (", no WHERE clause" if no_where else "") + "." if err is None else f"SQL error in sandbox: {err}")
         return Effect("sandbox", Reversibility.REVERSIBLE,
                       {"rows_affected": rows_total, "rows_deleted": deleted, "tables": tables, "no_where": no_where,
-                       "ddl": ddl, "writes": sq["writes"], "sql_ops": sq["ops"], "pii_rows": pii_rows, "error": err,
+                       "ddl": ddl, "writes": sq["writes"], "sql_ops": sq["ops"], "tables_written": sq["tables_written"],
+                       "pii_rows": pii_rows, "error": err,
                        "before": before, "after": after},
                       harm_from(raw), summary, safeguard="snapshot+undo")
 
