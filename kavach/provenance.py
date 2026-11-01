@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from urllib.parse import unquote
 
 from .models import Conf, Label, Trust
 
@@ -57,12 +58,21 @@ class ProvenanceTracker:
     untrusted_shingles: dict[str, str] = field(default_factory=dict)   # shingle -> source
     pii_values: set[str] = field(default_factory=set)
     user_text: str = ""
+    private_seen: bool = False      # the task has read PII / confidential data (lethal-trifecta leg 1)
+    untrusted_seen: bool = False    # the task has read untrusted content (lethal-trifecta leg 2)
 
     def register_user(self, text: str) -> None:
         self.user_text += " " + text
         self.user_entities |= entities(text)
 
+    def mask(self, text: str) -> str:
+        """Replace PII values that came from private tool outputs with [PII] (for receipts and logs)."""
+        hide = lambda m: "[PII]" if m.group(0).lower() in self.pii_values else m.group(0)  # noqa: E731
+        return PHONE.sub(hide, EMAIL.sub(hide, text))
+
     def register_output(self, tool: str, output, trust: str, conf: Conf) -> None:
+        self.private_seen |= conf in (Conf.PII, Conf.CONFIDENTIAL)
+        self.untrusted_seen |= trust == "untrusted"
         records = output if isinstance(output, list) else [output]
         for rec in records:
             src = f"tool:{tool}"
@@ -83,6 +93,8 @@ class ProvenanceTracker:
 
     def label(self, value, is_control: bool) -> Label:
         text = value if isinstance(value, str) else str(value)
+        if text.startswith(("http://", "https://")):
+            text = unquote(text)    # %2B91-9... in a query string is still a phone number
         ents = entities(text) if isinstance(value, str) else {"#" + _norm_num(text)}
         pii = sum(1 for e in ents if e in self.pii_values)
         conf = Conf.PII if pii else Conf.INTERNAL

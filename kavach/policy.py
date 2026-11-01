@@ -5,16 +5,17 @@ auto-allowed) or DENY (final). The rule id travels into the receipt.
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 
 from .manifest import ToolRegistry, ToolSpec
-from .models import GateResult, Label, TaskContext, ToolCall, Trust
+from .models import Conf, GateResult, Label, TaskContext, ToolCall, Trust
+from .provenance import URL
 
-DDL = re.compile(r"^\s*(DROP|TRUNCATE|ALTER)\b", re.I)
-WRITE_SQL = re.compile(r"^\s*(INSERT|UPDATE|DELETE|REPLACE|DROP|TRUNCATE|ALTER|CREATE)\b", re.I)
+# the argument that picks where an outbound action goes
+DESTINATION = {"mail.send": "to", "payments.transfer": "to_account", "payments.refund": "invoice_id"}
 
 
 class PolicyEngine:
@@ -37,7 +38,11 @@ class PolicyEngine:
             add("R6", "DENY", "Tool definition changed after approval (hash mismatch: possible rug pull).",
                 presented=call.tool_def_hash, pinned=registry.pins[call.tool])
             return out
-        add("R6", "PASS", "Tool is in the approved manifest and its definition hash matches.")
+        if call.tool_def_hash is None and self.cfg.get("require_tool_hash"):
+            add("R6", "DENY", "No tool definition hash presented; this deployment requires pinned definitions.")
+            return out
+        add("R6", "PASS", "Tool is in the approved manifest and its definition hash matches." if call.tool_def_hash
+            else "Tool is in the approved manifest (no definition hash presented, so the pin was not checked).")
 
         # R7 schema
         errs = registry.validate_args(spec, call.args)
@@ -77,7 +82,7 @@ class PolicyEngine:
         if spec.sink == "external" and spec.effect == "external_send":
             pii = sum(l.pii_entities for k, l in labels.items() if k in spec.data_args)
             to = str(call.args.get("to", ""))
-            internal = any(to.lower().endswith("@" + d) for d in self.cfg["internal_domains"])
+            internal = self._all_internal(to)    # every recipient, not just the end of the string
             if pii > self.cfg["limits"]["pii_external_max"] and not internal:
                 add("R2", "REQUIRE_APPROVAL", f"{pii} PII values would be sent to external address {to}.",
                     pii=pii, recipient=to)
@@ -85,19 +90,32 @@ class PolicyEngine:
                 add("R2", "PASS", f"PII leaving: {pii} (limit {self.cfg['limits']['pii_external_max']}), "
                     f"recipient {'internal' if internal else 'external'}.")
 
-        # R3 change freeze / R4 DDL / R10 bulk
+        # R13 data leaving through a URL / R14 lethal trifecta at runtime
+        st = staged or {}
+        if call.tool == "web.fetch":
+            self._url_rule(ctx, call, labels, st, add)
+        if spec.sink == "external" and st.get("private_seen") and st.get("untrusted_seen"):
+            dest = DESTINATION.get(call.tool)
+            lab = labels.get(dest) if dest else None
+            if not (lab and lab.trust == Trust.TRUSTED) and not self._internal_destination(call, st):
+                add("R14", "REQUIRE_APPROVAL", "This task has read private data and untrusted content, and "
+                    f"'{dest}' = {call.args.get(dest)!r} was not given by the user.", arg=dest)
+
+        # R3 change freeze / R4 DDL / R10 bulk (SQL facts come from SQLite's compiler, see sql.py)
+        sql_info = st.get("sql") or {}
         if call.tool == "crm.execute":
             sql = str(call.args.get("sql", ""))
             if ctx.env == "prod" and (self.cfg.get("change_freeze") or (staged or {}).get("freeze")):
                 add("R3", "DENY", "Change freeze is active: production writes are blocked.")
-            if ctx.env == "prod" and DDL.match(sql):
-                add("R4", "DENY", "Schema-destructive SQL in production.", sql=sql[:120])
+            if ctx.env == "prod" and sql_info.get("ddl"):
+                add("R4", "DENY", "Schema-destructive SQL in production.", sql=sql[:120], ops=sql_info.get("sql_ops"))
             rows = (staged or {}).get("rows_affected", 0)
             if ctx.env == "prod" and rows > self.cfg["limits"]["bulk_rows_approval"]:
                 add("R10", "REQUIRE_APPROVAL", f"Statement would change {rows} rows "
                     f"(limit {self.cfg['limits']['bulk_rows_approval']}).", rows=rows)
-        if call.tool == "crm.query" and WRITE_SQL.match(str(call.args.get("sql", ""))):
-            add("R7", "DENY", "crm.query is read-only but a write statement was supplied.")
+        if call.tool == "crm.query" and (sql_info.get("writes") or sql_info.get("ddl")):
+            add("R7", "DENY", f"crm.query is read-only but the statement would {', '.join(sql_info['sql_ops'])}.",
+                ops=sql_info.get("sql_ops"))
         if call.tool.startswith("files.") and spec.effect == "write" and ctx.env == "prod" \
                 and (self.cfg.get("change_freeze") or (staged or {}).get("freeze")):
             add("R3", "DENY", "Change freeze is active.")
@@ -127,6 +145,37 @@ class PolicyEngine:
             if any(s in p for s in self.cfg["sensitive_paths"]):
                 add("R9", "DENY", f"'{p}' is a credential file; reading it into an agent context is blocked.")
         return out
+
+    def _internal_host(self, host: str) -> bool:
+        return any(host == d or host.endswith("." + d) for d in self.cfg["internal_domains"])
+
+    def _all_internal(self, to: str) -> bool:
+        recipients = [r.strip().lower() for r in to.split(",") if r.strip()]
+        return bool(recipients) and all(self._internal_host(r.rsplit("@", 1)[-1]) for r in recipients)
+
+    def _internal_destination(self, call: ToolCall, staged: dict) -> bool:
+        if call.tool == "mail.send":
+            return self._all_internal(str(call.args.get("to", "")))
+        if call.tool == "payments.transfer":
+            return call.args.get("to_account") in staged.get("payees", {})
+        return False
+
+    def _url_rule(self, ctx: TaskContext, call: ToolCall, labels: dict[str, Label], staged: dict, add) -> None:
+        """R13: a URL is an outbound channel. Unknown hosts may not receive private values or bulk data."""
+        parts = urlparse(str(call.args.get("url", "")))
+        host = (parts.hostname or "").lower()
+        user_hosts = {(urlparse(u).hostname or "").lower() for u in URL.findall(ctx.user_request)}
+        if host in user_hosts or self._internal_host(host):
+            return
+        lab = labels.get("url")
+        private = bool(lab and (lab.pii_entities or lab.conf.rank >= Conf.CONFIDENTIAL.rank))
+        payload = len(parts.query) + len(parts.fragment)
+        if private or payload > self.cfg["limits"]["url_payload_max"]:
+            what = "private values" if private else f"a {payload}-character payload"
+            add("R13", "DENY", f"URL to {host!r}, a host the user never named, carries {what}.", host=host)
+        elif staged.get("private_seen"):
+            add("R13", "REQUIRE_APPROVAL", f"Fetching {host!r}, a host the user never named, after this task "
+                "read private data.", host=host)
 
 
 def floor_of(gates: list[GateResult]) -> str:

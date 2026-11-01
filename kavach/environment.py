@@ -138,7 +138,11 @@ class Environment:
     # ------------------------------------------------------------------ tools (real side effects)
     def crm_query(self, sql: str) -> list[dict]:
         with self.lock:
-            rows = self.db.execute(sql).fetchmany(200)
+            self.db.execute("PRAGMA query_only = ON")   # SQLite itself refuses writes on the read tool
+            try:
+                rows = self.db.execute(sql).fetchmany(200)
+            finally:
+                self.db.execute("PRAGMA query_only = OFF")
             return [dict(r) for r in rows]
 
     def crm_execute(self, sql: str) -> dict:

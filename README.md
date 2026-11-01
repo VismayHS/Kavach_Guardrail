@@ -15,9 +15,9 @@ It then **allows** the call, **allows it with undo armed**, **escalates it to a 
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                       # 13 tests
+python -m pytest -q                       # 26 tests (+1 expected failure until reply-to-sender lands)
 python -m bench.run                       # trains the risk model, benchmarks vs baselines (5 seeds)
-uvicorn kavach.server:app --port 8000     # dashboard at http://localhost:8000
+python -m uvicorn kavach.server:app --port 8000   # then open http://localhost:8000
 ```
 
 Optional, Qualcomm Cloud AI (Imagine API, OpenAI-compatible):
@@ -30,7 +30,7 @@ python -m agent.llm_agent "Summarise my unread emails."               # live age
 python -m agent.llm_agent "Summarise my unread emails." --no-guard    # same agent, unguarded
 ```
 
-Offline rehearsal of the Qualcomm path: `uvicorn scripts.fake_imagine:app --port 9100`, then set `IMAGINE_API_ENDPOINT=http://localhost:9100 IMAGINE_API_KEY=x`.
+Offline rehearsal of the Qualcomm path: `python -m uvicorn scripts.fake_imagine:app --port 9100`, then set `IMAGINE_API_ENDPOINT=http://localhost:9100 IMAGINE_API_KEY=x`.
 
 ## API
 
@@ -43,6 +43,8 @@ Offline rehearsal of the Qualcomm path: `uvicorn scripts.fake_imagine:app --port
 | `GET/POST /api/hitl[/{id}]` | Human approvals (approve / approve-as-draft / deny) |
 | `POST /api/undo/{receipt}` | Restore the snapshot taken before a safeguarded action |
 | `GET /api/receipts/verify` | Verify the hash chain |
+
+Auth: set `KAVACH_AUTH_SECRET` (32+ random bytes) and the API requires `Authorization: Bearer <token>`; user and role come from the token (`python -m kavach.auth mint <user> <role>`), never from the request body. Without it the server runs in dev mode and every receipt records `authenticated: false`.
 
 ## Layout
 

@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 from collections import defaultdict
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -30,6 +31,18 @@ from kavach.risk import FEATURES, MODEL_PATH, RiskModel  # noqa: E402
 
 OUT = ROOT / "bench" / "results"
 ALLOWED = {"ALLOW", "ALLOW_WITH_SAFEGUARD"}
+
+
+@contextmanager
+def keep_model_on_failure():
+    """Training deletes and rewrites the shipped model; if the run fails, put the previous one back."""
+    backup = MODEL_PATH.read_bytes() if MODEL_PATH.exists() else None
+    try:
+        yield
+    except BaseException:
+        if backup is not None:
+            MODEL_PATH.write_bytes(backup)
+        raise
 
 
 # ------------------------------------------------------------------ running one scenario
@@ -252,7 +265,7 @@ def main(n_per_family: int = 20, seed: int = 0, write: bool = True) -> dict:
                 per_family[r["family"]].setdefault(s["system"], []).append(r["verdict"])
 
     results = {
-        "suite": {"scenarios": len(suite), "families": len(fam), "test": len(test),
+        "suite": {"scenarios": len(suite), "families": len({s.family for s in suite}), "test": len(test),
                   "train": int(len(ytr)), "cal": int(len(yca)), "note": "synthetic suite; see bench/suite.py"},
         "systems": [{"system": s["system"], **s["metrics"]} for s in systems],
         "calibration": calib, "coefficients": coef, "pareto": pareto,
@@ -381,6 +394,8 @@ def plots(res: dict, p_cal: np.ndarray, yte: np.ndarray) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    with keep_model_on_failure():
+        main()
     if "--quick" not in sys.argv:
-        multi_seed()
+        with keep_model_on_failure():   # a failed robustness run keeps the seed-0 model main() just wrote
+            multi_seed()

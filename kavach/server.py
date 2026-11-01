@@ -15,13 +15,16 @@ Endpoints
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+import jwt
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
+from . import auth
 from .environment import Environment
 from .gateway import Kavach
 from .models import ToolCall
@@ -31,7 +34,24 @@ ROOT = Path(__file__).resolve().parent
 env = Environment(tempfile.mkdtemp(prefix="kavach-"))
 gw = Kavach(env)
 app = FastAPI(title="KAVACH guardrail", version="0.1")
-_mcp_task: dict[str, str] = {}
+_mcp_task: dict[tuple[str, str], str] = {}
+AUTH_SECRET = os.environ.get(auth.SECRET_ENV)     # unset = dev mode (role from the request, receipts say so)
+
+
+def caller(authorization: str | None = Header(None)) -> dict | None:
+    """Verified {sub, role} when auth is on; None in dev mode."""
+    if not AUTH_SECRET:
+        return None
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "missing bearer token")
+    try:
+        return auth.verify(authorization[len("Bearer "):], AUTH_SECRET)
+    except jwt.PyJWTError as e:
+        raise HTTPException(401, f"invalid token: {e}")
+
+
+def _identity(who: dict | None, user: str, role: str) -> tuple[str, str, bool]:
+    return (who["sub"], who["role"], True) if who else (user, role, False)
 
 
 class CheckIn(BaseModel):
@@ -65,8 +85,9 @@ def index():
 
 
 @app.post("/api/v1/check")
-def check(body: CheckIn):
-    tid, _ = gw.start_task(body.user_id, body.role, body.user_request, body.env)
+def check(body: CheckIn, who: dict | None = Depends(caller)):
+    user, role, authed = _identity(who, body.user_id, body.role)
+    tid, _ = gw.start_task(user, role, body.user_request, body.env, authenticated=authed)
     for c in body.context:
         spec = gw.registry.get(c.get("tool", ""))
         if spec:
@@ -78,8 +99,9 @@ def check(body: CheckIn):
 
 
 @app.post("/api/v1/plan")
-def plan(body: PlanIn):
-    _, report = gw.start_task(body.user_id, body.role, body.user_request, plan=body.plan)
+def plan(body: PlanIn, who: dict | None = Depends(caller)):
+    user, role, authed = _identity(who, body.user_id, body.role)
+    _, report = gw.start_task(user, role, body.user_request, plan=body.plan, authenticated=authed)
     return report
 
 
@@ -88,7 +110,7 @@ def scenarios():
     return [{"id": k, "title": v["title"], "request": v["request"], "user": v["user"]} for k, v in SCENARIOS.items()]
 
 
-@app.post("/api/demo/{name}")
+@app.post("/api/demo/{name}", dependencies=[Depends(caller)])
 def demo(name: str, reset: bool = True):
     sc = SCENARIOS.get(name)
     if sc is None:
@@ -109,27 +131,28 @@ def demo(name: str, reset: bool = True):
             "state": {"tables": env.table_counts(), "outbox": len(env.outbox), "ledger": len(env.ledger)}}
 
 
-@app.get("/api/hitl")
+@app.get("/api/hitl", dependencies=[Depends(caller)])
 def hitl_pending():
     return gw.hitl.pending()
 
 
 @app.post("/api/hitl/{hid}")
-def hitl_resolve(hid: str, body: HitlIn):
+def hitl_resolve(hid: str, body: HitlIn, who: dict | None = Depends(caller)):
+    approver = who["sub"] if who else body.approver     # four-eyes needs a verified approver identity
     try:
-        return gw.resolve_hitl(hid, body.approver, body.approve, body.mode)
+        return gw.resolve_hitl(hid, approver, body.approve, body.mode)
     except PermissionError as e:
         raise HTTPException(403, str(e))
     except (ValueError, KeyError) as e:
         raise HTTPException(409, str(e))
 
 
-@app.post("/api/undo/{rid}")
+@app.post("/api/undo/{rid}", dependencies=[Depends(caller)])
 def undo(rid: str):
     return gw.undo_action(rid)
 
 
-@app.get("/api/receipts")
+@app.get("/api/receipts", dependencies=[Depends(caller)])
 def receipts(limit: int = 50):
     return gw.receipts.items[-limit:]
 
@@ -139,7 +162,7 @@ def verify():
     return gw.receipts.verify()
 
 
-@app.get("/api/state")
+@app.get("/api/state", dependencies=[Depends(caller)])
 def state():
     return {"tables": env.table_counts(), "outbox": env.outbox[-5:], "ledger": env.ledger[-5:],
             "risk_model": gw.risk.source, "c_block": gw.cfg.c_block, "policy": gw.policy.version,
@@ -166,15 +189,16 @@ def bench_file(name: str):
 
 # ---------------------------------------------------------------- MCP-style JSON-RPC front door
 @app.post("/mcp")
-def mcp(rpc: dict):
+def mcp(rpc: dict, who: dict | None = Depends(caller)):
     """Minimal MCP JSON-RPC: initialize, tools/list, tools/call. Every tools/call goes through the gateway.
     The user's request is passed once via params._meta['kavach/userRequest'] (session-scoped)."""
     mid, method, params = rpc.get("id"), rpc.get("method"), rpc.get("params", {}) or {}
     meta = params.get("_meta", {}) or {}
-    session = meta.get("kavach/session", "default")
+    session = (who["sub"] if who else "", meta.get("kavach/session", "default"))   # a caller can't reuse another's session
     if method == "initialize":
-        tid, _ = gw.start_task(meta.get("kavach/user", "mcp-user"), meta.get("kavach/role", "support"),
-                               meta.get("kavach/userRequest", ""), meta.get("kavach/env", "prod"))
+        user, role, authed = _identity(who, meta.get("kavach/user", "mcp-user"), meta.get("kavach/role", "support"))
+        tid, _ = gw.start_task(user, role, meta.get("kavach/userRequest", ""), meta.get("kavach/env", "prod"),
+                               authenticated=authed)
         _mcp_task[session] = tid
         return {"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": "2025-06-18",
                 "serverInfo": {"name": "kavach-gateway", "version": "0.1"}, "capabilities": {"tools": {}}}}

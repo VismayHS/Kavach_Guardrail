@@ -10,6 +10,8 @@ one feature (and can only raise scrutiny) and writes the explanation.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -75,9 +77,9 @@ class Kavach:
 
     # ------------------------------------------------------------------ task lifecycle
     def start_task(self, user_id: str, role: str, request: str, env: str = "prod",
-                   plan: list[dict] | None = None) -> tuple[str, dict | None]:
+                   plan: list[dict] | None = None, authenticated: bool = False) -> tuple[str, dict | None]:
         tid = "task-" + uuid.uuid4().hex[:6]
-        ctx = TaskContext(tid, Principal(user_id, role), request, env, plan=plan)
+        ctx = TaskContext(tid, Principal(user_id, role, authenticated=authenticated), request, env, plan=plan)
         task = Task(ctx)
         task.prov.register_user(request)
         self.tasks[tid] = task
@@ -115,7 +117,9 @@ class Kavach:
 
         # [4] deterministic gates
         staged = {"rows_affected": effect.magnitude.get("rows_affected", 0) if effect else 0,
-                  "payees": self.env.payees, "freeze": self.env.change_freeze}
+                  "payees": self.env.payees, "freeze": self.env.change_freeze,
+                  "sql": {k: effect.magnitude.get(k) for k in ("writes", "ddl", "sql_ops")} if effect else {},
+                  "private_seen": task.prov.private_seen, "untrusted_seen": task.prov.untrusted_seen}
         gates = self.policy.evaluate(ctx, call, spec, self.registry, labels, staged)
         if effect and effect.magnitude.get("inside_workspace") is False:
             gates.append(GateResult("R12", "DENY", "Path escapes the agent workspace."))
@@ -154,9 +158,18 @@ class Kavach:
             self.pending_calls[d.hitl_id] = (task_id, call)
             dd["hitl_id"] = d.hitl_id
         rec = self.receipts.append({"type": "decision", "task_id": task_id, "principal": ctx.principal.user_id,
-                                    "request": ctx.user_request, "decision": dd})
+                                    "authenticated": ctx.principal.authenticated, "request": ctx.user_request,
+                                    "decision": self._for_receipt(dd, task.prov)})
         d.receipt_id = rec["id"]
         return d
+
+    @staticmethod
+    def _for_receipt(dd: dict, prov: ProvenanceTracker) -> dict:
+        """What the receipt keeps: PII that came from private data is masked; a digest pins the full arguments."""
+        safe = json.loads(prov.mask(json.dumps(dd, default=str)))
+        safe["call"]["args_sha256"] = hashlib.sha256(
+            json.dumps(dd["call"]["args"], sort_keys=True, default=str).encode()).hexdigest()
+        return safe
 
     def _decide(self, ctx, spec, gates, floor, effect, risk):
         if floor == "DENY":
@@ -250,7 +263,7 @@ class Kavach:
                 d.result = {"rolled_back": True, "reason": "actual effect diverged from sandbox prediction"}
         task.prov.register_output(d.call.tool, result, spec.output_trust, spec.output_conf)
         self.receipts.append({"type": "execution", "task_id": task_id, "decision_receipt": d.receipt_id,
-                              "result_preview": str(d.result)[:200]})
+                              "result_preview": task.prov.mask(str(d.result))[:200]})   # mask before cutting
         return d
 
     def run(self, task_id: str, call: ToolCall) -> Decision:

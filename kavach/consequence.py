@@ -10,15 +10,12 @@ The result is a measured/predicted blast radius and a harm magnitude H in [0,1].
 from __future__ import annotations
 
 import math
-import re
 import time
 
 from .environment import INTERNAL_DOMAIN, Environment
 from .manifest import ToolSpec
 from .models import Effect, Label, Reversibility, TaskContext, ToolCall
-
-WHERE = re.compile(r"\bWHERE\b", re.I)
-TABLE = re.compile(r"\b(?:FROM|UPDATE|INTO|TABLE)\s+([A-Za-z_]+)", re.I)
+from .sql import classify
 
 
 def harm_from(raw: float) -> float:
@@ -82,7 +79,8 @@ class ConsequenceEngine:
     def _stage_sql(self, sql: str, prod: float) -> Effect:
         clone = self.env.db_copy()
         before = self.env.table_counts(clone)
-        ddl = bool(re.match(r"^\s*(DROP|TRUNCATE|ALTER)", sql, re.I))
+        sq = classify(clone, sql)
+        ddl = sq["ddl"]
         try:
             cur = clone.execute(sql)
             rows = max(cur.rowcount, 0)
@@ -93,30 +91,35 @@ class ConsequenceEngine:
         dropped = [t for t in before if t not in after]
         lost = sum(before[t] for t in dropped)
         rows_total = rows + lost
-        tables = sorted({m.group(1).lower() for m in TABLE.finditer(sql)})
+        tables = sq["tables"]
         pii_rows = rows_total if "customers" in tables else 0
         deleted = sum(max(0, before[t] - after.get(t, 0)) for t in before)
         raw = (rows_total * 0.02 + pii_rows * 0.01 + (20.0 if ddl else 0.0)) * prod
-        no_where = bool(re.match(r"^\s*(UPDATE|DELETE)", sql, re.I)) and not WHERE.search(sql)
+        no_where = sq["no_where"]
         clone.close()
         summary = (f"Sandbox run: {rows_total} rows changed in {', '.join(tables) or '?'}"
                    + (f" (tables dropped: {', '.join(dropped)})" if dropped else "")
                    + (", no WHERE clause" if no_where else "") + "." if err is None else f"SQL error in sandbox: {err}")
         return Effect("sandbox", Reversibility.REVERSIBLE,
                       {"rows_affected": rows_total, "rows_deleted": deleted, "tables": tables, "no_where": no_where,
-                       "ddl": ddl, "pii_rows": pii_rows, "error": err, "before": before, "after": after},
+                       "ddl": ddl, "writes": sq["writes"], "sql_ops": sq["ops"], "pii_rows": pii_rows, "error": err,
+                       "before": before, "after": after},
                       harm_from(raw), summary, safeguard="snapshot+undo")
 
     def _stage_select(self, sql: str) -> Effect:
         clone = self.env.db_copy()
+        sq = classify(clone, sql)
+        clone.execute("PRAGMA query_only = ON")      # a "read" that writes fails here, not in production
         try:
             n = len(clone.execute(sql).fetchmany(10000))
             err = None
         except Exception as e:
             n, err = 0, str(e)
         clone.close()
-        pii = n if re.search(r"\bcustomers\b", sql, re.I) else 0
-        return Effect("sandbox", Reversibility.IDEMPOTENT, {"rows_returned": n, "pii_rows_read": pii, "error": err},
+        pii = n if "customers" in sq["tables"] else 0
+        return Effect("sandbox", Reversibility.IDEMPOTENT,
+                      {"rows_returned": n, "pii_rows_read": pii, "error": err,
+                       "writes": sq["writes"], "ddl": sq["ddl"], "sql_ops": sq["ops"]},
                       harm_from(pii * 0.005), f"Read-only query returns {n} rows"
                       + (f" ({pii} customer records enter the agent context)" if pii else "") + ".")
 

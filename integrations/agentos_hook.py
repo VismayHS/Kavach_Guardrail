@@ -23,7 +23,8 @@ config.yaml (agent):
 
 fail_policy must be set to closed: AgentOS defaults hooks to open.
 
-KAVACH_URL defaults to http://localhost:8000. Stdlib only, so it runs in AgentOS's hook sandbox.
+KAVACH_URL defaults to http://localhost:8000. If KAVACH runs with KAVACH_AUTH_SECRET set, put a token from
+`python -m kavach.auth mint <user> <role>` in KAVACH_TOKEN. Stdlib only, so it runs in AgentOS's hook sandbox.
 """
 from __future__ import annotations
 
@@ -92,8 +93,10 @@ def check() -> dict:
             "user_id": os.environ.get("IAF_USER_ID") or "agentos-user",
             "role": os.environ.get("KAVACH_ROLE", "support"), "env": os.environ.get("KAVACH_ENV", "prod"),
             "context": context}
-    req = urllib.request.Request(f"{KAVACH_URL}/api/v1/check", data=json.dumps(body).encode(),
-                                 headers={"Content-Type": "application/json"})
+    headers = {"Content-Type": "application/json"}
+    if os.environ.get("KAVACH_TOKEN"):           # when KAVACH runs with auth, the role comes from this token
+        headers["Authorization"] = "Bearer " + os.environ["KAVACH_TOKEN"]
+    req = urllib.request.Request(f"{KAVACH_URL}/api/v1/check", data=json.dumps(body).encode(), headers=headers)
     with urllib.request.urlopen(req, timeout=4) as r:
         return json.loads(r.read())
 

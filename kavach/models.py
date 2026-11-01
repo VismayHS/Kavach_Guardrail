@@ -74,6 +74,7 @@ class Principal:
     user_id: str
     role: str                     # e.g. analyst, support, admin
     department: str = "ops"
+    authenticated: bool = False   # True only when user and role came from a verified token
 
 
 @dataclass
