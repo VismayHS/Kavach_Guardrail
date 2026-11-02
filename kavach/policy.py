@@ -280,6 +280,10 @@ class PolicyEngine:
             if any(s in p for s in self.cfg["sensitive_paths"]):
                 add("R9", "DENY", f"'{p}' is a credential file; reading it into an agent context is blocked.")
 
+        # R34 shell commands (E10): read and dry-run in a sandbox by the consequence engine
+        if m == "shell":
+            self._shell_rule(st.get("effect") or {}, add)
+
         # R32 raw credentials in the arguments: a key passed through the agent (use {{secret:NAME}} instead)
         from .secret_broker import raw_credentials
         creds = raw_credentials(call.args)
@@ -291,6 +295,48 @@ class PolicyEngine:
         # R28 canary records (last, so a provenance rule stays the stated reason and the canary is extra evidence)
         self._canary_rule(call, spec, add)
         return out
+
+    def _shell_rule(self, e: dict, add) -> None:
+        """R34: a shell command is refused for what it reaches, and goes to a person for what it might do."""
+        deny = []
+        if e.get("decode_and_run"):
+            deny.append(f"runs code it downloads or decodes ({', '.join(e['decode_and_run'][:2])})")
+        if e.get("privilege"):
+            deny.append(f"asks for more privileges ({', '.join(e['privilege'][:2])})")
+        if e.get("persistence"):
+            deny.append(f"installs something that outlives the task ({', '.join(e['persistence'][:2])})")
+        if e.get("secrets") and e.get("network"):
+            deny.append("reads secrets and reaches the network in the same command")
+        if e.get("outside_writes"):
+            deny.append(f"writes or deletes outside the workspace ({', '.join(e['outside_writes'][:2])})")
+        ev = {k: e.get(k) for k in ("programs", "network", "hosts", "secrets", "outside_writes", "decode_and_run")}
+        if deny:
+            add("R34", "DENY", "The command " + "; ".join(deny) + ".", **ev)
+            return
+        ask, dry = [], e.get("dry_run") or {}
+        files = dry.get("files") or {}
+        if e.get("network"):
+            ask.append(f"reaches the network ({', '.join(e['network'][:2])}"
+                       + (f" to {', '.join(e['hosts'][:3])}" if e.get("hosts") else "") + ")")
+        if e.get("secrets"):
+            ask.append(f"reads secrets ({', '.join(e['secrets'][:2])})")
+        n_del = len(files.get("deleted", []))
+        if n_del > self.cfg["limits"].get("shell_delete_max", 5):
+            ask.append(f"deleted {n_del} files in the dry run")
+        if dry.get("timed_out"):
+            ask.append("did not finish within the dry run's time limit")
+        if dry.get("network_attempted") and not e.get("network"):
+            ask.append("tried to reach the network in the dry run, though nothing in the command says so")
+        if e.get("parse_error"):
+            ask.append(f"could not be read ({e['parse_error']})")
+        if e.get("destructive") and not dry:
+            ask.append("deletes or rewrites files and was not dry-run")
+        if ask:
+            add("R34", "REQUIRE_APPROVAL", "The command " + "; ".join(ask) + ".", **ev)
+        else:
+            add("R34", "PASS", "Read the command: no network, secrets, privileges or writes outside the workspace"
+                + (f"; the dry run changed {sum(len(v) for v in files.values())} file(s) in the workspace." if files
+                   else "."))
 
     def _finance_rules(self, ctx: TaskContext, call: ToolCall, spec: ToolSpec, labels: dict[str, Label], staged: dict,
                        add) -> None:

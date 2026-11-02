@@ -27,7 +27,7 @@ class ToolSpec:
     data_args: list[str] = field(default_factory=list)      # args that carry payload data
     output_trust: str = "derived"                # trust label of the tool's output (ingress => untrusted)
     output_conf: Conf = Conf.INTERNAL
-    staging: str = "none"                        # sqlite | fs | none
+    staging: str = "none"                        # sqlite | fs | sandbox (E10: shell dry run) | none
     safeguard: str | None = None                 # safe transform the gateway applies (hold/recall-window/park:
                                                  # a window it can still cancel; reversibility is the tool's own)
     # What KAVACH knows how to stage and which rules apply (E3): one of EFFECT_MODELS. Any tool can declare one, and
@@ -61,6 +61,7 @@ EFFECT_MODELS = {
     "ap_propose": ("invoice_id",), "ap_release": ("invoice_id",), "invoice_read": ("invoice_id",),
     "bank_change": ("vendor_id", "iban"),
     "ledger_post": ("doc_type", "amount", "gl_account", "text"),
+    "shell": ("command",),
 }
 # KAVACH's own tools (and anything registered under these names) keep their model without declaring it
 LEGACY_MODELS = {"crm.execute": "sql_write", "crm.query": "sql_read", "files.write": "file_write",

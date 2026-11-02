@@ -111,6 +111,8 @@ class ConsequenceEngine:
                          harm_from(amt / 2000.0), f"Post a {A('doc_type')} document of EUR {amt:,.0f} to GL account "
                          f"{A('gl_account')}; " + (after or "undoing a posted document needs a reversal entry") + ".",
                          safeguard=spec.safeguard)
+        elif m == "shell":
+            eff = self._stage_shell(str(A("command", "")), prod, spec)
         elif spec.amount_arg:  # money a manifest describes (e.g. a bank's send_money): harm grows with the amount
             try:
                 amt = abs(float(a.get(spec.amount_arg, 0) or 0))
@@ -235,6 +237,40 @@ class ConsequenceEngine:
                        "writes": sq["writes"], "ddl": sq["ddl"], "sql_ops": sq["ops"]},
                       harm_from(pii * 0.005), f"Read-only query returns {n} rows"
                       + (f" ({pii} customer records enter the agent context)" if pii else "") + ".")
+
+    def _stage_shell(self, command: str, prod: float, spec: ToolSpec) -> Effect:
+        """E10: read the command, then (for commands KAVACH runs itself) dry-run it in the sandbox on the workspace
+        and measure what it changes. A command the reading already refuses is not run at all, not even dry."""
+        from .shell import analyze
+        a = analyze(command)
+        refused = a["decode_and_run"] or a["privilege"] or a["persistence"] or a["outside_writes"] or \
+            (a["secrets"] and a["network"])
+        sandbox = getattr(self.env, "shell", None)
+        dry = None
+        if spec.staging == "sandbox" and sandbox is not None and not refused and sandbox.available():
+            dry = sandbox.stage(command, self.env.workspace)
+        files = (dry or {}).get("files") or {}
+        raw = (len(files.get("deleted", [])) * 1.0 + len(files.get("changed", [])) * 0.3
+               + len(files.get("created", [])) * 0.1 + (8.0 if a["network"] else 0) + (10.0 if a["secrets"] else 0)
+               + (15.0 if refused else 0) + (2.0 if a["destructive"] and dry is None else 0)) * prod
+        contained = dry is not None and not a["network"] and not refused
+        what = (f"dry run in the sandbox: exit {dry['exit']}, {len(files.get('created', []))} created, "
+                f"{len(files.get('changed', []))} changed, {len(files.get('deleted', []))} deleted"
+                + (" (TIMED OUT)" if dry["timed_out"] else "") + (" (tried the network)" if dry["network_attempted"]
+                                                                   else "")) if dry else (
+            "not dry-run (" + ("refused on reading" if refused else "no sandbox here" if spec.staging == "sandbox"
+                              else "the agent runs it itself") + ")")
+        reach = ", ".join(x for x in (("network: " + ", ".join(a["network"][:2])) if a["network"] else "",
+                                      ("secrets: " + ", ".join(a["secrets"][:2])) if a["secrets"] else "") if x)
+        changes = any(files.values())
+        return Effect("sandbox" if dry else "static",
+                      (Reversibility.REVERSIBLE if changes else Reversibility.IDEMPOTENT) if contained
+                      else Reversibility.IRREVERSIBLE,
+                      {**a, "command": command[:500], "dry_run": dry}, harm_from(raw),
+                      f"Shell: {', '.join(a['programs'][:5]) or '?'}; {what}" + (f"; reaches {reach}" if reach else "")
+                      + ("; workspace files snapshotted first." if contained else "."),
+                      # nothing changed in the dry run: nothing to snapshot (the real run still applies only its diff)
+                      safeguard=spec.safeguard if contained and changes else None)
 
     def _stage_file(self, delete: bool, path: str, content, prod: float) -> Effect:
         try:

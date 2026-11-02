@@ -48,6 +48,7 @@ class Environment:
         self.epoch = 0             # counts resets: an undo from before a reset must not touch the new world
         self.on_hold: list = []    # callbacks(hold) when a hold is created, settles or is cancelled (E6: persisted)
         self.mailer = None         # E7: a real mail connector (kavach/connectors.py); None = the simulated outbox only
+        self.shell = None          # E10: kavach.shell.DockerSandbox; None = shell commands are never run here
         self.reset()
 
     # ------------------------------------------------------------------ setup
@@ -184,6 +185,9 @@ class Environment:
 
     # ------------------------------------------------------------------ row-level undo (A7)
     def _file_images(self, tool: str, args: dict) -> dict:
+        if tool == "shell.run":              # E10: a command can touch any file: keep them all, so Undo restores them
+            root = self.workspace.resolve()
+            return {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
         if not tool.startswith("files.") or "path" not in args:
             return {}
         try:
@@ -420,6 +424,12 @@ class Environment:
                 self.db.commit()
             return True
 
+    def shell_run(self, command: str) -> dict:
+        """E10: run an approved command in the sandbox (no network); never on this host."""
+        if self.shell is None or not self.shell.available():
+            return {"error": "no shell sandbox on this server (Docker); KAVACH never runs commands on its own host"}
+        return self.shell.run(command, self.workspace)
+
     def vendor_update_bank(self, vendor_id: str, iban: str) -> dict:
         with self.lock:
             cur = self.db.execute("UPDATE vendors SET iban = ?, bank_verified = 0 WHERE id = ?", (iban, vendor_id))
@@ -454,6 +464,6 @@ class Environment:
             "files.read": self.files_read, "files.write": self.files_write, "files.delete": self.files_delete,
             "payments.transfer": self.payments_transfer, "payments.refund": self.payments_refund,
             "web.fetch": self.web_fetch, "invoice.read": self.invoice_read,
-            "vendor.update_bank": self.vendor_update_bank, "sap.post": self.sap_post,
+            "vendor.update_bank": self.vendor_update_bank, "sap.post": self.sap_post, "shell.run": self.shell_run,
         }[tool]
         return fn(**args, **extra)

@@ -46,6 +46,7 @@ limits:
   bulk_rows_approval: 50         # a single statement touching more rows than this needs approval in prod
   pii_external_max: 1            # max PII records that may leave the company without approval
   url_payload_max: 200           # query+fragment characters a URL to an unknown host may carry
+  shell_delete_max: 5            # files a shell command may delete (in its dry run) before a person decides (R34)
 
 # Approvals (F8): how long a request waits (seconds) before it goes one step up the chain; after the last step it
 # expires, denied. An empty chain means expiry is the first deadline.
@@ -119,4 +120,5 @@ rules:
   R31: "Confirmation of Payee: a new bank account registered to someone other than the vendor needs approval."
   R32: "Raw credentials (API keys, tokens, private keys) never pass through an agent's arguments; tools get them from the secrets broker."
   R33: "A delegated agent can use only the tools it was delegated, within the user's role: authority only narrows down a delegation chain."
+  R34: "Shell commands are read and dry-run in a sandbox with no network: decode-and-run, privilege, persistence, secrets plus network, and writes outside the workspace are refused; network, secrets and mass deletes go to a person."
   R29: "If a classifier flagged injected instructions in content the task read, state-changing actions need approval unless every target was typed by the user (a model signal: it escalates, never blocks)."
