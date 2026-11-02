@@ -11,6 +11,7 @@ import shutil
 import sqlite3
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,7 @@ class Environment:
         self.n_customers = n_customers
         self.canaries = canaries or {}          # planted records (R28); none unless asked for
         self.epoch = 0             # counts resets: an undo from before a reset must not touch the new world
+        self.on_hold: list = []    # callbacks(hold) when a hold is created, settles or is cancelled (E6: persisted)
         self.reset()
 
     # ------------------------------------------------------------------ setup
@@ -362,10 +364,19 @@ class Environment:
 
     # ---------------------------------------------------------------- windows: hold, recall, park
     def _hold(self, kind: str, wait_s: float, **item) -> dict:
-        h = {"id": f"hold-{len(self.holds) + 1}", "kind": kind, "status": "held",
+        # ids are unique across resets and restarts (E6: holds are persisted and outlive the process)
+        h = {"id": f"hold-{uuid.uuid4().hex[:8]}", "kind": kind, "status": "held",
              "settles_at": time.time() + wait_s, **item}
         self.holds.append(h)
+        self._held_changed(h)
         return h
+
+    def _held_changed(self, h: dict) -> None:
+        for cb in list(self.on_hold):
+            try:
+                cb(h)
+            except Exception:
+                pass
 
     def settle_due(self, now: float | None = None) -> list[str]:
         """Holds whose window has passed go out: payments to the ledger, emails to the outbox."""
@@ -375,6 +386,7 @@ class Environment:
             for h in done:
                 h["status"] = "settled"
                 h["ref"] = (self._book(h["tx"]) if h["kind"] == "payment" else self._deliver(h["msg"]))["id"]
+                self._held_changed(h)
             return [h["id"] for h in done]
 
     def cancel(self, ref: str) -> bool:
@@ -389,6 +401,7 @@ class Environment:
             if h is None:
                 return False
             h["status"] = "cancelled"
+            self._held_changed(h)
             inv = h.get("tx", {}).get("invoice")
             if inv:
                 self.db.execute("UPDATE ap_invoices SET status = ? WHERE id = ?", (h["prev_status"], inv))

@@ -34,6 +34,7 @@ class ApprovalQueue:
         self.labels: list[dict] = []          # human feedback -> recalibration data
         self.lock = threading.Lock()
         self.on_event: list = []              # callbacks(event dict): the gateway receipts escalations
+        self.on_label: list = []              # callbacks(label) for each human decision (E5 persists, E11 learns)
 
     def submit(self, task_id: str, requester: str, decision: dict, four_eyes: bool,
                quorum: dict[str, int] | None = None) -> str:
@@ -117,6 +118,14 @@ class ApprovalQueue:
             item.update(status=("approved" if approve else "denied"), approver=approver, mode=mode,
                         note=note, resolved=time.time(),
                         wait_s=round(time.time() - item["created"], 1))
-            self.labels.append({"features": item["decision"].get("risk", {}) and item["decision"]["risk"]["features"],
-                                "label_unsafe": 0 if approve else 1, "tool": item["decision"]["call"]["tool"]})
-            return item
+            lab = {"features": item["decision"].get("risk", {}) and item["decision"]["risk"]["features"],
+                   "label_unsafe": 0 if approve else 1, "tool": item["decision"]["call"]["tool"],
+                   "p_harm": (item["decision"].get("risk") or {}).get("p_harm"), "approver": approver,
+                   "wait_s": item["wait_s"], "hitl": hid}
+            self.labels.append(lab)
+        for cb in list(self.on_label):
+            try:
+                cb(lab)
+            except Exception:
+                pass
+        return item
