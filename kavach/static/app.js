@@ -648,7 +648,7 @@ function waitingRow(h) {
   const sub = pay ? `To ${h.tx.to}` : h.msg.subject;
   return `<div class="row">${stamp('queued', pay ? 'Held' : 'Queued')}<div class="row-main"><div class="row-title">${esc(title)}</div><div class="row-sub">${esc(sub)}</div></div>
     <span class="meta">Goes out in <span class="countdown" data-until="${h.settles_at}"></span></span>
-    ${h.receipt ? `<div class="hold-acts"><button class="btn danger sm" type="button" data-act="cancel" data-r="${esc(h.receipt)}" data-what="${esc(title)}">${icon('ban')}${pay ? 'Cancel payment' : 'Recall email'}</button>
+    ${h.receipt ? `<div class="hold-acts"><button class="btn danger sm" type="button" data-act="cancel" data-r="${esc(h.receipt)}" data-what="${esc(title)}">${icon('ban')}${pay ? 'Cancel payment' : 'Cancel email'}</button>
       <button class="btn sm" type="button" data-act="send-now" data-r="${esc(h.receipt)}" data-what="${esc(title)}" title="Manual override: skip the rest of the wait">${icon('send')}${pay ? 'Pay now' : 'Send now'}</button></div>` : ''}</div>`;
 }
 // what the mail server said: it took it, it didn't, or the line broke mid-send (it may have arrived)
