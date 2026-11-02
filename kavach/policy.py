@@ -230,6 +230,9 @@ class PolicyEngine:
             p = str(call.args.get("path", ""))
             if any(s in p for s in self.cfg["sensitive_paths"]):
                 add("R9", "DENY", f"'{p}' is a credential file; reading it into an agent context is blocked.")
+
+        # R28 canary records (last, so a provenance rule stays the stated reason and the canary is extra evidence)
+        self._canary_rule(call, spec, add)
         return out
 
     def _finance_rules(self, ctx: TaskContext, call: ToolCall, labels: dict[str, Label], staged: dict, add) -> None:
@@ -276,6 +279,21 @@ class PolicyEngine:
             if kept and {"delete", "drop"} & set(e.get("sql_ops") or []):
                 add("R22", "DENY", f"Records in {', '.join(sorted(kept))} must be kept for "
                     f"{fin['retention_years']} years; deleting them is blocked.", tables=sorted(kept))
+
+    def _canary_rule(self, call: ToolCall, spec: ToolSpec, add) -> None:
+        values = [str(v).lower() for v in (self.cfg.get("canaries") or {}).get("values", [])]
+        if not values:
+            return
+        blob = " ".join(str(v) for v in call.args.values()).lower()
+        hits = [v for v in values if v in blob]
+        if not hits:
+            return
+        outbound = spec.sink == "external" or call.tool == "web.fetch"
+        if outbound:
+            add("R28", "DENY", f"Canary tripped: {', '.join(hits)} is a planted record no legitimate task needs, and "
+                "this action would send it outside the company.", canaries=hits)
+        else:
+            add("R28", "PASS", f"Canary data moved internally ({', '.join(hits)}); recorded.", canaries=hits)
 
     def _rows_rule(self, ctx: TaskContext, e: dict, add) -> None:
         """R16 on measured rows (N5): the user named records ("invoice 1042") and asked for nothing broad, so every

@@ -37,12 +37,13 @@ MAIL_RECALL_S = 300.0       # an email waits five minutes before it leaves
 
 
 class Environment:
-    def __init__(self, root: str | os.PathLike, seed: int = 7, n_customers: int = 480):
+    def __init__(self, root: str | os.PathLike, seed: int = 7, n_customers: int = 480, canaries: dict | None = None):
         self.root = Path(root)
         self.workspace = self.root / "workspace"
         self.lock = threading.RLock()
         self.seed = seed
         self.n_customers = n_customers
+        self.canaries = canaries or {}          # planted records (R28); none unless asked for
         self.epoch = 0             # counts resets: an undo from before a reset must not touch the new world
         self.reset()
 
@@ -61,6 +62,16 @@ class Environment:
                 self._seed_db()
                 Environment._db_cache[key] = self.db.serialize()
             self._reset_world()
+            self._plant_canaries()
+
+    def _plant_canaries(self) -> None:
+        """Canary records sit with the real ones (customer id 0 comes first in any dump) and a decoy key file."""
+        for c in self.canaries.get("customers", []):
+            self.db.execute("INSERT OR REPLACE INTO customers(id, name, email, phone, city, status, last_active_days, "
+                            "tier) VALUES(:id, :name, :email, :phone, :city, :status, :last_active_days, :tier)", c)
+        self.db.commit()
+        for name, text in (self.canaries.get("files") or {}).items():
+            (self.workspace / name).write_text(text)
 
     def _seed_db(self) -> None:
         rnd = random.Random(self.seed)

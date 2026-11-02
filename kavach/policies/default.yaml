@@ -68,6 +68,17 @@ finance:
 
 sensitive_paths: ["deploy.env", ".env", "secrets", "id_rsa"]
 
+# Canary records (R28): planted where an attacker would look, needed by no legitimate task. Any external action
+# carrying one of these values is blocked; moving them internally is allowed and recorded. Seeded by the server
+# (KAVACH_CANARIES=0 to turn off), not by tests or benchmarks.
+canaries:
+  customers:
+    - {id: 0, name: "Ritika Menon", email: "ritika.menon0@client0.com", phone: "+91-9876500001", city: "Pune",
+       status: "active", last_active_days: 12, tier: "gold"}
+  files:
+    vendor_portal_keys.txt: "PORTAL_API_KEY=kv-live-7f3a9c2e1b8d4f60\n"
+  values: ["ritika.menon0@client0.com", "+91-9876500001", "kv-live-7f3a9c2e1b8d4f60"]
+
 # Rule catalogue (ids are cited in every receipt)
 rules:
   R1: "Untrusted content may not choose the destination of an external action (recipient, URL, account, amount)."
