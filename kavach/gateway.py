@@ -33,7 +33,8 @@ from .receipts import ReceiptLog
 from .risk import RiskModel, featurize
 
 SAFETY_RULES = {"R2", "R9", "R10", "R13", "R16", "R17", "R22", "R23", "R24", "R25", "R26", "R27", "R28", "R29"}
-AUTH_RULES = {"R1", "R3", "R4", "R5", "R6", "R7", "R8", "R11", "R12", "R14", "R15", "R18", "R19", "R20", "R21"}
+AUTH_RULES = {"R1", "R3", "R4", "R5", "R6", "R7", "R8", "R11", "R12", "R14", "R15", "R18", "R19", "R20", "R21",
+              "KILL"}
 
 
 @dataclass
@@ -91,6 +92,7 @@ class Kavach:
         self.undo: dict[str, dict] = {}       # receipt id -> snapshot
         self.recall: dict[str, tuple[int, str]] = {}   # receipt -> (world epoch, held payment / email / SAP doc)
         self.pending_calls: dict[str, tuple[str, ToolCall, Effect | None]] = {}
+        self.kills: dict[str, dict] = {}                # kill switch (F3): id -> {scope, target, by, reason, at}
 
     # ------------------------------------------------------------------ task lifecycle
     def start_task(self, user_id: str, role: str, request: str, env: str = "prod",
@@ -181,12 +183,71 @@ class Kavach:
             task.prov.register_user(request)
             task.ctx.user_request = request
 
+    # ------------------------------------------------------------------ kill switch (F3)
+    KILL_SCOPES = ("global", "user", "role", "task")
+
+    def _matches(self, k: dict, task_id: str) -> bool:
+        ctx = self.tasks[task_id].ctx if task_id in self.tasks else None
+        return (k["scope"] == "global" or (k["scope"] == "task" and k["target"] == task_id)
+                or (ctx is not None and k["scope"] == "user" and k["target"] == ctx.principal.user_id)
+                or (ctx is not None and k["scope"] == "role" and k["target"] == ctx.principal.role))
+
+    def killed(self, task_id: str) -> dict | None:
+        return next((k for k in self.kills.values() if self._matches(k, task_id)), None)
+
+    def kill(self, scope: str, target: str | None, by: str, reason: str = "") -> dict:
+        """Pause agents now (EU AI Act Art. 14(4)(e): immediate interruption). New calls in scope are denied;
+        payments, emails and SAP documents they left waiting are cancelled; their pending approvals are closed."""
+        if scope not in self.KILL_SCOPES or (scope != "global" and not target):
+            raise ValueError(f"scope must be one of {self.KILL_SCOPES}, with a target unless global")
+        kid = "kill-" + uuid.uuid4().hex[:6]
+        k = {"id": kid, "scope": scope, "target": None if scope == "global" else target, "by": by,
+             "reason": reason, "at": time.time()}
+        self.kills[kid] = k
+        in_scope = {t for t in self.tasks if self._matches(k, t)}
+        cancelled = []
+        for rid, (_epoch, ref) in list(self.recall.items()):
+            rec = self.receipts.get(rid)
+            if rec and rec["body"].get("task_id") in in_scope and self.env.cancel(ref):
+                cancelled.append(ref)
+                del self.recall[rid]
+        closed = []
+        for hid, item in self.hitl.items.items():
+            if item["status"] == "pending" and item["task_id"] in in_scope:
+                item.update(status="killed", resolved=time.time(), approver=by)
+                self.pending_calls.pop(hid, None)
+                closed.append(hid)
+        self.receipts.append({"type": "kill", **k, "tasks": sorted(in_scope), "cancelled": cancelled,
+                              "approvals_closed": closed})
+        return {**k, "tasks": len(in_scope), "cancelled": cancelled, "approvals_closed": closed}
+
+    def resume(self, kill_id: str, by: str) -> dict:
+        k = self.kills.pop(kill_id, None)
+        if k is None:
+            raise KeyError(f"no active kill {kill_id}")
+        self.receipts.append({"type": "resume", "kill": kill_id, "by": by})
+        return {"resumed": kill_id, "scope": k["scope"], "target": k["target"]}
+
     # ------------------------------------------------------------------ the decision path
     def check(self, task_id: str, call: ToolCall) -> Decision:
         t0 = time.perf_counter()
         task = self.tasks[task_id]
         ctx = task.ctx
         spec = self.registry.get(call.tool)
+        stop = self.killed(task_id)
+        if stop is not None:                      # paused: nothing in scope runs, not even reads
+            g = GateResult("KILL", "DENY", f"Paused by {stop['by']} ({stop['scope']}"
+                           f"{': ' + stop['target'] if stop['target'] else ''}){': ' + stop['reason'] if stop['reason'] else ''}.",
+                           {"kill": stop["id"]})
+            d = Decision(Verdict.DENY, f"[KILL] {g.message}", call, {}, [g], None, None,
+                         self._scorecard(spec, [g], None, None, {}))
+            d.latency_ms = (time.perf_counter() - t0) * 1000
+            d.explanation = f"DENY: {call.tool}: {g.message} Nothing runs until an operator resumes."
+            rec = self.receipts.append({"type": "decision", "task_id": task_id, "principal": ctx.principal.user_id,
+                                        "authenticated": ctx.principal.authenticated, "request": ctx.user_request,
+                                        "decision": {**d.to_dict(), "explanation": d.explanation}})
+            d.receipt_id = rec["id"]
+            return d
 
         # [2] provenance labels for every argument
         labels: dict[str, Label] = {}
