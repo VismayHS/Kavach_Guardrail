@@ -109,6 +109,15 @@ class ConsequenceEngine:
                          harm_from(amt / 2000.0), f"Post a {a.get('doc_type')} document of EUR {amt:,.0f} to GL account "
                          f"{a.get('gl_account')}; " + (after or "undoing a posted document needs a reversal entry") + ".",
                          safeguard=spec.safeguard)
+        elif spec.amount_arg:  # money a manifest describes (e.g. a bank's send_money): harm grows with the amount
+            try:
+                amt = abs(float(a.get(spec.amount_arg, 0) or 0))
+            except (TypeError, ValueError):
+                amt = 0.0
+            dest = next((str(a[k]) for k in spec.control_args if k != spec.amount_arg and k in a), "?")
+            eff = Effect("predicted", rev, {"amount": amt, "destination": dest}, harm_from(amt / 2000.0),
+                         f"{tool}: {amt:,.2f} to {dest}; " + (after or ("settled payments cannot be reversed"
+                         if rev == Reversibility.IRREVERSIBLE else f"{rev.value}")) + ".", safeguard=spec.safeguard)
         elif spec.effect == "ingress":  # mail.read_inbox, web.fetch
             eff = Effect("static", rev, {"ingress": True}, 0.0,
                          "Read-only fetch; output will be labelled UNTRUSTED for the rest of the task.")

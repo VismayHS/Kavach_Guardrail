@@ -30,6 +30,8 @@ class ToolSpec:
     staging: str = "none"                        # sqlite | fs | none
     safeguard: str | None = None                 # safe transform the gateway applies (hold/recall-window/park:
                                                  # a window it can still cancel; reversibility is the tool's own)
+    amount_arg: str | None = None                # for tools KAVACH has no custom model of: the argument that is money
+    intent_verbs: list[str] = field(default_factory=list)   # words in a request that ask for this kind of action
     # MCP-style hints (readOnlyHint/destructiveHint/openWorldHint) are derived, never trusted from servers
     def mcp_annotations(self) -> dict:
         return {"readOnlyHint": self.effect in ("read", "ingress"),

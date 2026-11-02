@@ -267,3 +267,20 @@ def test_a9_prod_profile_needs_real_secrets():
     p = check_profile({"KAVACH_PROFILE": "prod", "KAVACH_AUTH_SECRET": SECRET, "KAVACH_RECEIPT_KEY": "k" * 40})
     assert p.prod and p.require_tool_hash and not p.demo_endpoints
     assert not check_profile({}).prod
+
+
+# ---------------------------------------------------------------- manifests for tools KAVACH has no custom model of
+def test_a_manifest_amount_argument_gives_a_money_effect(gw):
+    from kavach.manifest import ToolSpec
+    from kavach.models import Reversibility
+    gw.registry.specs["send_money"] = spec = ToolSpec(
+        "send_money", "Sends a transaction to the recipient.", {"recipient": "str", "amount": "float"},
+        ["recipient", "amount"], effect="payment", sink="external", reversibility=Reversibility.IRREVERSIBLE,
+        control_args=["recipient", "amount"], amount_arg="amount")
+    gw.registry.pins["send_money"] = spec.definition_hash()
+    gw.policy.cfg["roles"]["support"].append("send_money")
+    tid, _ = gw.start_task("asha", "support", "Send 50 to GB29NWBK60161331926819.")
+    small = gw.check(tid, ToolCall("send_money", {"recipient": "GB29NWBK60161331926819", "amount": 50}))
+    big = gw.check(tid, ToolCall("send_money", {"recipient": "GB29NWBK60161331926819", "amount": 50000}))
+    assert small.effect.magnitude["amount"] == 50 and big.effect.harm > small.effect.harm
+    assert "GB29NWBK60161331926819" in small.effect.summary
