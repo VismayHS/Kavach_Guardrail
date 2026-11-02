@@ -20,12 +20,20 @@ import time
 import uuid
 
 
+FAST_S = 3.0          # an approval this quick is a click, not a review
+STREAK = 10           # this many approvals in a row without a single denial is a pattern worth a look
+
+
 class ApprovalQueue:
-    def __init__(self, timeout_s: float = 300.0):
+    def __init__(self, timeout_s: float = 300.0, chain: list[str] | None = None):
+        """chain (F8): who an unanswered request goes to next, e.g. ["team_lead", "finance_manager"]. Each SLA
+        period without an answer moves it one step up; only after the last step does it expire (denied)."""
         self.timeout_s = timeout_s
+        self.chain = list(chain or [])
         self.items: dict[str, dict] = {}
         self.labels: list[dict] = []          # human feedback -> recalibration data
         self.lock = threading.Lock()
+        self.on_event: list = []              # callbacks(event dict): the gateway receipts escalations
 
     def submit(self, task_id: str, requester: str, decision: dict, four_eyes: bool,
                quorum: dict[str, int] | None = None) -> str:
@@ -41,12 +49,47 @@ class ApprovalQueue:
         self.expire()
         return [i for i in self.items.values() if i["status"] == "pending"]
 
-    def expire(self) -> None:
-        now = time.time()
+    def expire(self, now: float | None = None) -> None:
+        now = time.time() if now is None else now
+        events = []
         with self.lock:
             for i in self.items.values():
-                if i["status"] == "pending" and now > i["expires"]:
-                    i["status"] = "expired-denied"
+                while i["status"] == "pending" and now > i["expires"]:
+                    level = i.get("level", 0)
+                    if level < len(self.chain):            # SLA missed: route up the chain, not straight to deny
+                        i["level"], i["routed_to"] = level + 1, self.chain[level]
+                        i["expires"] += self.timeout_s
+                        events.append({"type": "approval-escalated", "hitl": i["id"], "to": i["routed_to"],
+                                       "level": i["level"]})
+                    else:
+                        i["status"] = "expired-denied"
+                        events.append({"type": "approval-expired", "hitl": i["id"], "task_id": i["task_id"]})
+        for ev in events:
+            for cb in self.on_event:
+                cb(ev)
+
+    def stats(self) -> dict:
+        """Approval fatigue (F8): per approver, how fast and how uniformly they approve."""
+        by: dict[str, list[dict]] = {}
+        for i in sorted(self.items.values(), key=lambda x: x.get("resolved", 0)):
+            if i.get("approver") and i["status"] in ("approved", "denied"):
+                by.setdefault(i["approver"], []).append(i)
+        out, warnings = {}, []
+        for who, items in by.items():
+            waits = sorted(i.get("wait_s", 0.0) for i in items)
+            approved = [i for i in items if i["status"] == "approved"]
+            fast = sum(1 for i in approved if i.get("wait_s", 0.0) < FAST_S)
+            streak = best = 0
+            for i in items:
+                streak = streak + 1 if i["status"] == "approved" else 0
+                best = max(best, streak)
+            out[who] = {"decisions": len(items), "approved": len(approved), "denied": len(items) - len(approved),
+                        "median_wait_s": waits[len(waits) // 2], "fast_approvals": fast, "longest_approve_streak": best}
+            if len(items) >= 5 and fast / max(1, len(approved)) > 0.5:
+                warnings.append(f"{who}: {fast} of {len(approved)} approvals took under {FAST_S:.0f} s")
+            if best >= STREAK:
+                warnings.append(f"{who}: {best} approvals in a row without a single denial")
+        return {"approvers": out, "warnings": warnings, "pending": sum(i["status"] == "pending" for i in self.items.values())}
 
     def resolve(self, hid: str, approver: str, approve: bool, mode: str = "execute", note: str = "",
                 approver_role: str | None = None) -> dict:
