@@ -17,14 +17,36 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from urllib.parse import unquote
+from urllib.parse import ParseResult, unquote, urlparse
 
 from .addresses import domain_of, parse_recipients
 from .models import Conf, Label, Trust
 
 URL_SEP = re.compile(r"[/_\-+=&?#;:~]")
 EMAIL =re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-URL = re.compile(r"https?://[^\s\"'<>)]+")
+# with a scheme, or bare from "www." (how people, and AgentDojo's slack suite, write addresses in text)
+URL = re.compile(r"https?://[^\s\"'<>)]+|(?<![\w./@-])www\.[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:/[^\s\"'<>)]*)?", re.I)
+LINK = re.compile(r"(?:[a-z0-9-]+\.)+[a-z]{2,24}(?:[/?#]\S*)?")      # a web address entity, as canon_url writes it
+_SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*://", re.I)
+
+
+def canon_url(u: str) -> str:
+    """One spelling per web address, so lineage matches it however it was written: no scheme, lower-case host, no
+    trailing slash or sentence punctuation. https://www.Example.com/a/ and www.example.com/a. are one value."""
+    s = _SCHEME.sub("", u.strip().rstrip(".,;:!?"))
+    host, sep, rest = s.partition("/")
+    rest = rest.rstrip("/")
+    return host.lower() + (sep + rest if rest else "")
+
+
+def web_parts(u: str) -> ParseResult:
+    """urlparse that also reads a bare address: urlparse('www.x.io/a') has no host at all."""
+    u = str(u).strip()
+    return urlparse(u if _SCHEME.match(u) else "http://" + u)
+
+
+def is_link(entity: str) -> bool:
+    return bool(LINK.fullmatch(entity))
 ACCOUNT = re.compile(r"\bACC-\d{2}-\d{4}\b")
 PHONE = re.compile(r"\+\d{1,3}[- ]?\d{6,12}\b")                                          # +91-9798935572
 IBAN = re.compile(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,3})?\b")   # spaced or not
@@ -175,7 +197,7 @@ def _entities(text: str) -> set[str]:
     out |= {"voter:" + m for m in VOTER.findall(text)}
     out |= {"passport:" + re.sub(r"\s", "", m).upper() for m in PASSPORT.findall(text)}
     out |= {e.lower() for e in EMAIL.findall(text)}
-    out |= {u.rstrip(".,") for u in URL.findall(text)}
+    out |= {canon_url(u) for u in URL.findall(text)}
     out |= set(ACCOUNT.findall(text))
     out |= {re.sub(r"\s", "", m).upper() for m in IBAN.findall(text)}
     out |= set(DOCID.findall(text))
@@ -287,12 +309,12 @@ class ProvenanceTracker:
         A fraud email's new bank details pass on just as well inside an internal summary."""
         out = set()
         for e in entities(text):
-            if e in self.user_entities or not (e.startswith(("http://", "https://")) or ACCOUNT.fullmatch(e)
-                                                or IBAN.fullmatch(e)):
+            if e in self.user_entities or not (is_link(e) or ACCOUNT.fullmatch(e) or IBAN.fullmatch(e)):
                 continue
             if any(lab.trust == Trust.UNTRUSTED for lab in self.origins.get(e, [])):
                 out.add(e)
         return sorted(out)
+
     def add_pii(self, values, src: str) -> None:
         """Values a PII detector found in free text: traced like personal data from a labelled tool output."""
         for raw in values:
@@ -313,12 +335,13 @@ class ProvenanceTracker:
 
     def label(self, value, is_control: bool) -> Label:
         text = value if isinstance(value, str) else str(value)
-        is_url = text.startswith(("http://", "https://"))
+        is_url = isinstance(value, str) and (text.startswith(("http://", "https://"))
+                                             or bool(URL.fullmatch(text.strip())))
         if is_url:
             text = unquote(text)    # %2B91-9... in a query string is still a phone number
         ents = entities(text) if isinstance(value, str) else {"#" + _norm_num(text)}
         if is_url:                  # /q3/south-12.4/west-9.8: values glued to words by URL separators (N2)
-            ents |= {e for e in entities(URL_SEP.sub(" ", text.split("://", 1)[-1])) if e.startswith("#")}
+            ents |= {e for e in entities(URL_SEP.sub(" ", _SCHEME.sub("", text))) if e.startswith("#")}
         pii = sum(1 for e in ents if e in self.pii_values)
         conf = Conf.PII if pii else Conf.INTERNAL
         sources: list[str] = []
@@ -354,7 +377,7 @@ class ProvenanceTracker:
             # B4: an address the agent put together (written nowhere as a whole) whose domain only untrusted content
             # named: "mallory, followed by the at sign, then evil-recon.io" still leads to the email that said it
             for e in ents:
-                dom = e.split("@", 1)[1] if "@" in e and not e.startswith(("http", "#")) else None
+                dom = e.split("@", 1)[1] if "@" in e and not is_link(e) and not e.startswith("#") else None
                 if dom and e not in self.user_entities and dom in self.untrusted_domains \
                         and dom not in self.user_domains and dom not in self.internal_domains \
                         and not any(s.startswith(("sender:", "suspect-sender:")) for s in sources):

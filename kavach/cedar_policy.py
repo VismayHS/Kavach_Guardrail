@@ -16,12 +16,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from urllib.parse import urlparse
 
 from .addresses import domain_of, parse_recipients
 from .manifest import arg, argname, model_of
 from .models import Conf, Trust
-from .provenance import URL
+from .provenance import URL, web_parts
 
 POLICY_FILE = Path(__file__).parent / "policies" / "cedar" / "kavach.cedar"
 # (rule, outcome) pairs the Cedar policies decide; the rest stay in Python (they need data Cedar can't see cheaply)
@@ -98,9 +97,9 @@ def facts(gw, task_id: str, call, spec, labels: dict, staged: dict, effect) -> d
                               (m == "transfer" and (not payee_known or amt > lim["transfer_auto_max"])))
     host, unknown_host, url_private, look = "", False, False, False
     if m == "web_fetch":
-        parts = urlparse(str(arg(spec, call.args, "url", "")))
+        parts = web_parts(str(arg(spec, call.args, "url", "")))
         host = (parts.hostname or "").lower()
-        user_hosts = {(urlparse(u).hostname or "").lower() for u in URL.findall(ctx.user_request)}
+        user_hosts = {(web_parts(u).hostname or "").lower() for u in URL.findall(ctx.user_request)}
         unknown_host = host not in user_hosts and not gw.policy._internal_host(host)
         lab = labels.get(argname(spec, "url"))
         from .lookalike import registered
