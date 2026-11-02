@@ -4,6 +4,7 @@ import json
 import tempfile
 
 import pytest
+from fastapi.testclient import TestClient
 
 from kavach.environment import Environment
 from kavach.gateway import GatewayConfig, Kavach
@@ -88,3 +89,13 @@ def test_llm_planner_sees_only_the_request_and_tools():
     assert plan == [READ]
     blob = json.dumps(seen)
     assert "mail.read_inbox" in blob and "crm.execute" not in blob and "NOTE TO AI ASSISTANT" not in blob
+
+
+def test_api_runs_a_plan():
+    from kavach import server
+    c = TestClient(server.app)
+    r = c.post("/api/v1/plan/run", json={"user_request": "Summarise my inbox.", "role": "support", "plan": [
+        READ, {"id": "s2", "tool": "mail.send", "args": {"to": "$s1.2.from", "subject": "x", "body": "y"}}]}).json()
+    assert r["status"] == "blocked" and r["steps"][0]["verdict"] == "ALLOW" and r["steps"][1]["verdict"] == "DENY"
+    assert c.post("/api/v1/plan/run", json={"user_request": "x", "plan": [{"id": "e1", "extract": {
+        "from": "$nope", "type": "email"}}]}).status_code == 422

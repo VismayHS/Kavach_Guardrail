@@ -258,6 +258,35 @@ def plan(body: PlanIn, who: dict | None = Depends(caller)):
     return report
 
 
+class PlanRunIn(BaseModel):
+    user_request: str
+    plan: list[dict] | None = None      # none: the Qualcomm planner writes it from the request alone
+    user_id: str = "demo-user"
+    role: str = "support"
+
+
+@app.post("/api/v1/plan/run")
+def plan_run(body: PlanRunIn, who: dict | None = Depends(caller)):
+    """E9 planner mode: a plan written from the request alone, run step by step with exact information-flow labels
+    (references to earlier outputs carry their source's label). Stops at the first refusal or approval."""
+    from .planner import LLMPlanner, PlanError, PlanRunner
+    user, role, authed = _identity(who, body.user_id, body.role)
+    plan = body.plan
+    if plan is None:
+        planner = LLMPlanner()
+        if not planner.llm.enabled:
+            raise HTTPException(503, "no planner model: send a plan, or configure the Qualcomm key")
+        try:
+            plan = planner.plan(body.user_request, gw.registry, gw.policy.cfg["roles"].get(role, []))
+        except Exception as e:
+            raise HTTPException(502, f"the planner failed: {e}")
+    tid, _ = gw.start_task(user, role, body.user_request, authenticated=authed, tenant=_tenant_of(who))
+    try:
+        return {"plan": plan, **PlanRunner(gw).run(tid, plan)}
+    except PlanError as e:
+        raise HTTPException(422, f"bad plan: {e}")
+
+
 @app.get("/api/scenarios")
 def scenarios():
     return [{"id": k, "title": v["title"], "request": v["request"], "user": v["user"]} for k, v in SCENARIOS.items()]
