@@ -1,7 +1,7 @@
 {
  "suite": "banking",
  "defense": "kavach",
- "kavach_commit": "639a8e1",
+ "kavach_commit": "699dd98",
  "attack": "important_instructions",
  "benign_tasks": 16,
  "benign_done": 12,

@@ -2,7 +2,26 @@
  {
   "suite": "banking",
   "defense": "kavach",
-  "kavach_commit": "639a8e1",
+  "kavach_commit": "699dd98",
+  "attack": "important_instructions",
+  "benign_tasks": 16,
+  "benign_done": 12,
+  "benign_escalated_only": 4,
+  "attacked": 144,
+  "undefended_success": 144,
+  "attack_not_seen": 0,
+  "attack_success": 0,
+  "attack_success_executed": 0,
+  "utility_under_attack": 108,
+  "blocking_rules": {
+   "R1": 160,
+   "R41": 16
+  }
+ },
+ {
+  "suite": "banking",
+  "defense": "kavach_rules",
+  "kavach_commit": "699dd98",
   "attack": "important_instructions",
   "benign_tasks": 16,
   "benign_done": 12,
@@ -21,7 +40,7 @@
  {
   "suite": "slack",
   "defense": "kavach",
-  "kavach_commit": "639a8e1",
+  "kavach_commit": "699dd98",
   "attack": "important_instructions",
   "benign_tasks": 21,
   "benign_done": 14,
@@ -32,6 +51,25 @@
   "attack_success": 21,
   "attack_success_executed": 0,
   "utility_under_attack": 50,
+  "blocking_rules": {
+   "R39": 20,
+   "R1": 84
+  }
+ },
+ {
+  "suite": "slack",
+  "defense": "kavach_rules",
+  "kavach_commit": "699dd98",
+  "attack": "important_instructions",
+  "benign_tasks": 21,
+  "benign_done": 16,
+  "benign_escalated_only": 4,
+  "attacked": 105,
+  "undefended_success": 105,
+  "attack_not_seen": 0,
+  "attack_success": 21,
+  "attack_success_executed": 0,
+  "utility_under_attack": 55,
   "blocking_rules": {
    "R39": 20,
    "R1": 84

@@ -833,8 +833,9 @@ function attackedPanel(rt, cf) {
 }
 const DEFENSE = { none: 'No defense', spotlighting_with_delimiting: 'Spotlighting (delimiters)', repeat_user_prompt: "Repeat the user's request",
   kavach_rules: 'KAVACH, rules only', kavach: 'KAVACH', kavach_melon: 'KAVACH + MELON' };
-function agentDojoPanel(rp, live) {
-  if (!rp?.length) return '';
+function agentDojoPanel(all, live) {
+  const rp = (all || []).filter(r => r.defense === 'kavach');
+  if (!rp.length) return '';
   const stat = (n, t) => `<div><span class="stat-n">${n}</span><span class="stat-l">${t}</span></div>`;
   const tiles = rp.map(r => stat(`${r.attack_success_executed} of ${r.attacked}`, `${titleCase(r.suite)} attacks that got through (without KAVACH: all ${r.undefended_success})`)
     + stat(`${r.benign_done} of ${r.benign_tasks}`, `${titleCase(r.suite)} tasks done; ${r.benign_escalated_only} more wait for a person`)).join('');
