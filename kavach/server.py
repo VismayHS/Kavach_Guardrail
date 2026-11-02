@@ -8,7 +8,8 @@ Endpoints
   POST /mcp                     MCP-style JSON-RPC (tools/list, tools/call) so an MCP client can sit behind KAVACH
   POST /api/demo/{scenario}     replay a scripted scenario through the gateway
   GET  /api/hitl                pending approvals;  POST /api/hitl/{id}  approve / deny
-  POST /api/undo/{receipt_id}   restore the snapshot taken before a safeguarded action
+  POST /api/undo/{receipt_id}   take back a safeguarded action: restore its snapshot, or cancel its hold / recall / park
+  POST /api/settle              let held payments and queued emails go out (advance_s fast-forwards the clock)
   GET  /api/receipts            receipt chain;      GET /api/receipts/verify
   GET  /api/metrics             latest benchmark results
 """
@@ -18,6 +19,7 @@ import hashlib
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 
 import jwt
@@ -146,7 +148,8 @@ def demo(name: str, reset: bool = True):
             break        # a blocked agent receives the replan hint instead of continuing blindly
     return {"task_id": tid, "scenario": name, "title": sc["title"], "request": sc["request"],
             "principal": {"user": sc["user"][0], "role": sc["user"][1]}, "plan": plan_report, "steps": steps,
-            "state": {"tables": env.table_counts(), "outbox": len(env.outbox), "ledger": len(env.ledger)}}
+            "state": {"tables": env.table_counts(), "outbox": len(env.outbox), "ledger": len(env.ledger),
+                      "waiting": sum(h["status"] == "held" for h in env.holds)}}
 
 
 @app.get("/api/hitl", dependencies=[Depends(caller)])
@@ -168,6 +171,12 @@ def hitl_resolve(hid: str, body: HitlIn, who: dict | None = Depends(caller)):
 @app.post("/api/undo/{rid}", dependencies=[Depends(caller)])
 def undo(rid: str):
     return gw.undo_action(rid)
+
+
+@app.post("/api/settle", dependencies=[Depends(caller)])
+def settle(advance_s: float = 0.0):
+    """Held payments and queued emails whose window has passed go out; advance_s fast-forwards for the demo."""
+    return {"settled": env.settle_due(time.time() + max(0.0, advance_s))}
 
 
 @app.get("/api/receipts", dependencies=[Depends(caller)])
@@ -198,7 +207,9 @@ def approve_tool(name: str, who: dict | None = Depends(caller)):
 
 @app.get("/api/state", dependencies=[Depends(caller)])
 def state():
+    parked = [dict(r) for r in env.db.execute("SELECT * FROM sap_documents WHERE status = 'parked'")]
     return {"tables": env.table_counts(), "outbox": env.outbox[-5:], "ledger": env.ledger[-5:],
+            "waiting": [h for h in env.holds if h["status"] == "held"], "parked": parked, "drafts": env.drafts[-5:],
             "risk_model": gw.risk.source, "c_block": gw.cfg.c_block, "policy": gw.policy.version,
             "qualcomm_llm": gw.judge.llm.enabled, "judge_model": gw.judge.llm.model}
 

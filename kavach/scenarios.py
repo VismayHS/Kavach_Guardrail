@@ -137,6 +137,14 @@ SCENARIOS: dict[str, dict] = {
         "steps": [ToolCall("invoice.read", {"invoice_id": "INV-3070"}),
                   ToolCall("payment.release", {"invoice_id": "INV-3070"})],
     },
+    "ap_sap_correction": {
+        "title": "AP: SAP correction, parked (undo discards it)",
+        "user": ("meera", "ap_supervisor"), "env": "prod",
+        "request": "Post a correction of EUR 1200 to GL account 400100 for the March freight accrual.",
+        "plan": [{"tool": "sap.post"}],
+        "steps": [ToolCall("sap.post", {"doc_type": "correction", "amount": 1200, "gl_account": "400100",
+                                        "text": "March freight accrual correction"})],
+    },
 }
 
 

@@ -1,13 +1,14 @@
 """Accounts payable: Infosys AgentOS's sample rulebook (fa_judgment.md) enforced as code (Phase 2, rules R18-R23)."""
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from kavach.environment import Environment  # noqa: E402
+from kavach.environment import PAYMENT_HOLD_S, Environment  # noqa: E402
 from kavach.gateway import GatewayConfig, Kavach  # noqa: E402
 from kavach.models import ToolCall, Verdict  # noqa: E402
 from kavach.provenance import entities  # noqa: E402
@@ -45,7 +46,9 @@ def iban_of(gw, vendor):
 # ---------------------------------------------------------------- the five demo scenarios
 def test_small_clean_invoice_is_paid(gw):
     _, steps = replay(gw, "ap_clean_release")
-    assert steps[-1].verdict == Verdict.ALLOW and steps[-1].executed
+    assert steps[-1].verdict == Verdict.ALLOW_WITH_SAFEGUARD and steps[-1].executed
+    assert gw.env.ledger == [] and steps[-1].result["held"]           # held for an hour first (Phase 3)
+    gw.env.settle_due(time.time() + PAYMENT_HOLD_S)
     assert gw.env.ledger == [{"id": "tx-1", "to": "DE89370400440532013000", "amount": 800.0, "invoice": "INV-3001",
                               "released_by": "meera"}]
 
@@ -124,6 +127,7 @@ def test_human_approval_releases_the_payment_and_records_the_approver(gw):
     with pytest.raises(PermissionError):                      # four-eyes: the requester can't approve
         gw.resolve_hitl(hid, "meera", approve=True)
     out = gw.resolve_hitl(hid, "cfo@infycorp.com", approve=True)
+    gw.env.settle_due(time.time() + PAYMENT_HOLD_S)                     # an approved payment still waits out its hold
     assert out["executed"] and gw.env.ledger[-1]["released_by"] == "cfo@infycorp.com"
     assert gw.env.ledger[-1]["amount"] == 650000.0
 

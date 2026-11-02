@@ -58,7 +58,7 @@ rules:
   R13: "A URL to a host the user never named may not carry private values or bulk data; after private data was read, such fetches need approval."
   R14: "Once a task has read private data and untrusted content, outbound actions to destinations the user didn't give need approval (lethal trifecta)."
   R15: "A payment amount or destination that appears nowhere in the request or any tool output was made up by the agent; it needs approval."
-  R16: "If the user named specific records (customer 17, invoice 1042), an action that touches none of them needs approval."
+  R16: "If the user named specific records (customer 17, invoice 1042), an action that touches none of them, or picks a record by an id the user didn't name, needs approval."
   R17: "Personal data that belongs to someone other than the recipient may not leave the company without approval."
   R18: "Payment release follows the approval tiers; the amount is read from the invoice record, never from the call."
   R19: "Separation of duties: whoever proposed a payment may not release it; releasing an unproposed invoice needs approval."

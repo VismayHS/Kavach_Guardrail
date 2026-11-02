@@ -12,10 +12,12 @@ import yaml
 
 from .manifest import ToolRegistry, ToolSpec
 from .models import Conf, GateResult, Label, TaskContext, ToolCall, Trust
-from .provenance import URL, arg_targets, named_targets
+from .provenance import URL, arg_targets, named_records, named_targets
 
-# actions aimed at specific records: if the user named records, the action should touch one of them (R16)
-TARGETED = {"crm.execute", "payment.release", "payment.propose", "payments.refund", "vendor.update_bank", "sap.post"}
+# actions aimed at specific records (R16): if the user named records, the action must touch one of them, and the
+# argument that picks the record (None for SQL, whose numbers are mostly values) must be one the user named
+TARGETED = {"crm.execute": None, "payment.release": "invoice_id", "payment.propose": "invoice_id",
+            "payments.refund": "invoice_id", "vendor.update_bank": "vendor_id", "sap.post": "gl_account"}
 # the argument that picks where an outbound action goes
 DESTINATION = {"mail.send": "to", "payments.transfer": "to_account", "payments.refund": "invoice_id",
                "payment.release": "invoice_id"}
@@ -119,12 +121,16 @@ class PolicyEngine:
                     add("R15", "REQUIRE_APPROVAL", f"'{a}' = {v!r} appears nowhere in the request or any tool "
                         "output; the agent made it up.", arg=a)
 
-        # R16 the user named specific records, and this action touches none of them
+        # R16 the user named specific records, and this action touches none of them or picks another one
         if call.tool in TARGETED:
             named = named_targets(ctx.user_request)
-            if named and not named & arg_targets(call.args):
-                add("R16", "REQUIRE_APPROVAL", f"The user named {', '.join(sorted(named))}, but this action touches "
-                    "none of them.", named=sorted(named))
+            key = TARGETED[call.tool]
+            pick = arg_targets({key: call.args[key]}) if key in call.args else set()
+            other = bool(pick) and not pick & (named_records(ctx.user_request) or named)
+            if named and (not named & arg_targets(call.args) or other):
+                what = f"picks {', '.join(sorted(pick))}" if other else "touches none of them"
+                add("R16", "REQUIRE_APPROVAL", f"The user named {', '.join(sorted(named))}, but this action {what}.",
+                    named=sorted(named))
 
         # R13 data leaving through a URL / R14 lethal trifecta at runtime
         if call.tool == "web.fetch":

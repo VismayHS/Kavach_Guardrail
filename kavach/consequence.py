@@ -13,11 +13,16 @@ import math
 import re
 import time
 
-from .environment import INTERNAL_DOMAIN, Environment
+from .environment import INTERNAL_DOMAIN, MAIL_RECALL_S, PAYMENT_HOLD_S, Environment
 from .manifest import ToolSpec
 from .models import Effect, Label, Reversibility, TaskContext, ToolCall
 from .sql import classify
 
+# Safeguards that run an action through a window the gateway can still cancel: the effect is reversible until it
+# closes (Phase 3). The text says what happens to the action.
+WINDOW_TEXT = {"hold": f"held {PAYMENT_HOLD_S / 60:.0f} min before it reaches the bank; cancel until then",
+               "recall-window": f"queued {MAIL_RECALL_S / 60:.0f} min before it leaves; recall until then",
+               "park": "parked in SAP; nothing is booked until a person posts it"}
 INVOICE_REF = re.compile(r"\binvoice\s*(?:no\.?|number)?\s*#?\s*(\d+)\b", re.I)    # "invoice 2339", "invoice #12"
 
 
@@ -34,7 +39,8 @@ class ConsequenceEngine:
         t0 = time.perf_counter()
         prod = 1.5 if ctx.env == "prod" else 1.0
         tool, a = call.tool, call.args
-        rev = spec.reversibility
+        rev = Reversibility.REVERSIBLE if spec.safeguard in WINDOW_TEXT else spec.reversibility
+        after = WINDOW_TEXT.get(spec.safeguard)
 
         if tool == "crm.execute":
             eff = self._stage_sql(str(a.get("sql", "")), prod)
@@ -55,7 +61,7 @@ class ConsequenceEngine:
                           "named_invoices": named, "not_invoice_customer": stray},
                          harm_from(raw),
                          f"1 email to {', '.join(to) or '?'} ({len(ext)} external) carrying {pii} PII values; "
-                         "cannot be recalled once sent.", safeguard=spec.safeguard)
+                         + (after or "cannot be recalled once sent") + ".", safeguard=spec.safeguard)
         elif tool == "payments.transfer":
             amt = float(a.get("amount", 0))
             known = a.get("to_account") in self.env.payees
@@ -63,7 +69,8 @@ class ConsequenceEngine:
             eff = Effect("predicted", rev, {"amount": amt, "payee_known": known,
                                             "payee": self.env.payees.get(a.get("to_account"), "UNKNOWN")},
                          harm_from(raw), f"Transfer INR {amt:,.0f} to {a.get('to_account')} "
-                         f"({'known payee' if known else 'UNKNOWN payee'}); settled transfers cannot be reversed.",
+                         f"({'known payee' if known else 'UNKNOWN payee'}); "
+                         + (after or "settled transfers cannot be reversed") + ".",
                          safeguard=spec.safeguard)
         elif tool == "payments.refund":
             amt = float(a.get("amount", 0))
@@ -85,7 +92,8 @@ class ConsequenceEngine:
             amt = float(a.get("amount", 0) or 0)
             eff = Effect("predicted", rev, {"amount": amt, "gl_account": a.get("gl_account"), "doc_type": a.get("doc_type")},
                          harm_from(amt / 2000.0), f"Post a {a.get('doc_type')} document of EUR {amt:,.0f} to GL account "
-                         f"{a.get('gl_account')}; undoing a posted document needs a reversal entry.")
+                         f"{a.get('gl_account')}; " + (after or "undoing a posted document needs a reversal entry") + ".",
+                         safeguard=spec.safeguard)
         elif spec.effect == "ingress":  # mail.read_inbox, web.fetch
             eff = Effect("static", rev, {"ingress": True}, 0.0,
                          "Read-only fetch; output will be labelled UNTRUSTED for the rest of the task.")
@@ -126,7 +134,8 @@ class ConsequenceEngine:
         bank = "verified" if f["bank_verified"] else "NOT verified"
         return Effect("static", rev, facts, harm_from(amt / 2000.0 + (0.0 if f["bank_verified"] else 3.0)),
                       f"Release {f['currency']} {amt:,.0f} for {invoice_id} to {f['vendor_name']} ({f['iban']}, bank "
-                      f"{bank}); a settled payment cannot be reversed.")
+                      f"{bank}); " + (WINDOW_TEXT.get(safeguard) or "a settled payment cannot be reversed") + ".",
+                      safeguard=safeguard)
 
     def _stage_bank_change(self, vendor_id: str, iban: str, safeguard: str | None) -> Effect:
         with self.env.lock:

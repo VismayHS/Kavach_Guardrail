@@ -28,7 +28,8 @@ class ToolSpec:
     output_trust: str = "derived"                # trust label of the tool's output (ingress => untrusted)
     output_conf: Conf = Conf.INTERNAL
     staging: str = "none"                        # sqlite | fs | none
-    safeguard: str | None = None                 # safe transform the gateway can apply
+    safeguard: str | None = None                 # safe transform the gateway applies (hold/recall-window/park:
+                                                 # a window it can still cancel; reversibility is the tool's own)
     # MCP-style hints (readOnlyHint/destructiveHint/openWorldHint) are derived, never trusted from servers
     def mcp_annotations(self) -> dict:
         return {"readOnlyHint": self.effect in ("read", "ingress"),
@@ -56,7 +57,7 @@ def default_manifest() -> dict[str, ToolSpec]:
         ToolSpec("mail.send", "Send an email.", {"to": "str", "subject": "str", "body": "str"},
                  ["to", "subject", "body"], effect="external_send", sink="external",
                  reversibility=R.IRREVERSIBLE, control_args=["to"], data_args=["subject", "body"],
-                 safeguard="save-as-draft"),
+                 safeguard="recall-window"),
         ToolSpec("files.read", "Read a file from the workspace.", {"path": "str"}, ["path"],
                  effect="read", sink="none", reversibility=R.IDEMPOTENT, output_trust="derived",
                  output_conf=Conf.INTERNAL, staging="fs"),
@@ -69,7 +70,7 @@ def default_manifest() -> dict[str, ToolSpec]:
         ToolSpec("payments.transfer", "Transfer money to a bank account.",
                  {"to_account": "str", "amount": "float", "memo": "str"}, ["to_account", "amount"],
                  effect="payment", sink="external", reversibility=R.IRREVERSIBLE,
-                 control_args=["to_account", "amount"], data_args=["memo"], safeguard="hold-for-24h"),
+                 control_args=["to_account", "amount"], data_args=["memo"], safeguard="hold"),
         ToolSpec("payments.refund", "Refund an invoice.", {"invoice_id": "int", "amount": "float"},
                  ["invoice_id", "amount"], effect="payment", sink="external", reversibility=R.COMPENSABLE,
                  control_args=["invoice_id", "amount"]),
@@ -85,14 +86,15 @@ def default_manifest() -> dict[str, ToolSpec]:
                  staging="sqlite", safeguard="snapshot+undo"),
         ToolSpec("payment.release", "Release the proposed payment for an invoice to the vendor's bank account.",
                  {"invoice_id": "str"}, ["invoice_id"], effect="payment", sink="external",
-                 reversibility=R.IRREVERSIBLE, control_args=["invoice_id"]),
+                 reversibility=R.IRREVERSIBLE, control_args=["invoice_id"], safeguard="hold"),
         ToolSpec("vendor.update_bank", "Change a vendor's bank account (IBAN).", {"vendor_id": "str", "iban": "str"},
                  ["vendor_id", "iban"], effect="write", sink="internal", reversibility=R.REVERSIBLE,
                  control_args=["vendor_id", "iban"], staging="sqlite", safeguard="snapshot+undo"),
         ToolSpec("sap.post", "Post an accounting document to SAP.",
                  {"doc_type": "str", "amount": "float", "gl_account": "str", "text": "str"},
                  ["doc_type", "amount", "gl_account"], effect="write", sink="internal",
-                 reversibility=R.COMPENSABLE, control_args=["gl_account", "amount"], data_args=["text"]),
+                 reversibility=R.COMPENSABLE, control_args=["gl_account", "amount"], data_args=["text"],
+                 safeguard="park"),
     ]
     return {s.name: s for s in specs}
 

@@ -65,7 +65,7 @@ def featurize(spec: ToolSpec, args: dict, labels: dict[str, Label], effect: Effe
         "payee_unknown": float(spec.name == "payments.transfer" and not m.get("payee_known", True)),
         "misalignment": 1.0 - float(intent.get("alignment", 0.5)),
         "scope_excess": float(rows > 5 and not intent.get("breadth_requested", False)),
-        "irreversibility": 1.0 - effect.reversibility.recoverable_fraction,
+        "irreversibility": 1.0 - spec.reversibility.recoverable_fraction,   # the tool's own; windows only move tau
         "harm": effect.harm,
         "secret": float(bool(m.get("secret"))),
         "ingress_untrusted_url": float(spec.effect == "ingress" and any(l.trust == Trust.UNTRUSTED for l in ctrl)),

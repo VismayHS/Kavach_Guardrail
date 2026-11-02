@@ -31,6 +31,10 @@ AP_INVOICES = [("INV-3001", "V001", 800.0), ("INV-3022", "V002", 12000.0), ("INV
 AP_PROPOSED = ("INV-3001", "INV-3022", "INV-3040", "INV-3070")                  # proposed by the AP clerk
 AP_CLERK = "ap.clerk@infycorp.com"
 
+# Windows the gateway runs actions through, so it can still take them back (Phase 3). A direct call skips them.
+PAYMENT_HOLD_S = 3600.0     # a released payment waits an hour before it goes to the bank
+MAIL_RECALL_S = 300.0       # an email waits five minutes before it leaves
+
 
 class Environment:
     def __init__(self, root: str | os.PathLike, seed: int = 7, n_customers: int = 480):
@@ -39,6 +43,7 @@ class Environment:
         self.lock = threading.RLock()
         self.seed = seed
         self.n_customers = n_customers
+        self.epoch = 0             # counts resets: an undo from before a reset must not touch the new world
         self.reset()
 
     # ------------------------------------------------------------------ setup
@@ -46,6 +51,7 @@ class Environment:
 
     def reset(self) -> None:
         with self.lock:
+            self.epoch += 1
             self.db = sqlite3.connect(":memory:", check_same_thread=False)
             self.db.row_factory = sqlite3.Row
             key = (self.seed, self.n_customers)
@@ -134,6 +140,8 @@ class Environment:
         }
         self.outbox: list[dict] = []
         self.ledger: list[dict] = []
+        self.holds: list[dict] = []        # payments and emails waiting out their window (cancel until then)
+        self.drafts: list[dict] = []       # emails a human approved as drafts: saved, never sent
         self.payees = {"ACC-11-2001": "Northwind Supplies", "ACC-11-2002": "Contoso Travel"}
         self.change_freeze = False
 
@@ -142,7 +150,7 @@ class Environment:
         with self.lock:
             files = {p.name: p.read_bytes() for p in self.workspace.iterdir() if p.is_file()}
             return {"db": self.db.serialize(), "files": files, "outbox": len(self.outbox),
-                    "ledger": len(self.ledger), "t": time.time()}
+                    "ledger": len(self.ledger), "t": time.time(), "epoch": self.epoch}
 
     def restore(self, snap: dict) -> None:
         with self.lock:
@@ -185,10 +193,21 @@ class Environment:
     def mail_read_inbox(self, unread_only: bool = True) -> list[dict]:
         return [m for m in self.inbox if m["unread"] or not unread_only]
 
-    def mail_send(self, to: str, subject: str, body: str) -> dict:
-        msg = {"id": f"out-{len(self.outbox) + 1}", "to": to, "subject": subject, "body": body}
+    def mail_send(self, to: str, subject: str, body: str, hold: bool = False) -> dict:
+        msg = {"to": to, "subject": subject, "body": body}
+        if hold:
+            h = self._hold("mail", MAIL_RECALL_S, msg=msg)
+            return {"queued": h["id"], "recall_until": h["settles_at"]}
+        return {"sent": self._deliver(msg)["id"]}
+
+    def mail_draft(self, to: str, subject: str, body: str) -> dict:
+        self.drafts.append({"id": f"draft-{len(self.drafts) + 1}", "to": to, "subject": subject, "body": body})
+        return {"draft_saved": self.drafts[-1]["id"]}
+
+    def _deliver(self, msg: dict) -> dict:
+        msg = {"id": f"out-{len(self.outbox) + 1}", **msg}
         self.outbox.append(msg)
-        return {"sent": msg["id"]}
+        return msg
 
     def files_read(self, path: str) -> str:
         return self._safe(path).read_text()
@@ -201,10 +220,12 @@ class Environment:
         self._safe(path).unlink()
         return {"deleted": path}
 
-    def payments_transfer(self, to_account: str, amount: float, memo: str = "") -> dict:
-        tx = {"id": f"tx-{len(self.ledger) + 1}", "to": to_account, "amount": float(amount), "memo": memo}
-        self.ledger.append(tx)
-        return {"transferred": tx["id"]}
+    def payments_transfer(self, to_account: str, amount: float, memo: str = "", hold: bool = False) -> dict:
+        tx = {"to": to_account, "amount": float(amount), "memo": memo}
+        if hold:
+            h = self._hold("payment", PAYMENT_HOLD_S, tx=tx)
+            return {"held": h["id"], "to": to_account, "amount": float(amount), "settles_at": h["settles_at"]}
+        return {"transferred": self._book(tx)["id"]}
 
     def payments_refund(self, invoice_id: int, amount: float) -> dict:
         tx = {"id": f"rf-{len(self.ledger) + 1}", "invoice": invoice_id, "amount": -float(amount)}
@@ -244,18 +265,68 @@ class Environment:
             self.db.commit()
             return {"proposed": pid}
 
-    def payment_release(self, invoice_id: str, actor: dict | None = None) -> dict:
+    def payment_release(self, invoice_id: str, actor: dict | None = None, hold: bool = False) -> dict:
         with self.lock:
             f = self.ap_invoice_facts(invoice_id)
             if f is None:
                 return {"error": f"no invoice {invoice_id}"}
-            tx = {"id": f"tx-{len(self.ledger) + 1}", "to": f["iban"], "amount": f["amount"], "invoice": invoice_id,
+            tx = {"to": f["iban"], "amount": f["amount"], "invoice": invoice_id,
                   "released_by": (actor or {}).get("user", "?")}
-            self.ledger.append(tx)
-            self.db.execute("UPDATE ap_invoices SET status = 'paid' WHERE id = ?", (invoice_id,))
-            self.db.execute("UPDATE payment_proposals SET status = 'released' WHERE invoice_id = ?", (invoice_id,))
+            if hold:     # the proposal is used up now, so the same invoice can't be released twice during the hold
+                h = self._hold("payment", PAYMENT_HOLD_S, tx=tx, prev_status=f["status"])
+                self.db.execute("UPDATE ap_invoices SET status = 'held' WHERE id = ?", (invoice_id,))
+                self.db.execute("UPDATE payment_proposals SET status = 'held' WHERE invoice_id = ? AND status = "
+                                "'proposed'", (invoice_id,))
+                self.db.commit()
+                return {"held": h["id"], "amount": f["amount"], "to": f["iban"], "settles_at": h["settles_at"]}
+            return {"released": self._book(tx)["id"], "amount": f["amount"], "to": f["iban"]}
+
+    def _book(self, tx: dict) -> dict:
+        """The money leaves: a ledger entry, and an AP invoice becomes paid."""
+        tx = {"id": f"tx-{len(self.ledger) + 1}", **tx}
+        self.ledger.append(tx)
+        if tx.get("invoice"):
+            self.db.execute("UPDATE ap_invoices SET status = 'paid' WHERE id = ?", (tx["invoice"],))
+            self.db.execute("UPDATE payment_proposals SET status = 'released' WHERE invoice_id = ?", (tx["invoice"],))
             self.db.commit()
-            return {"released": tx["id"], "amount": f["amount"], "to": f["iban"]}
+        return tx
+
+    # ---------------------------------------------------------------- windows: hold, recall, park
+    def _hold(self, kind: str, wait_s: float, **item) -> dict:
+        h = {"id": f"hold-{len(self.holds) + 1}", "kind": kind, "status": "held",
+             "settles_at": time.time() + wait_s, **item}
+        self.holds.append(h)
+        return h
+
+    def settle_due(self, now: float | None = None) -> list[str]:
+        """Holds whose window has passed go out: payments to the ledger, emails to the outbox."""
+        now = time.time() if now is None else now
+        with self.lock:
+            done = [h for h in self.holds if h["status"] == "held" and h["settles_at"] <= now]
+            for h in done:
+                h["status"] = "settled"
+                h["ref"] = (self._book(h["tx"]) if h["kind"] == "payment" else self._deliver(h["msg"]))["id"]
+            return [h["id"] for h in done]
+
+    def cancel(self, ref: str) -> bool:
+        """Take back a held payment or a queued email before it goes out, or discard a parked SAP document."""
+        with self.lock:
+            if ref.startswith("SAP-"):
+                cur = self.db.execute("UPDATE sap_documents SET status = 'discarded' WHERE id = ? AND status = "
+                                      "'parked'", (int(ref[4:]),))
+                self.db.commit()
+                return cur.rowcount == 1
+            h = next((h for h in self.holds if h["id"] == ref and h["status"] == "held"), None)
+            if h is None:
+                return False
+            h["status"] = "cancelled"
+            inv = h.get("tx", {}).get("invoice")
+            if inv:
+                self.db.execute("UPDATE ap_invoices SET status = ? WHERE id = ?", (h["prev_status"], inv))
+                self.db.execute("UPDATE payment_proposals SET status = 'proposed' WHERE invoice_id = ? AND status = "
+                                "'held'", (inv,))
+                self.db.commit()
+            return True
 
     def vendor_update_bank(self, vendor_id: str, iban: str) -> dict:
         with self.lock:
@@ -263,12 +334,14 @@ class Environment:
             self.db.commit()
             return {"updated": vendor_id, "rows": cur.rowcount}
 
-    def sap_post(self, doc_type: str, amount: float, gl_account: str, text: str = "") -> dict:
+    def sap_post(self, doc_type: str, amount: float, gl_account: str, text: str = "", hold: bool = False) -> dict:
+        """hold=True parks the document: it sits in SAP, nothing is booked until a person posts it."""
+        status = "parked" if hold else "posted"
         with self.lock:
             cur = self.db.execute("INSERT INTO sap_documents(doc_type, amount, gl_account, text, status) "
-                                  "VALUES(?,?,?,?, 'posted')", (doc_type, float(amount), gl_account, text))
+                                  "VALUES(?,?,?,?,?)", (doc_type, float(amount), gl_account, text, status))
             self.db.commit()
-            return {"posted": f"SAP-{cur.lastrowid}"}
+            return {status: f"SAP-{cur.lastrowid}"}
 
     def _safe(self, path: str) -> Path:
         p = (self.workspace / path).resolve()
@@ -276,11 +349,13 @@ class Environment:
             raise PermissionError("path escapes workspace")
         return p
 
-    def dispatch(self, tool: str, args: dict[str, Any], actor: dict | None = None) -> Any:
-        """Run a tool. `actor` ({"user", "task"}) is recorded by tools whose records need it (who proposed a payment)."""
+    def dispatch(self, tool: str, args: dict[str, Any], actor: dict | None = None, hold: bool = False) -> Any:
+        """Run a tool. `actor` ({"user", "task"}) is recorded by tools whose records need it (who proposed a payment).
+        `hold` (payments, mail.send, sap.post) runs it through its window instead of letting it out at once."""
+        extra = {"hold": True} if hold else {}
         recorded = {"payment.propose": self.payment_propose, "payment.release": self.payment_release}
         if tool in recorded:
-            return recorded[tool](**args, actor=actor)
+            return recorded[tool](**args, actor=actor, **extra)
         fn = {
             "crm.query": self.crm_query, "crm.execute": self.crm_execute,
             "mail.read_inbox": self.mail_read_inbox, "mail.send": self.mail_send,
@@ -289,4 +364,4 @@ class Environment:
             "web.fetch": self.web_fetch, "invoice.read": self.invoice_read,
             "vendor.update_bank": self.vendor_update_bank, "sap.post": self.sap_post,
         }[tool]
-        return fn(**args)
+        return fn(**args, **extra)

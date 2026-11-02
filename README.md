@@ -7,7 +7,7 @@ Before an AI agent's tool call touches the real world, KAVACH works out:
 - **where every argument came from**: the user, the agent, or untrusted content;
 - **whether it can be undone**.
 
-It then **allows** the call, **allows it with undo armed**, **escalates it to a human**, or **blocks it** with a replan hint, and writes a tamper-evident receipt. Authorization and provenance are deterministic code. A small calibrated model ranks the remaining risk. An LLM on Qualcomm Cloud AI is used only for ambiguous intent checks and plain-English explanations, and it can only make the system *stricter*.
+It then **allows** the call, **allows it with undo armed**, **escalates it to a human**, or **blocks it** with a replan hint, and writes a tamper-evident receipt. Undo means a snapshot for SQL and file changes, a 60-minute hold for payments, a 5-minute recall window for emails, and parking for SAP postings (nothing is booked until a person posts them). When a held payment is about to go out, KAVACH checks it is still the one that was approved (same bank account, same amount) and cancels it if not. Authorization and provenance are deterministic code. A small calibrated model ranks the remaining risk. An LLM on Qualcomm Cloud AI is used only for ambiguous intent checks and plain-English explanations, and it can only make the system *stricter*.
 
 ![architecture](docs/img/architecture.png)
 
@@ -15,7 +15,7 @@ It then **allows** the call, **allows it with undo armed**, **escalates it to a 
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                       # 69 tests
+python -m pytest -q                       # 81 tests
 python -m bench.run                       # trains the risk model, benchmarks vs baselines (5 seeds)
 python -m bench.lofo                      # each family judged by a model trained without it
 python -m bench.holdout                   # families written after the rules, never trained on
@@ -43,7 +43,8 @@ Offline rehearsal of the Qualcomm path: `python -m uvicorn scripts.fake_imagine:
 | `POST /mcp` | MCP JSON-RPC (`initialize`, `tools/list`, `tools/call`): put KAVACH between any MCP client and the tools |
 | `POST /api/demo/{scenario}` | Replay a scripted attack or benign scenario |
 | `GET/POST /api/hitl[/{id}]` | Human approvals (approve / approve-as-draft / deny) |
-| `POST /api/undo/{receipt}` | Restore the snapshot taken before a safeguarded action |
+| `POST /api/undo/{receipt}` | Take back a safeguarded action: restore its snapshot, or cancel its hold, recall window or parked document |
+| `POST /api/settle?advance_s=` | Let held payments and queued emails whose window has passed go out (`advance_s` fast-forwards for the demo) |
 | `GET /api/receipts/verify` | Verify the hash chain |
 
 Auth: set `KAVACH_AUTH_SECRET` (32+ random bytes) and the API requires `Authorization: Bearer <token>`; user and role come from the token (`python -m kavach.auth mint <user> <role>`), never from the request body. Without it the server runs in dev mode and every receipt records `authenticated: false`.

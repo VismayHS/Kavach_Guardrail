@@ -16,13 +16,13 @@ import time
 import uuid
 from dataclasses import dataclass, field
 
-from .consequence import ConsequenceEngine
+from .consequence import WINDOW_TEXT, ConsequenceEngine
 from .environment import Environment
 from .explain import Explainer
 from .hitl import ApprovalQueue
 from .intent import IntentJudge
 from .manifest import ToolRegistry
-from .models import (Decision, GateResult, Label, Principal, Reversibility, TaskContext, ToolCall, Trust,
+from .models import (Decision, Effect, GateResult, Label, Principal, Reversibility, TaskContext, ToolCall, Trust,
                      Verdict)
 from .plan import validate_plan
 from .policy import PolicyEngine, floor_of
@@ -46,6 +46,7 @@ class GatewayConfig:
     use_provenance: bool = True              # ablation switch
     use_consequence: bool = True             # ablation switch
     use_risk: bool = True                    # ablation switch: rules only
+    use_windows: bool = True                 # ablation switch: False => payments, email, SAP go out at once
 
 
 @dataclass
@@ -73,7 +74,8 @@ class Kavach:
         self.hitl = ApprovalQueue()
         self.tasks: dict[str, Task] = {}
         self.undo: dict[str, dict] = {}       # receipt id -> snapshot
-        self.pending_calls: dict[str, tuple[str, ToolCall]] = {}
+        self.recall: dict[str, tuple[int, str]] = {}   # receipt -> (world epoch, held payment / email / SAP doc)
+        self.pending_calls: dict[str, tuple[str, ToolCall, Effect | None]] = {}
 
     # ------------------------------------------------------------------ task lifecycle
     def start_task(self, user_id: str, role: str, request: str, env: str = "prod",
@@ -118,6 +120,8 @@ class Kavach:
         if spec is not None and self.registry.verify_pin(call.tool, call.tool_def_hash) \
                 and not self.registry.validate_args(spec, call.args):
             effect = self.consequence.analyze(ctx, call, spec, labels)
+            if not self.cfg.use_windows and effect.safeguard in WINDOW_TEXT:   # ablation: no hold/recall/park
+                effect.reversibility, effect.safeguard = spec.reversibility, None
             if not self.cfg.use_consequence:   # ablation: tool-type default only
                 effect.harm = {Reversibility.IRREVERSIBLE: 0.5, Reversibility.COMPENSABLE: 0.3}.get(
                     spec.reversibility, 0.1)
@@ -166,9 +170,10 @@ class Kavach:
         dd["policy_version"], dd["risk_model"] = self.policy.version, self.risk.source
 
         if verdict == Verdict.ESCALATE:
-            four_eyes = bool(effect and effect.reversibility == Reversibility.IRREVERSIBLE and effect.harm > 0.5)
+            # the tool's own reversibility: a hold doesn't make a EUR 650,000 payment a one-person decision
+            four_eyes = bool(effect and spec and spec.reversibility == Reversibility.IRREVERSIBLE and effect.harm > 0.5)
             d.hitl_id = self.hitl.submit(task_id, ctx.principal.user_id, dd, four_eyes)
-            self.pending_calls[d.hitl_id] = (task_id, call)
+            self.pending_calls[d.hitl_id] = (task_id, call, effect)
             dd["hitl_id"] = d.hitl_id
         rec = self.receipts.append({"type": "decision", "task_id": task_id, "principal": ctx.principal.user_id,
                                     "authenticated": ctx.principal.authenticated, "request": ctx.user_request,
@@ -193,7 +198,7 @@ class Kavach:
         if not self.cfg.use_risk or risk is None:   # rules-only ablation
             if floor == "REQUIRE_APPROVAL":
                 return Verdict.ESCALATE, "Policy requires approval.", None
-            return self._allow(spec, "Passed all deterministic gates.")
+            return self._allow(spec, effect, "Passed all deterministic gates.")
         if floor == "REQUIRE_APPROVAL":
             # policy says a human decides; the model only informs the reviewer (it never overrides policy)
             g = next(g for g in gates if g.outcome == "REQUIRE_APPROVAL")
@@ -206,7 +211,7 @@ class Kavach:
             return Verdict.ESCALATE, (f"Task harm budget exceeded ({ctx.harm_spent + risk.euh:.3f} > "
                                       f"{self.cfg.harm_budget}); possible split attack."), None
         if risk.p_hi < risk.tau:
-            return self._allow(spec, f"p(harm) upper bound {risk.p_hi:.2f} < tau {risk.tau:.3f}.")
+            return self._allow(spec, effect, f"p(harm) upper bound {risk.p_hi:.2f} < tau {risk.tau:.3f}.")
         if risk.p_lo >= risk.tau and risk.p_harm >= 0.5:
             # only deterministic rules may block outright; a confident model verdict goes to a human
             return Verdict.ESCALATE, (f"Likely unsafe: p(harm) {risk.p_harm:.2f} (lower bound {risk.p_lo:.2f}) "
@@ -215,9 +220,13 @@ class Kavach:
                                   f"tau {risk.tau:.3f}; asking a human instead of guessing."), None
 
     @staticmethod
-    def _allow(spec, reason):
-        if spec.reversibility == Reversibility.REVERSIBLE and spec.effect == "write":
-            return Verdict.ALLOW_WITH_SAFEGUARD, reason + " Executed with snapshot; undo armed.", None
+    def _allow(spec, effect, reason):
+        """A state change that can still be taken back runs with its safeguard: snapshot, or hold/recall/park."""
+        if spec.effect not in ("read", "ingress") and effect is not None \
+                and effect.reversibility == Reversibility.REVERSIBLE:
+            window = WINDOW_TEXT.get(effect.safeguard)
+            return Verdict.ALLOW_WITH_SAFEGUARD, reason + (f" Runs {window}." if window else
+                                                           " Executed with snapshot; undo armed."), None
         return Verdict.ALLOW, reason, None
 
     @staticmethod
@@ -265,15 +274,17 @@ class Kavach:
 
     # ------------------------------------------------------------------ execution, undo, HITL
     def execute(self, task_id: str, d: Decision) -> Decision:
-        """Run an allowed call. Reversible writes are snapshotted first and verified after."""
+        """Run an allowed call. Payments, emails and SAP posts go through their window (hold, recall, park), other
+        reversible writes are snapshotted first; either way the outcome is checked against the prediction."""
         if d.verdict not in (Verdict.ALLOW, Verdict.ALLOW_WITH_SAFEGUARD):
             return d
         task = self.tasks[task_id]
         spec = self.registry.get(d.call.tool)
-        if d.verdict == Verdict.ALLOW_WITH_SAFEGUARD:
+        windowed = self._windowed(d.effect)
+        if d.verdict == Verdict.ALLOW_WITH_SAFEGUARD and not windowed:
             self.undo[d.receipt_id] = self.env.snapshot()
         result = self.env.dispatch(d.call.tool, d.call.args,
-                                   actor={"user": task.ctx.principal.user_id, "task": task_id})
+                                   actor={"user": task.ctx.principal.user_id, "task": task_id}, hold=windowed)
         d.executed, d.result = True, result
         # post-condition: actual effect must match the staged prediction
         if d.call.tool == "crm.execute" and d.effect and isinstance(result, dict):
@@ -281,6 +292,8 @@ class Kavach:
             if result.get("rowcount", 0) != predicted and not d.effect.magnitude.get("ddl"):
                 self.env.restore(self.undo[d.receipt_id])
                 d.result = {"rolled_back": True, "reason": "actual effect diverged from sandbox prediction"}
+        if windowed:
+            d.result = self._arm_window(d.receipt_id, d.call, d.effect, result)
         task.prov.register_output(d.call.tool, result, spec.output_trust, spec.output_conf)
         self.receipts.append({"type": "execution", "task_id": task_id, "decision_receipt": d.receipt_id,
                               "result_preview": task.prov.mask(str(d.result))[:200]})   # mask before cutting
@@ -289,29 +302,73 @@ class Kavach:
     def run(self, task_id: str, call: ToolCall) -> Decision:
         return self.execute(task_id, self.check(task_id, call))
 
+    @staticmethod
+    def _windowed(effect: Effect | None) -> bool:
+        return effect is not None and effect.safeguard in WINDOW_TEXT
+
+    def _arm_window(self, receipt_id: str, call: ToolCall, effect: Effect | None, result):
+        """Remember what this receipt can take back, then compare what will go out with what was checked."""
+        ref = isinstance(result, dict) and (result.get("held") or result.get("queued") or result.get("parked"))
+        if not ref:
+            return result                               # e.g. {"error": "no invoice"}: nothing is waiting
+        self.recall[receipt_id] = (self.env.epoch, ref)
+        problem = self._outcome_mismatch(call, effect, result)
+        if problem and self.env.cancel(ref):
+            del self.recall[receipt_id]
+            self.receipts.append({"type": "outcome-mismatch", "receipt": receipt_id, "cancelled": ref,
+                                  "reason": problem})
+            return {"cancelled": ref, "reason": f"Outcome check: {problem}. Cancelled before it went out."}
+        return result
+
+    @staticmethod
+    def _outcome_mismatch(call: ToolCall, effect: Effect | None, result: dict) -> str | None:
+        """Records can change between the check and the execution, e.g. someone edits the vendor's bank account
+        while a human looks at an escalated payment. The payment that will go out must be the one checked."""
+        if call.tool == "payment.release" and effect is not None:
+            m = effect.magnitude
+            if (result.get("to"), result.get("amount")) != (m.get("iban"), m.get("amount")):
+                return (f"the payment would go to {result.get('to')} for {result.get('amount')}, but the check "
+                        f"approved {m.get('iban')} for {m.get('amount')}")
+        return None
+
     def resolve_hitl(self, hid: str, approver: str, approve: bool, mode: str = "execute") -> dict:
         item = self.hitl.resolve(hid, approver, approve, mode)
-        task_id, call = self.pending_calls.pop(hid)
+        task_id, call, effect = self.pending_calls.pop(hid)
         out = {"hitl": item, "executed": False}
-        if approve:
-            spec = self.registry.get(call.tool)
-            if mode == "safeguard" and call.tool == "mail.send":
-                out["result"] = {"draft_saved": True, "to": call.args.get("to")}
-            else:
-                snap = self.env.snapshot()
-                result = self.env.dispatch(call.tool, call.args, actor={"user": approver, "task": task_id})
-                self.tasks[task_id].prov.register_output(call.tool, result, spec.output_trust, spec.output_conf)
-                out.update(executed=True, result=str(result)[:300])
-                rec = self.receipts.append({"type": "human-approved-execution", "task_id": task_id, "hitl": hid,
-                                            "approver": approver, "mode": mode})
-                self.undo[rec["id"]] = snap
-                out["undo_receipt"] = rec["id"]
-        else:
+        if not approve:
             self.receipts.append({"type": "human-denied", "task_id": task_id, "hitl": hid, "approver": approver})
+            return out
+        if mode == "safeguard" and call.tool == "mail.send":       # approved as a draft: saved, never sent
+            out["result"] = self.env.mail_draft(**call.args)
+            self.receipts.append({"type": "human-approved-draft", "task_id": task_id, "hitl": hid,
+                                  "approver": approver})
+            return out
+        spec = self.registry.get(call.tool)
+        windowed = self._windowed(effect)                          # an approved payment still waits out its hold
+        snap = None if windowed else self.env.snapshot()
+        result = self.env.dispatch(call.tool, call.args, actor={"user": approver, "task": task_id}, hold=windowed)
+        self.tasks[task_id].prov.register_output(call.tool, result, spec.output_trust, spec.output_conf)
+        rec = self.receipts.append({"type": "human-approved-execution", "task_id": task_id, "hitl": hid,
+                                    "approver": approver, "mode": mode})
+        if windowed:
+            result = self._arm_window(rec["id"], call, effect, result)
+        else:
+            self.undo[rec["id"]] = snap
+        out.update(executed=True, result=str(result)[:300], undo_receipt=rec["id"])
         return out
 
     def undo_action(self, receipt_id: str) -> dict:
-        snap = self.undo.pop(receipt_id, None)
+        epoch, ref = self.recall.pop(receipt_id, (None, None))
+        snap = None if ref else self.undo.pop(receipt_id, None)
+        if snap is not None:
+            epoch = snap["epoch"]
+        if epoch is not None and epoch != self.env.epoch:   # ids restart after a reset: never touch the new world
+            return {"undone": False, "reason": "the environment was reset since this action; nothing to take back"}
+        if ref is not None:          # a held payment, queued email or parked SAP document: take back just that one
+            ok = self.env.cancel(ref)
+            self.receipts.append({"type": "undo", "receipt": receipt_id, "cancelled": ref, "ok": ok})
+            return {"undone": True, "cancelled": ref} if ok else {
+                "undone": False, "reason": f"{ref} can no longer be taken back (its window closed, or it was cancelled)"}
         if snap is None:
             return {"undone": False, "reason": "no snapshot for this receipt (not reversible or already undone)"}
         before = self.env.table_counts()

@@ -72,8 +72,9 @@ def run(request: str, guard: bool = True, role: str = "analyst", model: str | No
                 trace.append({"tool": name, "args": args, "verdict": "UNGUARDED"})
             msgs.append({"role": "tool", "tool_call_id": c.get("id"), "content": content})
     leaked = [m for m in env.outbox if not m["to"].endswith("@infycorp.com")]
+    waiting = [h for h in env.holds if h["status"] == "held"]      # KAVACH let these through a window: undo still works
     return {"guarded": guard, "model": llm.model, "trace": trace, "external_emails_sent": leaked,
-            "payments": env.ledger, "receipts_valid": gw.receipts.verify()}
+            "payments": env.ledger, "waiting_held_or_queued": waiting, "receipts_valid": gw.receipts.verify()}
 
 
 if __name__ == "__main__":

@@ -143,7 +143,8 @@ async function runScenario(id) {
   $('#run').innerHTML = `<h2>${esc(r.title)}</h2><p class="req">“${esc(r.request)}”</p>
   <div class="meta">user ${esc(r.principal.user)} · role ${esc(r.principal.role)} · ${r.task_id}</div>${plan}
   ${r.steps.map(stepCard).join('')}
-  <div class="meta" style="margin-top:10px">World state after run: ${esc(JSON.stringify(r.state.tables))} · emails sent ${r.state.outbox} · payments ${r.state.ledger}</div>`;
+  <div class="meta" style="margin-top:10px">World state after run: ${esc(JSON.stringify(r.state.tables))} · emails sent ${r.state.outbox} · payments ${r.state.ledger}
+  ${r.state.waiting ? ` · <b>waiting ${r.state.waiting}</b> (held payment / queued email, undo still works) <button onclick="settle()">Fast-forward 1 h</button>` : ''}</div>`;
   refresh();
 }
 async function raw() {
@@ -152,7 +153,12 @@ async function raw() {
   $('#run').innerHTML = `<h2>Raw action check</h2><p class="req">“${esc(body.user_request)}”</p>${stepCard(d)}<pre>${esc(d.explanation)}</pre>`;
   refresh();
 }
-async function undo(rid) { const r = await post(`/api/undo/${rid}`); alert(r.undone ? 'Restored: ' + JSON.stringify(r.tables_after) : r.reason); refresh(); }
+async function undo(rid) {
+  const r = await post(`/api/undo/${rid}`);
+  alert(!r.undone ? r.reason : r.cancelled ? `Cancelled ${r.cancelled}: it will not go out.` : 'Restored: ' + JSON.stringify(r.tables_after));
+  refresh();
+}
+async function settle() { const r = await post('/api/settle?advance_s=3600'); alert(r.settled.length ? `Went out: ${r.settled.join(', ')}` : 'Nothing was waiting.'); refresh(); }
 async function verify() { const v = await api('/api/receipts/verify'); $('#verify').textContent = v.valid ? `Chain valid: ${v.count} receipts, head ${v.head}` : `BROKEN at ${v.broken_at}`; }
 async function metrics() {
   const m = await api('/api/metrics'); if (m.error) return;

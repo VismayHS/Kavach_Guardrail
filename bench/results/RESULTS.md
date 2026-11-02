@@ -1,37 +1,41 @@
 # KAVACH benchmark results
 
-Suite: 880 labelled scenarios, 44 families; train 200 / calibration 80 / test 264 (all numbers below are on the held-out test split).
+Suite: 940 labelled scenarios, 47 families; train 210 / calibration 84 / test 282 (all numbers below are on the held-out test split).
 
 **Synthetic suite.** Not comparable with numbers published on AgentDojo / AmPermBench.
 
-| System | UAR (unsafe auto-allowed) ↓ | Injection ASR ↓ | Safe auto-completed ↑ | Safe hard-blocked ↓ | Escalation rate | p50 / p95 ms |
-|---|---|---|---|---|---|---|
-| No guardrail | 100.0% | 100.0% | 100.0% | 0.0% | 0.0% | - |
-| Static denylist (text match) | 86.1% | 100.0% | 100.0% | 0.0% | 0.0% | - |
-| Tool-type gating | 37.5% | 25.0% | 45.0% | 0.0% | 59.1% | - |
-| Approve every write (manual interrupt) | 4.2% | 0.0% | 10.0% | 0.0% | 93.2% | - |
-| KAVACH: rules only | 4.2% | 0.0% | 95.0% | 0.0% | 20.4% | 0.42 / 0.79 |
-| KAVACH: no provenance | 4.2% | 12.5% | 95.0% | 0.0% | 37.5% | 0.41 / 0.91 |
-| KAVACH: fixed threshold | 0.0% | 0.0% | 95.0% | 0.0% | 22.7% | 0.42 / 0.77 |
-| KAVACH (full) | 0.0% | 0.0% | 95.0% | 0.0% | 22.7% | 0.43 / 0.96 |
+*With no undo armed*: allowed with no snapshot, hold, recall window or parking, so nothing can take it back. *Changes with undo armed*: of the state-changing actions that ran without a human, the share that can still be taken back.
 
-Calibration on test split: ECE 0.014 (raw) -> 0.001 (isotonic), Brier 0.0.
+| System | UAR (unsafe auto-allowed) ↓ | ...with no undo armed ↓ | Injection ASR ↓ | Safe auto-completed ↑ | Safe hard-blocked ↓ | Escalation rate | Changes with undo armed ↑ | p50 / p95 ms |
+|---|---|---|---|---|---|---|---|---|
+| No guardrail | 100.0% | 100.0% | 100.0% | 100.0% | 0.0% | 0.0% | 0.0% | - |
+| Static denylist (text match) | 87.2% | 87.2% | 100.0% | 100.0% | 0.0% | 0.0% | 0.0% | - |
+| Tool-type gating | 38.5% | 38.5% | 25.0% | 47.6% | 0.0% | 57.5% | 0.0% | - |
+| Approve every write (manual interrupt) | 3.9% | 3.9% | 0.0% | 9.5% | 0.0% | 93.6% | 0.0% | - |
+| KAVACH: rules only | 3.9% | 0.0% | 0.0% | 95.2% | 0.0% | 23.4% | 94.7% | 0.41 / 0.76 |
+| KAVACH: no provenance | 3.9% | 0.0% | 12.5% | 95.2% | 0.0% | 39.4% | 94.7% | 0.41 / 0.90 |
+| KAVACH: fixed threshold | 0.0% | 0.0% | 0.0% | 95.2% | 0.0% | 25.5% | 94.4% | 0.41 / 0.76 |
+| KAVACH: no undo windows | 0.0% | 0.0% | 0.0% | 95.2% | 0.0% | 25.5% | 38.9% | 0.41 / 0.75 |
+| KAVACH (full) | 0.0% | 0.0% | 0.0% | 95.2% | 0.0% | 25.5% | 94.4% | 0.41 / 0.99 |
 
-Operating points chosen on the calibration split: C_block=0.002 (KAVACH), fixed tau=0.02 (ablation).
+Calibration on test split: ECE 0.0133 (raw) -> 0.0011 (isotonic), Brier 0.0.
+
+Operating points chosen on the calibration split: C_block=0.002 (KAVACH), fixed tau=0.05 (ablation).
 
 Latency excludes the optional Qualcomm LLM judge.
 
 ## Robustness: 5 independent suites and splits (mean, min–max)
 
-| System | Unsafe auto-allowed | Injection ASR | Safe auto-completed | Safe hard-blocked | Escalation |
-|---|---|---|---|---|---|
-| No guardrail | 100.0% (100%–100%) | 100.0% (100%–100%) | 100.0% (100%–100%) | 0.0% (0%–0%) | 0.0% (0%–0%) |
-| Static denylist (text match) | 86.4% (85%–88%) | 100.0% (100%–100%) | 100.0% (100%–100%) | 0.0% (0%–0%) | 0.0% (0%–0%) |
-| Tool-type gating | 37.5% (38%–38%) | 25.0% (25%–25%) | 45.0% (45%–45%) | 0.0% (0%–0%) | 59.1% (59%–59%) |
-| Approve every write (manual interrupt) | 4.2% (4%–4%) | 0.0% (0%–0%) | 10.0% (10%–10%) | 0.0% (0%–0%) | 93.2% (93%–93%) |
-| KAVACH: rules only | 4.2% (4%–4%) | 0.0% (0%–0%) | 95.0% (95%–95%) | 0.0% (0%–0%) | 20.4% (20%–20%) |
-| KAVACH: no provenance | 4.2% (4%–4%) | 12.5% (12%–12%) | 95.0% (95%–95%) | 0.0% (0%–0%) | 37.8% (37%–39%) |
-| KAVACH: fixed threshold | 0.0% (0%–0%) | 0.0% (0%–0%) | 95.0% (95%–95%) | 0.0% (0%–0%) | 22.7% (23%–23%) |
-| KAVACH (full) | 0.0% (0%–0%) | 0.0% (0%–0%) | 95.0% (95%–95%) | 0.0% (0%–0%) | 22.7% (23%–23%) |
+| System | Unsafe auto-allowed | ...with no undo | Injection ASR | Safe auto-completed | Safe hard-blocked | Escalation | Changes with undo armed |
+|---|---|---|---|---|---|---|---|
+| No guardrail | 100.0% (100%–100%) | 100.0% (100%–100%) | 100.0% (100%–100%) | 100.0% (100%–100%) | 0.0% (0%–0%) | 0.0% (0%–0%) | 0.0% (0%–0%) |
+| Static denylist (text match) | 87.4% (87%–88%) | 87.4% (87%–88%) | 100.0% (100%–100%) | 100.0% (100%–100%) | 0.0% (0%–0%) | 0.0% (0%–0%) | 0.0% (0%–0%) |
+| Tool-type gating | 38.5% (38%–38%) | 38.5% (38%–38%) | 25.0% (25%–25%) | 47.6% (48%–48%) | 0.0% (0%–0%) | 57.5% (57%–57%) | 0.0% (0%–0%) |
+| Approve every write (manual interrupt) | 3.9% (4%–4%) | 3.9% (4%–4%) | 0.0% (0%–0%) | 9.5% (10%–10%) | 0.0% (0%–0%) | 93.6% (94%–94%) | 0.0% (0%–0%) |
+| KAVACH: rules only | 3.9% (4%–4%) | 0.0% (0%–0%) | 0.0% (0%–0%) | 95.2% (95%–95%) | 0.0% (0%–0%) | 23.4% (23%–23%) | 94.7% (95%–95%) |
+| KAVACH: no provenance | 3.9% (4%–4%) | 0.0% (0%–0%) | 12.5% (12%–12%) | 95.2% (95%–95%) | 0.0% (0%–0%) | 39.6% (39%–40%) | 94.7% (95%–95%) |
+| KAVACH: fixed threshold | 0.0% (0%–0%) | 0.0% (0%–0%) | 0.0% (0%–0%) | 95.2% (95%–95%) | 0.0% (0%–0%) | 25.5% (26%–26%) | 94.4% (94%–94%) |
+| KAVACH: no undo windows | 0.0% (0%–0%) | 0.0% (0%–0%) | 0.0% (0%–0%) | 95.2% (95%–95%) | 0.0% (0%–0%) | 25.5% (26%–26%) | 38.9% (39%–39%) |
+| KAVACH (full) | 0.0% (0%–0%) | 0.0% (0%–0%) | 0.0% (0%–0%) | 95.2% (95%–95%) | 0.0% (0%–0%) | 25.5% (26%–26%) | 94.4% (94%–94%) |
 
-ECE (calibrated) per seed: [0.001, 0.0011, 0.0011, 0.0012, 0.0011]; C_block selected per seed: [0.002, 0.002, 0.002, 0.002, 0.002]
+ECE (calibrated) per seed: [0.0011, 0.0011, 0.0012, 0.0012, 0.0012]; C_block selected per seed: [0.002, 0.002, 0.002, 0.002, 0.002]
