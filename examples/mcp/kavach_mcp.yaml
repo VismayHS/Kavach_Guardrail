@@ -42,3 +42,4 @@ request: ""                             # the user's request, if the client does
 user: mcp-user
 approval_wait_s: 60                     # how long an escalated call waits for a person before it fails
 judge: false                            # Qualcomm judge on escalations (needs the Qualcomm key)
+probe: false                            # CPU prompt-injection classifier on upstream outputs (needs torch)

@@ -59,6 +59,7 @@ class ProxyConfig:
     approval_wait_s: float = 60.0
     namespace: bool = True                        # expose tools as <server>__<tool>
     judge: bool = False                           # Qualcomm judge (escalations-only) when a key is configured
+    probe: bool = False                           # CPU prompt-injection classifier on upstream outputs (R29)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "ProxyConfig":
@@ -84,7 +85,8 @@ class ProxyConfig:
                    pins_path=str((path.parent / pins) if pins and not Path(pins).is_absolute() else pins) if pins else None,
                    trust_on_first_use=bool(d.get("trust_on_first_use", True)), request=d.get("request", ""),
                    user=d.get("user", "mcp-user"), approval_wait_s=float(d.get("approval_wait_s", 60)),
-                   namespace=bool(d.get("namespace", True)), judge=bool(d.get("judge", False)))
+                   namespace=bool(d.get("namespace", True)), judge=bool(d.get("judge", False)),
+                   probe=bool(d.get("probe", False)))
 
 
 @dataclass
@@ -108,6 +110,7 @@ class KavachMCPProxy:
         self.cfg = config
         self.gw = gateway or Kavach(Environment(tempfile.mkdtemp(prefix="kavach-mcp-")), GatewayConfig(
             use_llm_judge=config.judge, judge_mode="escalations-only", use_windows=False, local_execution=False,
+            use_injection_probe=config.probe,
             c_block=RiskModel().meta.get("operating_point", {}).get("c_block", 0.02)), registry=ToolRegistry({}))
         self.gw.registry.on_approve.append(self._approved)
         self.clients: dict[str, Client] = {}
