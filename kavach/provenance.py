@@ -208,6 +208,8 @@ class ProvenanceTracker:
     lookalike: object | None = None      # kavach.lookalike.Lookalike; a lookalike sender is never "reply to sender"
     hostile: set[str] = field(default_factory=set)                 # sources an injection classifier flagged (C3)
     untrusted_domains: dict[str, str] = field(default_factory=dict)  # domain named in untrusted content -> source (B4)
+    named_entities: set[str] = field(default_factory=set)  # values read from a source the user pointed at (a file,
+                                                           # a URL the user typed): still untrusted, but delegated
     user_domains: set[str] = field(default_factory=set)            # domains the user named
     internal_domains: set[str] = field(default_factory=set)        # the company's own (never a lead by themselves)
 
@@ -225,7 +227,8 @@ class ProvenanceTracker:
             text = rx.sub(hide(norm), text)
         return text
 
-    def register_output(self, tool: str, output, trust: str, conf: Conf, untrusted_fields=(), _rid=None) -> None:
+    def register_output(self, tool: str, output, trust: str, conf: Conf, untrusted_fields=(), _rid=None,
+                        named: bool = False) -> None:
         """Label everything a tool returned. With untrusted_fields, each record is split: those fields (free text
         someone else wrote) are untrusted, the rest keeps `trust` (field-level labels, as in FIDES)."""
         self.private_seen |= conf in (Conf.PII, Conf.CONFIDENTIAL)
@@ -234,13 +237,13 @@ class ProvenanceTracker:
         if untrusted_fields:
             for rec in records:
                 if not isinstance(rec, dict):
-                    self.register_output(tool, [rec], "untrusted", conf)
+                    self.register_output(tool, [rec], "untrusted", conf, named=named)
                     continue
                 rid = rec.get("id")
                 self.register_output(tool, [{k: v for k, v in rec.items() if k not in untrusted_fields}], trust,
-                                     conf, _rid=rid)
+                                     conf, _rid=rid, named=named)
                 self.register_output(tool, [{k: v for k, v in rec.items() if k in untrusted_fields}], "untrusted",
-                                     conf, _rid=rid)
+                                     conf, _rid=rid, named=named)
             return
         self.n_outputs += 1
         for i, rec in enumerate(records):
@@ -256,7 +259,10 @@ class ProvenanceTracker:
             text = rec if isinstance(rec, str) else json.dumps(rec, default=str, ensure_ascii=False)
             t = Trust(trust) if trust in ("untrusted", "derived", "trusted") else Trust.DERIVED
             lab = Label(t, conf, [src])
-            for e in entities(text):
+            ents_here = entities(text)
+            if named:
+                self.named_entities |= ents_here
+            for e in ents_here:
                 pii = is_pii(e)
                 e_conf = conf if (conf != Conf.PII or pii) else Conf.CONFIDENTIAL
                 self.origins.setdefault(e, []).append(Label(t, e_conf, [src]))
@@ -324,6 +330,7 @@ class ProvenanceTracker:
             trust, sources = Trust.UNTRUSTED, sorted(copied)
 
         # 2) entity lineage: where did each address / account / amount come from?
+        tainted: set[str] = set()
         for e in ents:
             if e in self.user_entities:
                 if trust != Trust.UNTRUSTED or not is_control:
@@ -339,6 +346,7 @@ class ProvenanceTracker:
                 sources.extend(lab.sources)
                 if lab.trust == Trust.UNTRUSTED:
                     trust = Trust.UNTRUSTED
+                    tainted.add(e)
                 if lab.conf.rank > conf.rank:
                     conf = lab.conf
 
@@ -352,8 +360,11 @@ class ProvenanceTracker:
                         and not any(s.startswith(("sender:", "suspect-sender:")) for s in sources):
                     trust = Trust.UNTRUSTED
                     sources.append(f"{self.untrusted_domains[dom]} (domain {dom})")
+                    tainted.add("~domain")             # put together, not read whole: never delegated
         if is_control and ents and all(e in self.user_entities for e in ents) and not copied:
             trust = Trust.TRUSTED
         if not sources:
             sources = ["agent"]
-        return Label(trust, conf, sorted(set(sources)), pii)
+        # delegated: every value that made this untrusted was read whole from a source the user pointed at
+        delegated = trust == Trust.UNTRUSTED and not copied and bool(tainted) and tainted <= self.named_entities
+        return Label(trust, conf, sorted(set(sources)), pii, delegated)

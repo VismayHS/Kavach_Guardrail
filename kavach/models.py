@@ -55,10 +55,11 @@ class Label:
     conf: Conf
     sources: list[str] = field(default_factory=list)   # e.g. ["user"], ["tool:mail.read_inbox#msg-4471"]
     pii_entities: int = 0                               # number of PII values carried
+    delegated: bool = False   # untrusted, but only from a source the user pointed at ("pay the bill in this file")
 
     def to_dict(self) -> dict:
         return {"trust": self.trust.value, "conf": self.conf.value,
-                "sources": self.sources, "pii_entities": self.pii_entities}
+                "sources": self.sources, "pii_entities": self.pii_entities, "delegated": self.delegated}
 
 
 @dataclass

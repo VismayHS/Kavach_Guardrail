@@ -146,7 +146,13 @@ class PolicyEngine:
         if spec.sink == "external" or spec.effect == "ingress":
             for a in spec.control_args:
                 lab = labels.get(a)
-                if lab and lab.trust == Trust.UNTRUSTED and spec.effect != "ingress":
+                if lab and lab.trust == Trust.UNTRUSTED and spec.effect != "ingress" and lab.delegated \
+                        and self._asked_for(ctx, call.tool, spec):
+                    add("R1", "REQUIRE_APPROVAL", f"'{a}' = {call.args.get(a)!r} came from "
+                        f"{', '.join(lab.sources)}, which the user pointed at and asked to act on. A document can "
+                        "still be tampered with, so a person confirms the value before it is used.", arg=a,
+                        sources=lab.sources, delegated=True)
+                elif lab and lab.trust == Trust.UNTRUSTED and spec.effect != "ingress":
                     add("R1", "DENY", f"'{a}' = {call.args.get(a)!r} came from untrusted content "
                         f"({', '.join(lab.sources)}), not from the user.", arg=a, sources=lab.sources)
                 elif lab and lab.trust == Trust.UNTRUSTED and spec.effect == "ingress":
@@ -354,6 +360,13 @@ class PolicyEngine:
         # R28 canary records (last, so a provenance rule stays the stated reason and the canary is extra evidence)
         self._canary_rule(call, spec, add)
         return out
+
+    @staticmethod
+    def _asked_for(ctx: TaskContext, tool: str, spec: ToolSpec) -> bool:
+        """The user's request asks for this kind of action (its intent verbs), e.g. "pay" for a transfer."""
+        from .intent import TOOL_VERBS
+        req = ctx.user_request.lower()
+        return any(re.search(rf"\b{re.escape(v)}", req) for v in (spec.intent_verbs or TOOL_VERBS.get(tool, [])))
 
     def _shell_rule(self, e: dict, add) -> None:
         """R34: a shell command is refused for what it reaches, and goes to a person for what it might do."""

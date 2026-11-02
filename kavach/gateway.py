@@ -209,11 +209,18 @@ class Kavach:
         trust, conf = self.output_label(call)
         spec = self.registry.get(call.tool)
         fields = spec.untrusted_fields if spec is not None else ()
-        self.tasks[task_id].prov.register_output(call.tool, output, trust, conf, fields)
+        self.tasks[task_id].prov.register_output(call.tool, output, trust, conf, fields,
+                                                 named=self._user_named(task_id, call))
         if self.probe is not None and (trust == "untrusted" or fields):
             self._probe(task_id, call.tool, output, fields)
         if self.pii is not None and conf not in (Conf.PII, Conf.CONFIDENTIAL):
             self._scan_pii(task_id, call.tool, output)
+
+    def _user_named(self, task_id: str, call: ToolCall) -> bool:
+        """The user pointed at exactly what this call read: a file name, URL or id they typed ("pay the bill
+        'bill-december-2023.txt'"). Its content is still untrusted; R1 then asks a person instead of refusing."""
+        req = self.tasks[task_id].ctx.user_request.lower()
+        return any(isinstance(v, str) and len(v.strip()) >= 6 and v.strip().lower() in req for v in call.args.values())
 
     def _scan_pii(self, task_id: str, tool: str, output) -> None:
         """E8: personal data inside free text (a page, a document) makes the task private, and its traceable
