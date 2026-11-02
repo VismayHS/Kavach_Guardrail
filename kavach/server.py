@@ -34,12 +34,15 @@ from . import auth
 from .environment import Environment
 from .gateway import Kavach
 from .models import ToolCall
+from .policy import PolicyEngine
 from .profile import check_profile
 from .scenarios import SCENARIOS, materialize, prepare
 
 ROOT = Path(__file__).resolve().parent
 PROFILE = check_profile()           # KAVACH_PROFILE=prod refuses to start without real secrets (A9)
-env = Environment(tempfile.mkdtemp(prefix="kavach-"))
+# canary records (R28) are planted in the server's world unless KAVACH_CANARIES=0
+_canaries = None if os.environ.get("KAVACH_CANARIES") == "0" else PolicyEngine().cfg.get("canaries")
+env = Environment(tempfile.mkdtemp(prefix="kavach-"), canaries=_canaries)
 gw = Kavach(env)
 if PROFILE.require_tool_hash:
     gw.policy.cfg["require_tool_hash"] = True
