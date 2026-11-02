@@ -36,7 +36,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth
+from . import auth, truth
 from .environment import Environment
 from .gateway import Kavach
 from .models import ToolCall
@@ -341,10 +341,16 @@ def demo(name: str, reset: bool = True):
         last = d.result
         if d.verdict.value in ("DENY", "ESCALATE"):
             break        # a blocked agent receives the replan hint instead of continuing blindly
-    return {"task_id": tid, "scenario": name, "title": sc["title"], "request": sc["request"],
-            "principal": {"user": sc["user"][0], "role": sc["user"][1]}, "plan": plan_report, "steps": steps,
-            "state": {"tables": env.table_counts(), "outbox": len(env.outbox), "ledger": len(env.ledger),
-                      "waiting": sum(h["status"] == "held" for h in env.holds)}}
+    out = {"task_id": tid, "scenario": name, "title": sc["title"], "request": sc["request"],
+           "principal": {"user": sc["user"][0], "role": sc["user"][1]}, "plan": plan_report, "steps": steps,
+           "state": {"tables": env.table_counts(), "outbox": len(env.outbox), "ledger": len(env.ledger),
+                     "waiting": sum(h["status"] == "held" for h in env.holds)}}
+    if sc.get("answer"):          # what the agent told the user, checked against what happened, and receipted
+        t = truth.check(sc["answer"], truth.from_steps(steps))
+        gw.receipts.append({"type": "answer-check", "task_id": tid, "verdict": t["verdict"],
+                            "claims": len(t["claims"]), "false_claims": t["false_claims"], "silent": len(t["silent"])})
+        out.update(answer={"note": sc.get("answer_note", "")}, truth=t)
+    return out
 
 
 class KillIn(BaseModel):
@@ -659,6 +665,8 @@ def _agent_worker(slot: dict, request: str, guard: bool, role: str) -> None:
                                               for m in out["external_emails_sent"]],
                                "payments": out["payments"], "waiting": len(out["waiting_held_or_queued"]),
                                "model": out["model"]}
+            final = next((t["final"] for t in slot["trace"] if "final" in t), None)
+            slot["truth"] = truth.check(final, truth.from_trace(slot["trace"], gw.registry))
         except (Exception, SystemExit) as e:          # SystemExit: run() exits when the model isn't configured
             slot["error"] = f"{type(e).__name__}: {e}"
         finally:

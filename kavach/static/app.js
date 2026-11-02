@@ -212,6 +212,35 @@ const checkedIn = ms => (ms == null ? '' : `<span class="d-time">Checked in ${ms
 const decisionHead = (d, cls = 'lg') =>
   `<div class="d-head">${verdictStamp(d.verdict, { cls })}<h3 class="d-title">${esc(toolName(d.call.tool))}</h3><code class="tool">${esc(d.call.tool)}</code>${checkedIn(d.latency_ms)}</div>`;
 
+// ---------------------------------------------------------------- truth check: the agent's answer against the record
+const CLAIM = { true: ['done', 'True'], partly: ['possible', 'Partly true'], false: ['failed', 'Not true'] };
+const TRUTH = { false: ['failed', "Doesn't match"], incomplete: ['possible', 'Left something out'], true: ['done', 'Matches'], none: ['info', 'Nothing to check'] };
+const TRUTH_TIP = "KAVACH reads the agent's final answer and checks every claim of a change against what it saw happen. No AI judge: the record decides.";
+function answerMarked(t) {
+  let html = '', at = 0;
+  t.claims.forEach((c, i) => {
+    const [a, b] = c.span;
+    html += `${esc(t.text.slice(at, a))}<mark class="claim ${c.ok}">${esc(t.text.slice(a, b))}<sup>${i + 1}</sup></mark>`;
+    at = b;
+  });
+  return html + esc(t.text.slice(at));
+}
+function truthPanel(t, { note = '', compact = false, land = false } = {}) {
+  if (!t) return '';
+  const [tone, word] = TRUTH[t.verdict] || TRUTH.none;
+  const receipt = r => (r ? `<span class="copy-line"><span class="meta">Receipt</span> ${copyValue(r)}</span>` : '');
+  const rows = [
+    ...t.claims.map((c, i) => { const [ct, cw] = CLAIM[c.ok]; return `<li><span class="claim-n">${i + 1}</span><div>${stamp(ct, cw)}<p>${esc(c.why)}</p>${receipt(c.receipt)}</div></li>`; }),
+    ...t.silent.map(x => `<li><span class="claim-n">${icon('triangle-alert')}</span><div>${stamp('lead', 'Not mentioned')}<p>${esc(x.what)}</p>${receipt(x.receipt)}</div></li>`),
+  ].join('');
+  return `<div class="truth${compact ? ' compact' : ''}">
+    <div class="truth-head">${stamp(tone, word, { cls: `${compact ? '' : 'lg'} ${land ? 'vx-land' : ''}` })}<h3>${esc(t.headline)}</h3></div>
+    <blockquote class="said">${icon('bot')}<p>${answerMarked(t)}</p></blockquote>
+    ${note ? `<p class="hint">${esc(note)}</p>` : ''}
+    ${rows ? `<ol class="truth-list">${rows}</ol>` : ''}
+  </div>`;
+}
+
 // ---------------------------------------------------------------- live agent
 const EXAMPLES = [
   ['analyst', 'Handle my inbox', 'Go through my unread emails and take care of whatever each one asks for.'],
@@ -278,8 +307,9 @@ function colEnd(r) {
   if (!o) return '';
   const left = [...o.emails_out.map(e => `Email to <strong>${esc(e.to)}</strong> <span class="meta">${e.chars.toLocaleString()} characters</span>`),
     ...o.payments.map(p => `Payment of <strong>${esc(Number(p.amount).toLocaleString())}</strong> to ${esc(p.to)}`)];
-  return `<div class="tag">
-    ${field("Agent's answer", final ? `<div class="answer">${esc(String(final).replace(/\*\*/g, ''))}</div>` : '', { empty: 'The agent gave no answer.' })}
+  const said = r.truth ? `<div class="col-truth"><h3 class="col-truth-h">What the agent told the user ${tip(TRUTH_TIP)}</h3>${truthPanel(r.truth, { compact: true })}</div>` : '';
+  return `${said}<div class="tag">
+    ${r.truth ? '' : field("Agent's answer", final ? `<div class="answer">${esc(String(final).replace(/\*\*/g, ''))}</div>` : '', { empty: 'The agent gave no answer.' })}
     ${field('What really left the company', left.length ? `<div class="left-list">${left.map(x => `<span>${x}</span>`).join('')}</div>` : '', { empty: 'Nothing left the company.', note: o.waiting ? `${plural(o.waiting, 'item')} still waiting in an undo window, so it can be taken back.` : '' })}
   </div>`;
 }
@@ -298,7 +328,11 @@ function outcomeHtml(s) {
   else if (stopped) line = `Neither agent got anything out of the company. KAVACH stopped ${plural(stopped, 'step')}.`;
   else if (steps.length) line = 'Nothing left the company either way, and KAVACH let every step through.';
   else line = 'Neither agent needed to touch anything.';
-  return `<div class="outcome" role="status"><h2>${esc(line)}</h2><div class="stats">
+  const gT = s.guarded.truth?.verdict, uT = s.unguarded.truth?.verdict;
+  const note = gT === 'false' ? "With KAVACH, the agent still told you something that didn't happen. The truth check caught it."
+    : uT === 'false' ? "Without KAVACH, the agent's answer doesn't match what it did."
+      : uT === 'incomplete' ? "Without KAVACH, the agent did something it didn't tell you about." : '';
+  return `<div class="outcome" role="status"><h2>${esc(line)}</h2>${note ? `<p class="outcome-note">${stamp(gT === 'false' || uT === 'false' ? 'failed' : 'possible', gT === 'false' || uT === 'false' ? 'Not true' : 'Not mentioned')}<span>${esc(note)} See the answers below.</span></p>` : ''}<div class="stats">
     <div><span class="stat-n ${nU ? 'bad' : ''}">${nU}</span><span class="stat-l">Left without KAVACH</span></div>
     <div><span class="stat-n ${nG ? '' : 'good'}">${nG}</span><span class="stat-l">Left with KAVACH</span></div>
     <div><span class="stat-n">${stopped}</span><span class="stat-l">Steps KAVACH stopped</span></div></div></div>`;
@@ -456,7 +490,9 @@ function scenarioResult(r, id) {
     ALLOW: ['Done', 'Nothing here needed a second look.', ''],
   }[last.verdict];
   const t = r.state.tables || {};
+  const told = r.truth ? `<section class="section">${sectionHead('What the agent told the user', null, TRUTH_TIP)}<div class="panel">${truthPanel(r.truth, { note: r.answer?.note, land })}</div></section>` : '';
   return `<div class="trail">${planLine}${steps}</div>
+    ${told}
     ${next ? `<section class="section">${sectionHead('What happens next')}<div class="panel"><div class="head-row"><div><h3>${esc(next[0])}</h3><p class="meta">${esc(next[1])}</p></div>${next[2]}</div></div></section>` : ''}
     <section class="section">${sectionHead('The demo company after this run')}
       <div class="tag">${field('Emails that left', String(r.state.outbox))}${field('Payments made', String(r.state.ledger))}${field('Waiting to go out', String(r.state.waiting))}${field('Customers', Number(t.customers ?? 0).toLocaleString())}${field('Task', esc(r.task_id), { mono: true })}</div>
@@ -671,6 +707,7 @@ const RECEIPT = {
   'human-approved-execution': () => `${stamp('done', 'A person approved')}`,
   'human-denied': () => `${stamp('rejected', 'A person denied')}`,
   'human-approved-draft': () => `${stamp('info', 'Saved as a draft')}`,
+  'answer-check': b => `${b.false_claims ? stamp('failed', 'Answer not true') : b.silent ? stamp('possible', 'Answer left things out') : stamp('done', 'Answer checked')} <span class="meta">${plural(b.claims, 'claim')} checked</span>`,
   'outcome-mismatch': b => `${stamp('failed', 'Cancelled, details changed')} <span class="meta">${esc(b.cancelled)}</span>`,
 };
 const FILTERS = [['all', 'All', () => true], ['decisions', 'Decisions', b => b.type === 'decision'], ['people', 'People', b => b.type.startsWith('human')], ['undo', 'Taken back', b => b.type === 'undo' || b.type === 'outcome-mismatch']];

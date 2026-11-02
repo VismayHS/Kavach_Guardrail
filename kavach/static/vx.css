@@ -453,3 +453,31 @@ dialog::backdrop { background: rgba(28, 36, 51, .35); }
   .vx-stamp[data-tone="running"]::after, .vx-press, .vx-land, .skel, .spin { animation: none; }
   * { transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* ---------------------------------------------------------------- truth check: the agent's answer against the record */
+.truth-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.truth-head h3 { font-size: 21px; }
+.truth.compact .truth-head h3 { font-size: 16px; }
+.said { display: flex; gap: 12px; margin: 16px 0 0; padding: 14px 16px; border: 1px solid var(--vx-rule); border-radius: 8px; background: var(--vx-paper); }
+.said .i { flex: none; width: 20px; height: 20px; margin-top: 4px; color: var(--vx-ink-3); }
+.said p { min-width: 0; font-size: 17px; line-height: 1.75; white-space: pre-line; overflow-wrap: anywhere; }
+.truth.compact .said { margin-top: 12px; }
+.truth.compact .said p { max-height: 220px; overflow-y: auto; font-size: 15.5px; line-height: 1.65; }
+.claim { padding: 1px 2px; border-radius: 4px; background: none; color: inherit; text-decoration-line: underline; text-decoration-thickness: 2px; text-underline-offset: 5px; text-decoration-skip-ink: none; }
+.claim.false { background: var(--vx-fail-wash); text-decoration-color: var(--vx-fail); text-decoration-style: wavy; }
+.claim.partly { background: var(--vx-possible-wash); text-decoration-color: var(--vx-possible); text-decoration-style: dotted; }
+.claim.true { text-decoration-color: var(--vx-strong); }
+.claim sup { margin-left: 3px; font-family: var(--vx-mono); font-size: 12px; font-weight: 600; color: var(--vx-ink-2); }
+.truth-list { margin-top: 12px; }
+.truth-list li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; padding: 12px 0; border-top: 1px solid var(--vx-rule); }
+.truth-list li:first-child { border-top: 0; }
+.claim-n { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 999px; background: var(--vx-rail); font-family: var(--vx-mono); font-size: 12px; font-weight: 600; color: var(--vx-ink-2); }
+.claim-n .i { width: 13px; height: 13px; }
+.truth-list p { margin-top: 6px; font-size: 15.5px; line-height: 1.5; color: var(--vx-ink-2); overflow-wrap: anywhere; }
+.copy-line { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+.col-truth { padding: 16px 20px; border-top: 1px solid var(--vx-rule-strong); }
+.col-truth-h { margin-bottom: 10px; font-size: 15px; font-weight: 600; color: var(--vx-ink-2); }
+.outcome-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 12px; font-size: 16px; line-height: 1.5; color: var(--vx-ink-2); }
+@media (max-width: 767px) { .col-truth { padding: 14px 16px; } .said p { font-size: 16px; } }
+.top-brand .wordmark { white-space: nowrap; }
+@media (max-width: 419px) { .top-brand .wordmark { display: none; } }   /* the shield stays; room for the status stamps */

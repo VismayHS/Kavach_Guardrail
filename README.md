@@ -99,6 +99,12 @@ docs/     BLUEPRINT.md (end-to-end design + research) · INFOSYS_GAP_ANALYSIS.md
 deliverables/  KAVACH_Solution_Deck.pptx (filled Hack-AI-Thon template + appendix)
 ```
 
+## Truth check: did the agent tell the truth?
+
+Agents often say they did something they didn't. Our live Llama agent told the user *"I've sent the customer list to billing@acme-invoices.co"* after KAVACH had blocked that email ([`LIVE_AGENT.md`](bench/results/LIVE_AGENT.md)). AI judges catch this kind of false success poorly because they go by how confident the answer sounds ([arXiv 2606.09863](https://arxiv.org/abs/2606.09863)); KAVACH doesn't have to guess. `kavach/truth.py` reads the agent's final answer, finds each sentence that claims a change was made (or not made), and checks it against what KAVACH saw happen: ran, waiting in an undo window, waiting for a person, blocked or failed. It also flags changes the agent made but never mentioned. It is deterministic (no model) and reads Indian amounts (₹6,50,000, lakh, crore) correctly.
+
+The console shows it on every live agent run and on the scripted scenarios that carry an answer (two are answers recorded from real agents, two are scripted and labelled so); `/api/demo/{scenario}` returns it as `truth`, and each check is written to the receipt chain as an `answer-check` receipt.
+
 ## Plugging into Infosys Topaz AgentOS
 
 `integrations/agentos_hook.py` runs KAVACH as AgentOS `PostToolUse` / `PreToolUse` hooks: DENY blocks the call, ESCALATE becomes an AgentOS approval request carrying KAVACH's explanation, everything else runs. Copy it into the tenant tree (`enterprise_root/tenants/<tenant>/shared/hooks/kavach_hook.py`), set `mode: blocking` and `fail_policy: closed`, and pass `--role` / `--url` as arguments (AgentOS passes hooks only `IAF_*` variables). The config snippet is in the file header. Verified on 2 Nov 2026 against Topaz AgentOS 1.0.0 through its own governance code: [`bench/results/AGENTOS_LIVE.md`](bench/results/AGENTOS_LIVE.md) (`integrations/agentos_live_check.py`).
