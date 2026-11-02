@@ -30,8 +30,9 @@ from .provenance import ProvenanceTracker
 from .receipts import ReceiptLog
 from .risk import RiskModel, featurize
 
-SAFETY_RULES = {"R2", "R9", "R10", "R13", "R16", "R17", "R22", "R23", "R24"}
-AUTH_RULES = {"R1", "R3", "R4", "R5", "R6", "R7", "R8", "R11", "R12", "R14", "R15", "R18", "R19", "R20", "R21"}
+SAFETY_RULES = {"R2", "R9", "R10", "R13", "R16", "R17", "R22", "R23", "R24", "R30", "R31"}
+AUTH_RULES = {"R1", "R3", "R4", "R5", "R6", "R7", "R8", "R11", "R12", "R14", "R15", "R18", "R19", "R20", "R21", "R29",
+              "R32", "R33"}
 
 
 @dataclass
@@ -305,6 +306,7 @@ class Kavach:
             "R21": "Don't pay this vendor. Escalate to compliance.",
             "R22": "Don't delete accounting records; mark them instead (e.g. status = 'void').",
             "R24": "Look up the customer on that invoice (invoices.customer_id) and email that address instead.",
+            "R29": "Use the finance tools (vendor.update_bank, payment.propose, sap.post); they go through approval.",
         }.get(rule_id)
 
     @staticmethod

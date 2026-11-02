@@ -330,3 +330,9 @@ def test_payment_details_the_user_typed_can_be_shared(gw):
     d = gw.check(tid, ToolCall("mail.send", {"to": "asha.rao@infycorp.com", "subject": "Northwind",
                                              "body": "Northwind's verified IBAN is NL20INGB0001234567."}))
     assert "R33" not in rules(d)
+
+
+def test_new_rules_light_the_scorecard(gw):
+    tid, _ = gw.start_task("asha", "support", "Fix vendor V002's bank details.")
+    d = gw.check(tid, ToolCall("crm.execute", {"sql": f"UPDATE vendors SET iban = '{ATTACKER_IBAN}' WHERE id = 'V002'"}))
+    assert d.scorecard["authorized"]["color"] == "red" and "finance tools" in d.replan_hint
