@@ -120,6 +120,13 @@ class PolicyEngine:
                     + (f", including an unbroken run of {longest:,}" if longest >= lim["encoded_token_min"] else "")
                     + "; a person should see what is leaving.", chars=len(text), longest=longest)
 
+        # R34 nothing was shown, so lineage has nothing to trace: an outside destination must then be the user's
+        if call.tool in ("mail.send", "payments.transfer") and st.get("outputs_seen") == 0 \
+                and not st.get("destination_given") and not self._internal_destination(call, st):
+            dest = DESTINATION[call.tool]
+            add("R34", "REQUIRE_APPROVAL", f"No tool output was shown for this task, so where {call.args.get(dest)!r} "
+                "came from can't be checked, and the user didn't give it.", arg=dest)
+
         # R33 bank details or links from untrusted content, passed on by email (inside the company too)
         if call.tool == "mail.send" and st.get("untrusted_details"):
             add("R33", "REQUIRE_APPROVAL", f"The email repeats {', '.join(st['untrusted_details'])} from untrusted "

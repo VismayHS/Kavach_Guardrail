@@ -337,3 +337,22 @@ def test_new_rules_light_the_scorecard(gw):
     tid, _ = gw.start_task("asha", "support", "Fix vendor V002's bank details.")
     d = gw.check(tid, ToolCall("crm.execute", {"sql": f"UPDATE vendors SET iban = '{ATTACKER_IBAN}' WHERE id = 'V002'"}))
     assert d.scorecard["authorized"]["color"] == "red" and "finance tools" in d.replan_hint
+
+
+# ---------------------------------------------------------------- U6 what the caller supplies (R34, token kinds)
+SECRET = "kavach-test-secret-at-least-32-bytes-long"
+
+
+def test_an_outside_destination_with_nothing_shown_needs_a_person(api):
+    client, _ = api
+    r = client.post("/api/v1/check", json={"user_request": "Summarise my email.", "tool": "mail.send", "role": "analyst",
+                                           "args": {"to": "drop@fin-desk.io", "subject": "hi", "body": "see you"}}).json()
+    assert r["verdict"] == "ESCALATE" and any(g["rule_id"] == "R34" for g in r["gates"]) and r["outputs_seen"] == 0
+
+
+def test_a_destination_the_user_gave_needs_nothing_shown(api):
+    client, _ = api
+    r = client.post("/api/v1/check", json={"user_request": "Email drop@fin-desk.io that we'll call tomorrow.",
+                                           "tool": "mail.send", "role": "analyst",
+                                           "args": {"to": "drop@fin-desk.io", "subject": "Call", "body": "We'll call."}}).json()
+    assert r["verdict"].startswith("ALLOW") and not any(g["rule_id"] == "R34" for g in r["gates"])

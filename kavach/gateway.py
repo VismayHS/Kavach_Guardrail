@@ -32,7 +32,7 @@ from .risk import RiskModel, featurize
 
 SAFETY_RULES = {"R2", "R9", "R10", "R13", "R16", "R17", "R22", "R23", "R24", "R30", "R31"}
 AUTH_RULES = {"R1", "R3", "R4", "R5", "R6", "R7", "R8", "R11", "R12", "R14", "R15", "R18", "R19", "R20", "R21", "R29",
-              "R32", "R33"}
+              "R32", "R33", "R34"}
 
 
 @dataclass
@@ -144,6 +144,7 @@ class Kavach:
                   "repeat": self._action_key(call) in ctx.actions_run,
                   "task_rows": ctx.rows_changed + (effect.magnitude.get("rows_affected", 0) if effect else 0),
                   "task_money": self._money_after(ctx, call, effect),
+                  "outputs_seen": task.prov.n_outputs,
                   "untrusted_details": task.prov.untrusted_details(
                       f"{call.args.get('subject', '')} {call.args.get('body', '')}") if call.tool == "mail.send" else []}
         gates = self.policy.evaluate(ctx, call, spec, self.registry, labels, staged)
