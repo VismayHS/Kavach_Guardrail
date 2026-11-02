@@ -38,6 +38,9 @@ const TOOL = {
 const ROLE = { analyst: 'Analyst', support: 'Support', finance: 'Finance', ap_supervisor: 'AP supervisor', admin: 'Admin' };
 const AGENT_ROLES = ['analyst', 'support', 'finance', 'ap_supervisor'];
 const toolName = t => TOOL[t] || t;
+const SEAT = { cfo: 'CFO', finance_director: 'Finance Director', finance_manager: 'Finance Manager', ap_supervisor: 'AP supervisor',
+  team_lead: 'Team lead', ops_manager: 'Ops manager' };
+const seatWord = r => SEAT[r] || titleCase(String(r || '').replace(/_/g, ' '));
 const roleName = r => ROLE[r] || r;
 
 const stamp = (tone, text, { cls = '', title = '' } = {}) =>
@@ -484,26 +487,45 @@ function setCheckMode(mode) {
 }
 
 // ---------------------------------------------------------------- approvals
+function quorumBlock(it) {
+  const need = Object.entries(it.quorum || {});
+  if (!need.length) return '';
+  const done = (it.approvals || []).map(a => `${esc(seatWord(a.role))} (${esc(a.approver)})`);
+  return `<div class="tag" style="margin-bottom:4px">${field('Needs', need.map(([r, n]) => `${n} × ${esc(seatWord(r))}`).join(' + '),
+    { tipText: 'The approval tier for this amount names the roles that must sign, each a different person.' })}${field('Approved so far', done.join(', '), { empty: 'Nobody yet' })}</div>`;
+}
+function reviewNote(d) {
+  const r = d.risk?.intent?.review;
+  if (!r || r.llm_alignment == null) return '';
+  return `<div class="d-block"><h4>The AI judge's note</h4><p>${esc(r.llm_reason || '')} <span class="meta">fit with the request: ${Number(r.llm_alignment).toFixed(2)} · ${esc((r.models || []).join(' → '))}</span></p></div>`;
+}
 function approvalCard(it, open) {
   const d = it.decision;
   return `<details class="fold" name="queue"${open ? ' open' : ''}>
     <summary>${verdictStamp(d.verdict, { cls: open ? 'lg' : '' })}<span class="${open ? 'd-title' : 'step-name'}">${esc(toolName(d.call.tool))}</span><code class="tool">${esc(d.call.tool)}</code>
       <span class="meta">Expires in <span class="countdown" data-until="${it.expires}"></span></span>${icon('chevron-down', 'chev')}</summary>
     <div class="fold-body decision">
-      <div class="tag" style="margin-bottom:4px">${field('Asked by', esc(titleCase(it.requester)))}${field('Second person', it.four_eyes ? `Required: ${esc(it.requester)} can't approve this` : 'Not required for this one')}${field('Task', esc(it.task_id), { mono: true })}</div>
+      <div class="tag" style="margin-bottom:4px">${field('Asked by', esc(titleCase(it.requester)))}${field('Second person', it.four_eyes || Object.keys(it.quorum || {}).length ? `Required: ${esc(it.requester)} can't approve this` : 'Not required for this one')}${field('Task', esc(it.task_id), { mono: true })}${it.routed_to ? field('Waiting on', `${esc(seatWord(it.routed_to))}: the first approver ran out of time`) : ''}</div>
+      ${quorumBlock(it)}
       ${decisionDetails(d)}
+      ${reviewNote(d)}
       <div data-err></div>
-      <div class="d-actions"><button class="btn primary" type="button" data-act="decide" data-id="${it.id}" data-approve="1" data-mode="execute">${icon('check')}Approve</button>
+      <div class="d-actions">${Object.keys(it.remaining || {}).length
+        ? Object.keys(it.remaining).map(r => `<button class="btn primary" type="button" data-act="decide" data-id="${it.id}" data-approve="1" data-mode="execute" data-role="${esc(r)}">${icon('check')}Approve as ${esc(seatWord(r))}</button>`).join('')
+        : `<button class="btn primary" type="button" data-act="decide" data-id="${it.id}" data-approve="1" data-mode="execute">${icon('check')}Approve</button>`}
         ${d.call.tool === 'mail.send' ? `<button class="btn quiet" type="button" data-act="decide" data-id="${it.id}" data-approve="1" data-mode="safeguard">${icon('pencil-line')}Approve as a draft</button>` : ''}
         <button class="btn danger" type="button" data-act="decide" data-id="${it.id}" data-approve="">${icon('ban')}Deny</button></div>
     </div></details>`;
 }
 async function pageApprovals() {
-  const items = await api('/api/hitl');
+  const [items, stats] = await Promise.all([api('/api/hitl'), api('/api/hitl/stats').catch(() => ({ warnings: [] }))]);
+  const fatigue = (stats.warnings || []).length
+    ? `<div class="notice warn" role="status" style="margin-bottom:16px">${icon('triangle-alert')} Approval fatigue: ${stats.warnings.map(esc).join('; ')}. Clicking approve is not the same as checking.</div>` : '';
   const list = items.length ? `<div class="queue">${items.map((it, i) => approvalCard(it, i === 0)).join('')}</div>`
     : emptyNote('Nothing is waiting for a person', `When KAVACH isn't sure, or a rule demands a person, the request lands here. Try ${runLink('ap_cfo_tier', 'the EUR 650,000 invoice')}.`);
   return `<div class="page narrow">${head('Approvals', 'When a rule demands a person, the agent stops and the request waits here. Nothing below has happened yet. If nobody answers in time, the answer is no.')}
     ${flash()}
+    ${fatigue}
     <div class="panel approver"><div class="labelled"><label for="approver">Deciding as</label><input class="input" id="approver" value="${esc(S.approver)}" autocomplete="off"></div>
       <p>Some actions need a second person, so the one who asked can't approve them. Type the same name to see it refused.</p></div>
     ${list}
@@ -515,9 +537,18 @@ async function decide(btn) {
   S.approver = $('#approver').value.trim() || 'reviewer-1';
   $$('button', card).forEach(b => { b.disabled = true; });
   try {
-    const r = await post(`/api/hitl/${id}`, { approve: !!approve, approver: S.approver, mode: mode || 'execute' });
+    const role = btn.dataset.role || null;
+    const r = await post(`/api/hitl/${id}`, { approve: !!approve, approver: S.approver, approver_role: role, mode: mode || 'execute' });
     const safeguard = r.hitl?.decision?.effect?.safeguard;
     let html;
+    if (r.pending_quorum) {
+      const left = Object.entries(r.pending_quorum).map(([k, n]) => `${n} × ${esc(seatWord(k))}`).join(' + ');
+      html = `Recorded: ${esc(S.approver)} approved as ${esc(seatWord(role))}. Nothing has happened yet: it still needs ${left}, from someone else.`;
+      S.flash = { tone: 'ok', html };
+      await chrome().catch(() => {});
+      route(true);
+      return;
+    }
     if (!approve) html = 'Denied. Nothing happened, and the decision is on the receipt chain.';
     else if (!r.executed) html = 'Saved as a draft. Nothing was sent. <a href="#/windows">See drafts</a>';
     else if (String(r.result).includes('cancelled')) { S.flash = { tone: 'warn', html: 'Approved, but the details changed since the check, so it was cancelled before it went out.' }; route(true); chrome().catch(() => {}); return; }
@@ -528,7 +559,12 @@ async function decide(btn) {
     route(true);
   } catch (e) {
     $$('button', card).forEach(b => { b.disabled = false; });
-    const friendly = e.status === 403 ? `${S.approver} asked for this, so someone else has to approve it. That is the four-eyes rule.` : e.message;
+    const m = e.message || '';
+    const friendly = e.status !== 403 ? m
+      : /four-eyes/.test(m) ? `${S.approver} asked for this, so someone else has to approve it. That is the four-eyes rule.`
+      : /different person/.test(m) ? `${S.approver} already approved this once. Each seat needs a different person: change "Deciding as" first.`
+      : /role is required|not one of the approvers/.test(m) ? `This needs specific roles. Use the "Approve as" buttons. (${m})`
+      : m;
     $('[data-err]', card).innerHTML = `<div class="notice err" role="alert" style="margin-top:16px">${esc(friendly)}</div>`;
   }
 }
