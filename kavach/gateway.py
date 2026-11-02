@@ -165,7 +165,7 @@ class Kavach:
         risk = None
         if spec is not None and effect is not None:   # computed even when denied: features feed training data
             ambiguous = floor == "REQUIRE_APPROVAL" or spec.effect not in ("read", "ingress")
-            intent = self.judge.score(ctx.user_request, call.tool, call.args, labels, ambiguous)
+            intent = self.judge.score(ctx.user_request, call.tool, call.args, labels, ambiguous, spec)
             feats = featurize(spec, call.args, labels, effect, intent, ctx.env, ctx.user_request)
             risk = self.risk.assess(feats, effect, self.cfg.c_block, intent)
             if not self.cfg.reversibility_conditioned:

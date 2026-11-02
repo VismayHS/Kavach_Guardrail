@@ -284,3 +284,15 @@ def test_a_manifest_amount_argument_gives_a_money_effect(gw):
     big = gw.check(tid, ToolCall("send_money", {"recipient": "GB29NWBK60161331926819", "amount": 50000}))
     assert small.effect.magnitude["amount"] == 50 and big.effect.harm > small.effect.harm
     assert "GB29NWBK60161331926819" in small.effect.summary
+
+
+def test_intent_verbs_come_from_the_manifest():
+    from kavach.intent import heuristic_alignment
+    from kavach.manifest import ToolSpec
+    from kavach.models import Reversibility
+    spec = ToolSpec("send_money", "Sends money.", {"recipient": "str", "amount": "float"}, ["recipient", "amount"],
+                    effect="payment", sink="external", reversibility=Reversibility.IRREVERSIBLE,
+                    intent_verbs=["pay", "send", "refund", "transfer"])
+    asked = heuristic_alignment("Please refund GB29NWBK60161331926819 for what they sent me.", "send_money", {}, spec)
+    not_asked = heuristic_alignment("What's my total spending in March?", "send_money", {}, spec)
+    assert asked["alignment"] > not_asked["alignment"] and not_asked["read_only_ask"]
