@@ -149,8 +149,15 @@ def dependency_lines(env, every_s: float = 15.0) -> list[str]:
 def metrics_text(gw, sweeper=None, deps: bool = False) -> str:
     """Prometheus exposition format, computed from the receipt chain and the live queues. No label carries an id,
     an address or an argument: tools, verdicts, rules, kinds and outcomes only."""
-    verdicts, rules, lat = {}, {}, []
-    effects, approvals, cancels = {}, {}, {}
+    # Every known series starts at 0: Prometheus's increase() doesn't count a counter's first appearance, so a first
+    # canary trip (R28) or a first failed delivery appearing at 1 would never fire its alert.
+    from .gateway import AUTH_RULES, SAFETY_RULES
+    verdicts, lat = {}, []
+    rules = {(r, o): 0 for r in AUTH_RULES | SAFETY_RULES for o in ("DENY", "REQUIRE_APPROVAL")}
+    effects = {(k, o): 0 for k, outs in (("mail", ("sent", "failed", "unknown")),
+                                         ("payment", ("settled", "failed", "unknown"))) for o in outs}
+    approvals = {o: 0 for o in ("approved", "denied", "expired", "closed", "draft")}
+    cancels = {"person": 0, "kill switch": 0}
     early = mismatch = 0
     FINAL = {"human-approved-execution": "approved", "human-approved": "approved", "human-approved-draft": "draft",
              "human-denied": "denied", "approval-expired": "expired", "approval-closed-restart": "closed"}

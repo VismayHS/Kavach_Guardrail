@@ -89,7 +89,7 @@ P.append(ts("Decision latency (ms)",
              ("histogram_quantile(0.99, sum by (le) (rate(kavach_check_latency_ms_bucket[5m])))", "p99")],
             12, y, unit="ms", desc="Time to decide one tool call (rules, staging, risk; the judge when inline)."))
 y += 8
-P.append(bars("Rules that fired (deny or approval)", "sort_desc(sum by (rule) (kavach_rule_hits_total))", "{{rule}}", 0, y,
+P.append(bars("Rules that fired (deny or approval)", "sort_desc(sum by (rule) (kavach_rule_hits_total) > 0)", "{{rule}}", 0, y,
               desc="Which rules are doing the work. R28 = canary tripped (a breach in progress)."))
 P.append(table("Decisions by tool and verdict", "sum by (tool, verdict) (kavach_decisions_total)", 12, y))
 y += 9

@@ -59,3 +59,17 @@ def test_the_server_reports_request_latency_heartbeat_dependencies_and_usage():
     assert 'kavach_dependency_up{dep="model_endpoint_configured"}' in text
     u = c.get("/api/usage").json()
     assert u["price_table"] and u["decisions"] >= 1 and "rows" in u
+
+
+def test_counters_start_at_zero_so_the_first_event_fires_its_alert():
+    """increase() ignores a counter's first appearance: a first canary trip or failed delivery published straight
+    at 1 never fired KavachCanaryTripped or KavachDeliveryFailedOrUnknown (found in the alert drill)."""
+    from kavach.telemetry import metrics_text
+    text = metrics_text(kavach())
+    for name, labels in [("kavach_rule_hits_total", {"rule": "R28", "outcome": "DENY"}),
+                         ("kavach_effects_total", {"kind": "mail", "outcome": "failed"}),
+                         ("kavach_effects_total", {"kind": "payment", "outcome": "unknown"}),
+                         ("kavach_approvals_total", {"outcome": "expired"}),
+                         ("kavach_cancellations_total", {"by": "kill switch"})]:
+        assert metric(text, name, **labels) == 0, (name, labels)
+
