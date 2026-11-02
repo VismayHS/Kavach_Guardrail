@@ -16,7 +16,7 @@ import time
 from . import changelog
 from .addresses import domain_of, parse_recipients
 from .environment import INTERNAL_DOMAIN, MAIL_RECALL_S, PAYMENT_HOLD_S, Environment
-from .manifest import ToolSpec
+from .manifest import ToolSpec, arg, model_of
 from .models import Effect, Label, Reversibility, TaskContext, ToolCall
 from .sql import classify
 
@@ -57,14 +57,16 @@ class ConsequenceEngine:
         rev = Reversibility.REVERSIBLE if spec.safeguard in WINDOW_TEXT else spec.reversibility
         after = WINDOW_TEXT.get(spec.safeguard)
 
-        if tool == "crm.execute":
-            eff = self._stage_sql(str(a.get("sql", "")), prod)
-        elif tool == "crm.query":
-            eff = self._stage_select(str(a.get("sql", "")))
-        elif tool in ("files.write", "files.delete"):
-            eff = self._stage_file(tool, str(a.get("path", "")), a.get("content"), prod)
-        elif tool == "mail.send":
-            to = parse_recipients(a.get("to", ""), a.get("cc", ""), a.get("bcc", ""))
+        m = model_of(spec)                       # dispatch on what the tool does, not on its name (E3)
+        A = lambda role, default=None: arg(spec, a, role, default)  # noqa: E731
+        if m == "sql_write":
+            eff = self._stage_sql(str(A("sql", "")), prod)
+        elif m == "sql_read":
+            eff = self._stage_select(str(A("sql", "")))
+        elif m in ("file_write", "file_delete"):
+            eff = self._stage_file(m == "file_delete", str(A("path", "")), A("content"), prod)
+        elif m == "email":
+            to = parse_recipients(A("to", ""), A("cc", ""), A("bcc", ""))
             ext = [x for x in to if not is_internal(x)]
             pii = sum(labels[k].pii_entities for k in spec.data_args if k in labels)
             conf = max((labels[k].conf.rank for k in spec.data_args if k in labels), default=0)
@@ -72,42 +74,42 @@ class ConsequenceEngine:
             named, stray = self._invoice_recipients(ctx.user_request, ext)
             eff = Effect("predicted", rev,
                          {"recipients": len(to), "external_recipients": len(ext), "pii_records": pii,
-                          "body_chars": len(str(a.get("body", ""))), "domains": sorted({x.split("@")[-1] for x in to}),
+                          "body_chars": len(str(A("body", ""))), "domains": sorted({x.split("@")[-1] for x in to}),
                           "named_invoices": named, "not_invoice_customer": stray},
                          harm_from(raw),
                          f"1 email to {', '.join(to) or '?'} ({len(ext)} external) carrying {pii} PII values; "
                          + (after or "cannot be recalled once sent") + ".", safeguard=spec.safeguard)
-        elif tool == "payments.transfer":
-            amt = float(a.get("amount", 0))
-            known = a.get("to_account") in self.env.payees
+        elif m == "transfer":
+            amt = float(A("amount", 0))
+            known = A("to_account") in self.env.payees
             raw = amt / 2000.0 + (3.0 if not known else 0.0)
             eff = Effect("predicted", rev, {"amount": amt, "payee_known": known,
-                                            "payee": self.env.payees.get(a.get("to_account"), "UNKNOWN")},
-                         harm_from(raw), f"Transfer INR {amt:,.0f} to {a.get('to_account')} "
+                                            "payee": self.env.payees.get(A("to_account"), "UNKNOWN")},
+                         harm_from(raw), f"Transfer INR {amt:,.0f} to {A('to_account')} "
                          f"({'known payee' if known else 'UNKNOWN payee'}); "
                          + (after or "settled transfers cannot be reversed") + ".",
                          safeguard=spec.safeguard)
-        elif tool == "payments.refund":
-            amt = float(a.get("amount", 0))
-            eff = Effect("predicted", rev, {"amount": amt, "invoice_id": a.get("invoice_id")},
-                         harm_from(amt / 2000.0), f"Refund INR {amt:,.0f} on invoice {a.get('invoice_id')}; "
+        elif m == "refund":
+            amt = float(A("amount", 0))
+            eff = Effect("predicted", rev, {"amount": amt, "invoice_id": A("invoice_id")},
+                         harm_from(amt / 2000.0), f"Refund INR {amt:,.0f} on invoice {A('invoice_id')}; "
                          "compensable (can be re-invoiced) but not undoable.")
-        elif tool == "files.read":
-            secret = any(s in str(a.get("path", "")) for s in ("env", "secret", "id_rsa"))
-            eff = Effect("static", rev, {"path": a.get("path"), "secret": secret}, harm_from(10.0 if secret else 0.0),
-                         f"Read {a.get('path')} into the agent context" + (" (CREDENTIALS)" if secret else "") + ".")
-        elif tool in ("payment.propose", "payment.release"):
-            eff = self._stage_payment(tool, str(a.get("invoice_id", "")), rev, spec.safeguard)
-        elif tool == "vendor.update_bank":
-            eff = self._stage_bank_change(str(a.get("vendor_id", "")), str(a.get("iban", "")), spec.safeguard)
-        elif tool == "invoice.read":
-            eff = Effect("static", rev, {"invoice_id": a.get("invoice_id")}, 0.0,
-                         f"Read invoice {a.get('invoice_id')} into the agent context.")
-        elif tool == "sap.post":
-            amt = float(a.get("amount", 0) or 0)
-            eff = Effect("predicted", rev, {"amount": amt, "gl_account": a.get("gl_account"), "doc_type": a.get("doc_type")},
-                         harm_from(amt / 2000.0), f"Post a {a.get('doc_type')} document of EUR {amt:,.0f} to GL account "
-                         f"{a.get('gl_account')}; " + (after or "undoing a posted document needs a reversal entry") + ".",
+        elif m == "file_read":
+            secret = any(s in str(A("path", "")) for s in ("env", "secret", "id_rsa"))
+            eff = Effect("static", rev, {"path": A("path"), "secret": secret}, harm_from(10.0 if secret else 0.0),
+                         f"Read {A('path')} into the agent context" + (" (CREDENTIALS)" if secret else "") + ".")
+        elif m in ("ap_propose", "ap_release"):
+            eff = self._stage_payment(m == "ap_propose", str(A("invoice_id", "")), rev, spec.safeguard)
+        elif m == "bank_change":
+            eff = self._stage_bank_change(str(A("vendor_id", "")), str(A("iban", "")), spec.safeguard)
+        elif m == "invoice_read":
+            eff = Effect("static", rev, {"invoice_id": A("invoice_id")}, 0.0,
+                         f"Read invoice {A('invoice_id')} into the agent context.")
+        elif m == "ledger_post":
+            amt = float(A("amount", 0) or 0)
+            eff = Effect("predicted", rev, {"amount": amt, "gl_account": A("gl_account"), "doc_type": A("doc_type")},
+                         harm_from(amt / 2000.0), f"Post a {A('doc_type')} document of EUR {amt:,.0f} to GL account "
+                         f"{A('gl_account')}; " + (after or "undoing a posted document needs a reversal entry") + ".",
                          safeguard=spec.safeguard)
         elif spec.amount_arg:  # money a manifest describes (e.g. a bank's send_money): harm grows with the amount
             try:
@@ -142,7 +144,7 @@ class ConsequenceEngine:
         owners = {e for _, e in rows}
         return [str(i) for i, _ in rows], [r for r in recipients if rows and r.lower() not in owners]
 
-    def _stage_payment(self, tool: str, invoice_id: str, rev: Reversibility, safeguard: str | None) -> Effect:
+    def _stage_payment(self, propose: bool, invoice_id: str, rev: Reversibility, safeguard: str | None) -> Effect:
         """Amount, payee, proposal and 3-way match come from the records, never from the call's text."""
         f = self.env.ap_invoice_facts(invoice_id)
         if f is None:
@@ -151,7 +153,7 @@ class ConsequenceEngine:
         tolerance = min(0.02 * amt, 100.0)          # fa_judgment.md: "≤ 2% or ≤ €100, whichever is lower"
         matched = po is not None and gr is not None and abs(amt - po) <= tolerance and abs(amt - gr) <= tolerance
         facts = {**f, "matched": matched}
-        if tool == "payment.propose":
+        if propose:
             return Effect("static", rev, facts, harm_from(amt / 20000.0),
                           f"Propose paying {f['currency']} {amt:,.0f} for {invoice_id} to {f['vendor_name']}.",
                           safeguard=safeguard)
@@ -232,7 +234,7 @@ class ConsequenceEngine:
                       harm_from(pii * 0.005), f"Read-only query returns {n} rows"
                       + (f" ({pii} customer records enter the agent context)" if pii else "") + ".")
 
-    def _stage_file(self, tool: str, path: str, content, prod: float) -> Effect:
+    def _stage_file(self, delete: bool, path: str, content, prod: float) -> Effect:
         try:
             p = self.env._safe(path)
             inside = True
@@ -240,12 +242,12 @@ class ConsequenceEngine:
             p, inside = None, False
         exists = bool(p and p.exists())
         size = p.stat().st_size if exists else 0
-        raw = ((size / 200.0) if tool == "files.delete" else (size / 400.0 if exists else 0.1)) * prod
+        raw = ((size / 200.0) if delete else (size / 400.0 if exists else 0.1)) * prod
         if not inside:
             raw += 15
         return Effect("sandbox", Reversibility.REVERSIBLE if inside else Reversibility.IRREVERSIBLE,
                       {"path": path, "inside_workspace": inside, "exists": exists, "bytes_before": size,
-                       "bytes_after": 0 if tool == "files.delete" else len(str(content or ""))},
-                      harm_from(raw), f"{'Delete' if tool == 'files.delete' else 'Overwrite' if exists else 'Create'} "
+                       "bytes_after": 0 if delete else len(str(content or ""))},
+                      harm_from(raw), f"{'Delete' if delete else 'Overwrite' if exists else 'Create'} "
                       f"{path} ({size} bytes before){'' if inside else ' OUTSIDE workspace'}; snapshot taken first.",
                       safeguard="snapshot+undo")
