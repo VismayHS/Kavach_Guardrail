@@ -64,6 +64,7 @@ class Task:
     ctx: TaskContext
     prov: ProvenanceTracker = field(default_factory=ProvenanceTracker)
     timeline: list[dict] = field(default_factory=list)
+    outbound_attempted: bool = False
 
 
 class Kavach:
@@ -106,6 +107,36 @@ class Kavach:
             ctx.plan_findings = plan_report["findings"]
             self.receipts.append({"type": "plan", "task_id": tid, "request": request, "report": plan_report})
         return tid, plan_report
+
+    def rule_of_two(self, task: Task, spec=None, call: ToolCall | None = None) -> dict:
+        """Meta's Agents Rule of Two (after Willison's lethal trifecta): untrusted input, private data, an outbound
+        action. Any two are fine; all three in one task means a human decides (rule R14 enforces it).
+        With a call, the legs include what that call would add (reading an inbox adds untrusted input)."""
+        reads_untrusted = reads_private = False
+        if spec is not None and call is not None:
+            trust, conf = self.output_label(call)
+            reads_untrusted = trust == "untrusted" or bool(spec.untrusted_fields)
+            reads_private = conf in (Conf.PII, Conf.CONFIDENTIAL)
+        legs = {"untrusted_input": task.prov.untrusted_seen or reads_untrusted,
+                "private_data": task.prov.private_seen or reads_private,
+                "outbound_action": bool(spec is not None and spec.sink == "external") or task.outbound_attempted}
+        n = sum(legs.values())
+        return {**legs, "legs": n, "human_required": n == 3}
+
+    def task_summary(self, task_id: str) -> dict:
+        """One session as a UI shows it: who and what was asked, the Rule-of-Two legs, budget, and every receipt."""
+        t = self.tasks[task_id]
+        mine = [r for r in self.receipts.items if r["body"].get("task_id") == task_id]
+        return {"task_id": task_id, "user": t.ctx.principal.user_id, "role": t.ctx.principal.role,
+                "authenticated": t.ctx.principal.authenticated, "request": t.ctx.user_request, "env": t.ctx.env,
+                "started_at": t.ctx.started_at, "harm_spent": round(t.ctx.harm_spent, 5),
+                "harm_budget": self.cfg.harm_budget, "denials": t.ctx.denials,
+                "circuit_breaker": self.cfg.circuit_breaker, "rule_of_two": self.rule_of_two(t),
+                "hostile_sources": sorted(t.prov.hostile), "plan_findings": t.ctx.plan_findings,
+                "receipts": [{"id": r["id"], "seq": r["seq"], "type": r["body"].get("type"),
+                              "verdict": (r["body"].get("decision") or {}).get("verdict"),
+                              "tool": ((r["body"].get("decision") or {}).get("call") or {}).get("tool"),
+                              "reason": (r["body"].get("decision") or {}).get("reason")} for r in mine]}
 
     def output_label(self, call: ToolCall) -> tuple[str, object]:
         """(trust, confidentiality) of a tool's output: the manifest's, except files take their own sensitivity."""
@@ -223,6 +254,9 @@ class Kavach:
 
         d = Decision(verdict, reason, call, {k: l.to_dict() for k, l in labels.items()}, gates, effect, risk,
                      self._scorecard(spec, gates, effect, risk, labels), replan_hint=hint)
+        d.rule_of_two = self.rule_of_two(task, spec, call)
+        if spec is not None and spec.sink == "external":
+            task.outbound_attempted = True
         d.latency_ms = (time.perf_counter() - t0) * 1000
         dd = d.to_dict()
         d.explanation, explain_src = self.explainer.explain(dd)
