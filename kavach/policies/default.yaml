@@ -97,7 +97,7 @@ canaries:
 
 # Rule catalogue (ids are cited in every receipt)
 rules:
-  R1: "Untrusted content may not choose the destination of an external action (recipient, URL, account, amount)."
+  R1: "Untrusted content may not choose the destination of an external action (recipient, URL, account, amount). A value read from a source the user pointed at, for an action the user asked for, goes to a person instead; a link in such a source may be followed."
   R2: "PII may not leave the company without human approval."
   R3: "No writes to production during a change freeze."
   R4: "Schema-destructive SQL (DROP, TRUNCATE, ALTER) is denied in production."
@@ -107,7 +107,7 @@ rules:
   R8: "Role must be permitted to use the tool (RBAC)."
   R9: "Secrets and credential files may not be read into an agent context, overwritten or deleted."
   R10: "Bulk changes above the row limit in production require approval."
-  R11: "Arguments copied verbatim from untrusted content may not drive a state-changing action."
+  R11: "Arguments copied from untrusted content may not drive a state-changing action; from a source the user pointed at, for an action the user asked for, a person decides."
   R12: "File operations must stay inside the agent workspace."
   R13: "A URL to a host the user never named may not carry private values or bulk data; after private data was read, such fetches need approval."
   R14: "Once a task has read private data and untrusted content, outbound actions to destinations the user didn't give need approval (lethal trifecta)."
@@ -135,6 +135,6 @@ rules:
   R35: "Raw SQL may not change the tables the finance rules read (vendors, invoices, POs, receipts, proposals, SAP documents); only the finance tools may."
   R36: "One task's totals count: rows changed across statements, money moved across payments, characters emailed outside, and repeats of the same payment or email need approval."
   R37: "An email to an outside address that is very long or carries a long encoded run needs approval, whatever its content appears to be."
-  R38: "Once a task has read untrusted content, an email or transfer to an outside destination the user didn't give needs approval."
-  R39: "Bank accounts, IBANs and links that came from untrusted content may not be passed on by email, even internally, without approval."
+  R38: "Once a task has read untrusted content, an email, transfer or other outbound action to a destination the user didn't give needs approval."
+  R39: "Bank accounts, IBANs and links that came from untrusted content may not be passed on by email or chat message, even internally, without approval."
   R40: "When a task has shown no tool output, an email or transfer to an outside destination the user didn't give needs approval: there is nothing to trace it to."
