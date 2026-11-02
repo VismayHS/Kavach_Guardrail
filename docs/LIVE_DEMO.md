@@ -1,5 +1,7 @@
 # Live demo: real effects, not a dashboard
 
+The step-by-step script with timings, labels and fallbacks is [DEMO.md](../DEMO.md); this page explains each story in depth.
+
 The console explains; a real inbox proves. Everything runs on one laptop with made-up data: Mailpit is a local
 mail server that catches every email (nothing reaches the internet).
 
@@ -34,8 +36,8 @@ Open two browser tabs side by side: the console's **Undo windows** page and the 
 
 1. Ask Claude: *Send this test summary to demo-recipient@example.test: All checks passed on today's build.*
    (Include the summary; without one Claude asks what to send.)
-2. Claude is told `queued`, not `sent`. Undo windows shows the email, a 30-second countdown and **Recall email**.
-3. Press **Recall email**. It moves to *Cancelled in time*. The inbox stays empty. The receipt says *Taken back*.
+2. Claude is told `queued`, not `sent`. Undo windows shows the email, a 30-second countdown, **Cancel email** and **Send now**.
+3. Press **Cancel email**. It moves to *Cancelled in time*. The inbox stays empty. The receipt says *Taken back*.
 4. Ask again and do nothing. When the countdown ends, it shows *Sent* and arrives in Mailpit, carrying the header
    `X-Kavach-Outbox: hold-…`, the same id as its receipt.
 
