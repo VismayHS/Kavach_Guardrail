@@ -118,6 +118,8 @@ class Kavach:
         self.recall: dict[str, tuple[int, str]] = {}   # receipt -> (world epoch, held payment / email / SAP doc)
         self.pending_calls: dict[str, tuple[str, ToolCall, Effect | None]] = {}
         self.kills: dict[str, dict] = {}                # kill switch (F3): id -> {scope, target, by, reason, at}
+        from .secret_broker import SecretsBroker
+        self.secrets = SecretsBroker()                  # F1: {{secret:NAME}} resolved at execution, never shown
         self.candidate: PolicyEngine | None = None      # F9: a policy being rolled out to candidate_percent of tasks
         self.events: dict[str, list] = {}               # F9: what each task saw and asked, for replay (in memory)
         self.tenant_policies: dict = {}                 # F10: tenant -> its own PolicyEngine (or None: the default)
@@ -559,10 +561,11 @@ class Kavach:
         task = self.tasks[task_id]
         windowed = self._windowed(d.effect)
         actor = {"user": task.ctx.principal.user_id, "task": task_id}
+        run_call = ToolCall(d.call.tool, self.secrets.resolve(d.call.tool, d.call.args), d.call.call_id)
         if d.verdict == Verdict.ALLOW_WITH_SAFEGUARD and not windowed:
-            result, self.undo[d.receipt_id] = self._dispatch_undoable(d.call, d.effect, actor)
+            result, self.undo[d.receipt_id] = self._dispatch_undoable(run_call, d.effect, actor)
         else:
-            result = self.env.dispatch(d.call.tool, d.call.args, actor=actor, hold=windowed)
+            result = self.env.dispatch(run_call.tool, run_call.args, actor=actor, hold=windowed)
         d.executed, d.result = True, result
         # post-condition: actual effect must match the staged prediction
         if model_of(self.registry.get(d.call.tool)) == "sql_write" and d.effect and isinstance(result, dict) \

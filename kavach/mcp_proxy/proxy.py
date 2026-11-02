@@ -256,7 +256,11 @@ class KavachMCPProxy:
         elif d.verdict == Verdict.DENY:
             return _error(f"KAVACH DENY: {d.reason}" + (f" Suggested: {d.replan_hint}" if d.replan_hint else ""),
                           "DENY", d.receipt_id)
-        res = await self.clients[t.upstream].call_tool(t.raw, call.args)
+        try:                                           # F1: credentials only now, never in the agent's view
+            args = self.gw.secrets.resolve(name, call.args)
+        except PermissionError as e:
+            return _error(f"KAVACH: {e}", "DENY", d.receipt_id)
+        res = await self.clients[t.upstream].call_tool(t.raw, args)
         self.gw.register_output(tid, call, _output(res))
         self.gw.receipts.append({"type": "mcp-forwarded", "task_id": tid, "decision_receipt": d.receipt_id,
                                  "tool": name, "upstream_error": bool(res.is_error)})
