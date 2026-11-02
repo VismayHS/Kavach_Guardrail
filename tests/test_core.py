@@ -111,6 +111,9 @@ class FakeLLM:
     def chat_json(self, *a, **k):
         return json.loads(self.reply)
 
+    def pick_models(self):
+        return self.model, self.model
+
     def chat_text(self, *a, **k):
         return self.reply
 

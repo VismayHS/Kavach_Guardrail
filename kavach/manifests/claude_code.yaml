@@ -1,0 +1,124 @@
+# Claude Code's built-in tools, described for KAVACH (used by integrations/claude_code_hook.py and the Claude Agent
+# SDK adapter). File and repo contents are treated as untrusted input: a README, an issue or a fetched page can carry
+# instructions. Bash commands are read by KAVACH's shell model (E10, kavach/shell.py): decode-and-run, privilege,
+# persistence, secrets sent to the network and writes outside the project are denied; network and secrets go to a
+# person ("ask"). The hook can't dry-run them (Claude Code runs them on your machine), so a command that deletes files
+# is also asked about. KAVACH's own shell.run tool adds the sandboxed dry run (kavach/manifests/shell.yaml).
+roles:
+  claude_code: [Read, Write, Edit, MultiEdit, NotebookEdit, Bash, WebFetch, WebSearch, Glob, Grep, LS, TodoWrite, Task]
+tools:
+  Read:
+    description: Read a file.
+    params: {file_path: str, offset: int, limit: int}
+    required: [file_path]
+    effect: read
+    sink: none
+    reversibility: idempotent
+    control_args: [file_path]
+    effect_model: file_read            # R9: credential files (.env, id_rsa, secrets) are never read into context
+    arg_map: {path: file_path}
+    output_trust: untrusted
+    output_conf: internal
+  Write:
+    description: Write a file.
+    params: {file_path: str, content: str}
+    required: [file_path, content]
+    effect: write
+    sink: internal
+    reversibility: reversible          # version control can take it back; KAVACH holds no snapshot here
+    control_args: [file_path]
+    data_args: [content]
+    intent_verbs: [write, create, save, add, fix, implement, change, update, refactor]
+  Edit:
+    description: Edit a file.
+    params: {file_path: str, old_string: str, new_string: str, replace_all: bool}
+    required: [file_path, old_string, new_string]
+    effect: write
+    sink: internal
+    reversibility: reversible
+    control_args: [file_path]
+    data_args: [new_string]
+    intent_verbs: [edit, fix, change, update, refactor, rename, implement, add, remove]
+  MultiEdit:
+    description: Several edits to one file.
+    params: {file_path: str, edits: any}
+    required: [file_path, edits]
+    effect: write
+    sink: internal
+    reversibility: reversible
+    control_args: [file_path]
+    intent_verbs: [edit, fix, change, update, refactor, rename, implement]
+  NotebookEdit:
+    description: Edit a notebook cell.
+    params: {notebook_path: str, new_source: str, cell_id: str, cell_type: str, edit_mode: str}
+    required: [notebook_path, new_source]
+    effect: write
+    sink: internal
+    reversibility: reversible
+    control_args: [notebook_path]
+  Bash:
+    description: Run a shell command.
+    params: {command: str, description: str, timeout: int, run_in_background: bool}
+    required: [command]
+    effect: write
+    sink: external
+    reversibility: irreversible
+    control_args: [command]
+    effect_model: shell
+    intent_verbs: [run, test, build, install, execute, start, check, lint, commit]
+  WebFetch:
+    description: Fetch a URL.
+    params: {url: str, prompt: str}
+    required: [url]
+    effect: ingress
+    sink: none
+    reversibility: idempotent
+    control_args: [url]
+    effect_model: web_fetch            # R13: no private values or bulk data to hosts the user never named
+    output_trust: untrusted
+    output_conf: public
+  WebSearch:
+    description: Search the web.
+    params: {query: str, allowed_domains: any, blocked_domains: any}
+    required: [query]
+    effect: ingress
+    sink: none
+    reversibility: idempotent
+    output_trust: untrusted
+    output_conf: public
+  Glob:
+    description: Find files by pattern.
+    params: {pattern: str, path: str}
+    required: [pattern]
+    effect: read
+    sink: none
+    reversibility: idempotent
+  Grep:
+    description: Search file contents.
+    params: {pattern: str, path: str, glob: str, output_mode: str, "-i": bool, "-n": bool, type: str, multiline: bool}
+    required: [pattern]
+    effect: read
+    sink: none
+    reversibility: idempotent
+    output_trust: untrusted
+  LS:
+    description: List a directory.
+    params: {path: str, ignore: any}
+    required: [path]
+    effect: read
+    sink: none
+    reversibility: idempotent
+  TodoWrite:
+    description: Update the task list.
+    params: {todos: any}
+    required: [todos]
+    effect: read
+    sink: none
+    reversibility: idempotent
+  Task:
+    description: Start a subagent.
+    params: {description: str, prompt: str, subagent_type: str}
+    required: [prompt]
+    effect: read
+    sink: none
+    reversibility: idempotent

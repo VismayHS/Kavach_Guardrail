@@ -12,8 +12,10 @@ rule R1 and the agent receives a replan hint as the tool result.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -38,42 +40,112 @@ def openai_tools(gw: Kavach) -> list[dict]:
     return out
 
 
-def run(request: str, guard: bool = True, role: str = "analyst", model: str | None = None, max_steps: int = 8) -> dict:
+PYTHONIC_CALL = re.compile(r"<\|python_tag\|>\s*([A-Za-z_]\w*)\((.*)\)\s*(?:<\|eom_id\|>|$)", re.S)
+
+
+def text_tool_calls(content: str | None) -> list[dict]:
+    """Llama on the Inference Cloud sometimes writes its tool call into the reply text instead of tool_calls: as JSON
+    ({"name": ..., "parameters": ...}) or pythonic (<|python_tag|>name(arg="...")). Read it as the call it is,
+    so it runs (unguarded) or is checked by KAVACH (guarded) rather than silently doing nothing."""
+    text, name, args = (content or "").strip(), None, None
+    try:
+        obj = json.loads(text)
+        if isinstance(obj, dict) and isinstance(obj.get("name"), str):
+            p = obj.get("parameters", obj.get("arguments", {}))
+            name, args = obj["name"], json.loads(p) if isinstance(p, str) else p
+    except (json.JSONDecodeError, TypeError):
+        m = PYTHONIC_CALL.search(text)
+        if m:
+            try:
+                call = ast.parse(f"f({m.group(2)})", mode="eval").body      # literal arguments only, never evaluated
+                name, args = m.group(1), {kw.arg: ast.literal_eval(kw.value) for kw in call.keywords}
+            except (SyntaxError, ValueError):
+                pass
+    if not name or not isinstance(args, dict):
+        return []
+    return [{"id": "text-call-1", "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}]
+
+
+def typed(gw: Kavach, tool: str, args: dict) -> dict:
+    """Llama on the Inference Cloud sends booleans and numbers as strings ("true", "4200"). Convert them to the types the
+    manifest declares, so "false" isn't truthy and KAVACH's schema check sees real numbers (it stays strict)."""
+    spec = gw.registry.get(tool)
+    out = dict(args)
+    for k, v in args.items():
+        t = spec.params.get(k) if spec else None
+        if not isinstance(v, str):
+            continue
+        if t == "bool" and v.strip().lower() in ("true", "false"):
+            out[k] = v.strip().lower() == "true"
+        elif t in ("int", "float"):
+            try:
+                out[k] = int(v) if t == "int" else float(v)
+            except ValueError:
+                pass
+    return out
+
+
+def run(request: str, guard: bool = True, role: str = "analyst", model: str | None = None, max_steps: int = 8,
+        trace: list | None = None, melon: bool | None = None) -> dict:
+    """Run the agent on `request`. Pass your own `trace` list to watch the steps arrive while it runs (dashboard).
+    melon (C1, default KAVACH_MELON=1): before a state-changing call runs, ask the model again with the request
+    masked out; if it still proposes the call, the call goes to a person (R27)."""
     env = Environment(tempfile.mkdtemp())
     gw = Kavach(env)
     llm = QualcommCloudAI(model=model or os.environ.get("KAVACH_AGENT_MODEL", "Llama-3.3-70B"), timeout=60)
     if not llm.enabled:
-        raise SystemExit("Set IMAGINE_API_KEY and IMAGINE_API_ENDPOINT (Qualcomm Cloud AI Playground).")
+        raise SystemExit("Set IMAGINE_API_KEY and IMAGINE_API_ENDPOINT (or INFERENCE_CLOUD_API_KEY and "
+                         "INFERENCE_CLOUD_ENDPOINT) for the Qualcomm Inference Cloud.")
     tid, plan = gw.start_task("ravi", role, request)
+    use_melon = guard and (melon if melon is not None else os.environ.get("KAVACH_MELON") == "1")
+    masked = None
+    if use_melon:
+        from kavach.melon import Melon
+        masked = Melon(lambda m, t: llm.chat(m, tools=t, max_tokens=1000)["choices"][0]["message"],
+                       name_map=lambda n: n.replace("__", "."))
     msgs = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": request}]
-    trace = []
+    trace = [] if trace is None else trace
     for _ in range(max_steps):
-        resp = llm.chat(msgs, tools=openai_tools(gw), max_tokens=600)
+        resp = llm.chat(msgs, tools=openai_tools(gw), max_tokens=4000)    # a long email body must not be cut off
         msg = resp["choices"][0]["message"]
-        calls = msg.get("tool_calls") or []
+        calls = msg.get("tool_calls") or text_tool_calls(msg.get("content"))
         msgs.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls} if calls
                     else {"role": "assistant", "content": msg.get("content") or ""})
         if not calls:
             trace.append({"final": msg.get("content")})
             break
+        before = msgs[:-1]           # the conversation up to (not including) the turn that proposed these calls
         for c in calls:
             name = c["function"]["name"].replace("__", ".")
-            args = json.loads(c["function"].get("arguments") or "{}")
-            if guard:
-                d = gw.run(tid, ToolCall(name, args))
-                ok = d.verdict.value.startswith("ALLOW")
-                content = json.dumps(d.result, default=str)[:3000] if ok else \
-                    f"BLOCKED by KAVACH ({d.verdict.value}): {d.reason} {d.replan_hint or ''}"
-                trace.append({"tool": name, "args": args, "verdict": d.verdict.value, "reason": d.reason,
-                              "receipt": d.receipt_id})
-            else:
-                result = env.dispatch(name, args)
-                content = json.dumps(result, default=str)[:3000]
-                trace.append({"tool": name, "args": args, "verdict": "UNGUARDED"})
+            try:
+                args = json.loads(c["function"].get("arguments") or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            args = typed(gw, name, args if isinstance(args, dict) else {})
+            try:      # a broken call (no arguments, unknown tool) goes back to the agent as an error, like a real runner
+                if guard:
+                    probe = (lambda call, b=before: masked.check(b, openai_tools(gw), call.tool, call.args)) \
+                        if masked is not None else None
+                    d = gw.execute(tid, gw.check(tid, ToolCall(name, args), melon=probe))
+                    ok = d.verdict.value.startswith("ALLOW")
+                    content = json.dumps(d.result, default=str)[:3000] if ok else \
+                        f"BLOCKED by KAVACH ({d.verdict.value}): {d.reason} {d.replan_hint or ''}"
+                    trace.append({"tool": name, "args": args, "verdict": d.verdict.value, "reason": d.reason,
+                                  "receipt": d.receipt_id})
+                else:
+                    result = env.dispatch(name, args)
+                    content = json.dumps(result, default=str)[:3000]
+                    trace.append({"tool": name, "args": args, "verdict": "UNGUARDED"})
+            except Exception as e:
+                content = f"ERROR: {type(e).__name__}: {e}"
+                trace.append({"tool": name, "args": args, "verdict": "ERROR", "reason": content[:300]})
             msgs.append({"role": "tool", "tool_call_id": c.get("id"), "content": content})
     leaked = [m for m in env.outbox if not m["to"].endswith("@infycorp.com")]
+    waiting = [h for h in env.holds if h["status"] == "held"]      # KAVACH let these through a window: undo still works
     return {"guarded": guard, "model": llm.model, "trace": trace, "external_emails_sent": leaked,
-            "payments": env.ledger, "receipts_valid": gw.receipts.verify()}
+            "payments": env.ledger, "waiting_held_or_queued": waiting, "receipts_valid": gw.receipts.verify(),
+            "melon": None if masked is None else {"calls": masked.calls, "matches": masked.matches,
+                                                  "ms": masked.ms, "errors": masked.errors}}
 
 
 if __name__ == "__main__":
@@ -82,5 +154,7 @@ if __name__ == "__main__":
     ap.add_argument("--no-guard", action="store_true")
     ap.add_argument("--role", default="analyst")
     ap.add_argument("--model")
+    ap.add_argument("--melon", action="store_true", help="masked re-execution before state-changing calls (C1)")
     a = ap.parse_args()
-    print(json.dumps(run(a.request, guard=not a.no_guard, role=a.role, model=a.model), indent=1, default=str))
+    print(json.dumps(run(a.request, guard=not a.no_guard, role=a.role, model=a.model, melon=a.melon or None),
+                     indent=1, default=str))

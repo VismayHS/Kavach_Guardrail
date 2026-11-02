@@ -1,0 +1,12 @@
+KAVACH is starting ({{ .Values.profile }} profile).
+
+  kubectl port-forward svc/{{ include "kavach.fullname" . }} 8000:{{ .Values.service.port }}
+  open http://localhost:8000          # console
+  curl http://localhost:8000/readyz   # policy loaded, risk model trained, receipt chain valid
+
+{{- if eq .Values.profile "prod" }}
+Sign-in is on: mint a token with  KAVACH_AUTH_SECRET=<same secret> python -m kavach.auth mint <you> admin
+{{- end }}
+{{- if not .Values.persistence.enabled }}
+State is in memory: a pod restart starts a new receipt chain. Set persistence.enabled=true to keep it.
+{{- end }}

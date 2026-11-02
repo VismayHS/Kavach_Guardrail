@@ -1,0 +1,37 @@
+# Alerting rules for a security team (wire Alertmanager to Slack, PagerDuty or email to receive them).
+groups:
+  - name: kavach
+    rules:
+      - alert: KavachCanaryTripped
+        expr: increase(kavach_rule_hits_total{rule="R28"}[5m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "A canary record tried to leave the company (R28)"
+          description: "An agent attempted an external action carrying a planted canary record. Treat as a breach in progress: open the session's evidence pack."
+      - alert: KavachDenySpike
+        expr: sum(increase(kavach_decisions_total{verdict="DENY"}[5m])) > 10
+        labels: {severity: warning}
+        annotations:
+          summary: "More than 10 blocked actions in 5 minutes"
+          description: "Possible injection campaign or a misbehaving agent. Consider the kill switch (POST /api/kill)."
+      - alert: KavachApprovalsBacklog
+        expr: kavach_approvals_pending > 20
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "More than 20 approvals waiting for 10 minutes"
+          description: "Approvers are behind; check the SLA chain and the fatigue stats (GET /api/hitl/stats)."
+      - alert: KavachSlowDecisions
+        expr: histogram_quantile(0.95, sum by (le) (rate(kavach_check_latency_ms_bucket[5m]))) > 1000
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "p95 decision latency above 1 s"
+          description: "The judge may be inline or the staging budget exceeded. Check judge_mode and the model endpoint."
+      - alert: KavachKillSwitchActive
+        expr: kavach_kills_active > 0
+        for: 30m
+        labels: {severity: info}
+        annotations:
+          summary: "An agent pause has been active for 30 minutes"
+          description: "Someone pressed the kill switch. Resume with DELETE /api/kill/{id} when the incident is handled."

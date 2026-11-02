@@ -1,0 +1,8 @@
+apiVersion: v2
+name: kavach
+description: KAVACH, a pre-execution action firewall for AI agents (gateway, API, console and MCP front door)
+type: application
+version: 0.5.0
+appVersion: "phase-5"
+keywords: [ai-agents, guardrails, mcp, security, policy]
+home: https://github.com/VismayHS/Kavach_Guardrail

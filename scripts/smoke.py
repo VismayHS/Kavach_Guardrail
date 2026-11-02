@@ -2,12 +2,12 @@ import sys, tempfile
 sys.path.insert(0, ".")
 from kavach.environment import Environment
 from kavach.gateway import Kavach
-from kavach.scenarios import SCENARIOS, materialize
+from kavach.scenarios import SCENARIOS, materialize, prepare
 
 env = Environment(tempfile.mkdtemp())
 k = Kavach(env)
 for name, sc in SCENARIOS.items():
-    env.reset()
+    prepare(env, sc)
     tid, plan = k.start_task(sc["user"][0], sc["user"][1], sc["request"], sc["env"], sc["plan"])
     print(f"\n=== {name}: {sc['title']}  | plan: {plan['verdict']} {[f['code'] for f in plan['findings']]}")
     last = None

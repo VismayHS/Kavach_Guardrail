@@ -1,0 +1,77 @@
+# KAVACH Helm values.
+#   helm install kavach deploy/helm/kavach --set secrets.authSecret=$(openssl rand -hex 32) \
+#     --set secrets.receiptKey=$(openssl rand -hex 32) --set-file secrets.signingKeyPem=keys/kavach_signing.pem
+
+image:
+  repository: kavach
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# KAVACH keeps the receipt chain, approvals and undo windows in one process (or one SQLite file with
+# persistence.enabled). Run a single replica until state lives in a shared database (KAVACH_DB_URL=postgresql://...).
+replicaCount: 1
+
+# prod: sign-in required, real receipt and signing keys, pinned tool definitions, no demo endpoints.
+profile: prod
+
+secrets:
+  # Use an existing Secret with keys auth-secret, receipt-key and signing.pem instead of creating one.
+  existingSecret: ""
+  authSecret: ""        # 32+ characters: signs user tokens
+  receiptKey: ""        # 32+ characters: HMAC for the receipt chain
+  signingKeyPem: ""     # Ed25519 private key (python -m kavach.receipts keygen keys/)
+  # Optional: Qualcomm Cloud AI for the intent judge and the explainer
+  inferenceApiKey: ""
+  inferenceEndpoint: ""
+
+env:
+  KAVACH_LOG_JSON: "1"
+  # KAVACH_CORS_ORIGINS: "https://console.example.com"
+  # OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability:4318"
+  # KAVACH_SIEM_KIND: splunk
+  # KAVACH_SIEM_URL: https://splunk.example.com:8088/services/collector/event
+
+persistence:
+  enabled: false        # mount a volume at /data and keep state in /data/kavach.db
+  size: 1Gi
+  storageClass: ""
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false
+  className: ""
+  host: kavach.example.com
+  tls: []
+
+resources:
+  requests: {cpu: 250m, memory: 512Mi}
+  limits: {memory: 1Gi}
+
+# Prometheus Operator: scrape /metrics
+serviceMonitor:
+  enabled: false
+  interval: 15s
+
+# Only let KAVACH talk to what it needs (DNS, the model endpoint, the OTel collector, connectors). Off by default
+# because egress destinations differ per cluster.
+networkPolicy:
+  enabled: false
+  egressCIDRs: ["0.0.0.0/0"]
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+  seccompProfile: {type: RuntimeDefault}
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: {drop: [ALL]}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

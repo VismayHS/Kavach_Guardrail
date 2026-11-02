@@ -1,3 +1,13 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.venv/
+.env
+*.env
+!.env.example
+!kavach/**/*.env.example
+.DS_Store
+bench/agentdojo_runs/
+.kavach/
+examples/mcp/sent_mail.jsonl
+keys/

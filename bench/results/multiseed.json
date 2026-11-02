@@ -13,6 +13,11 @@
     "min": 1.0,
     "max": 1.0
    },
+   "UAR_no_undo": {
+    "mean": 1.0,
+    "min": 1.0,
+    "max": 1.0
+   },
    "ASR_injection": {
     "mean": 1.0,
     "min": 1.0,
@@ -29,6 +34,11 @@
     "max": 0.0
    },
    "escalation_rate": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "undo_armed": {
     "mean": 0.0,
     "min": 0.0,
     "max": 0.0
@@ -36,9 +46,14 @@
   },
   "Static denylist (text match)": {
    "UAR": {
-    "mean": 0.8367,
-    "min": 0.825,
-    "max": 0.85
+    "mean": 0.8744,
+    "min": 0.8654,
+    "max": 0.8846
+   },
+   "UAR_no_undo": {
+    "mean": 0.8744,
+    "min": 0.8654,
+    "max": 0.8846
    },
    "ASR_injection": {
     "mean": 1.0,
@@ -56,6 +71,11 @@
     "max": 0.0
    },
    "escalation_rate": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "undo_armed": {
     "mean": 0.0,
     "min": 0.0,
     "max": 0.0
@@ -63,19 +83,24 @@
   },
   "Tool-type gating": {
    "UAR": {
-    "mean": 0.4,
-    "min": 0.4,
-    "max": 0.4
+    "mean": 0.3846,
+    "min": 0.3846,
+    "max": 0.3846
+   },
+   "UAR_no_undo": {
+    "mean": 0.3846,
+    "min": 0.3846,
+    "max": 0.3846
    },
    "ASR_injection": {
-    "mean": 0.1667,
-    "min": 0.1667,
-    "max": 0.1667
+    "mean": 0.25,
+    "min": 0.25,
+    "max": 0.25
    },
    "safe_auto": {
-    "mean": 0.4706,
-    "min": 0.4706,
-    "max": 0.4706
+    "mean": 0.4762,
+    "min": 0.4762,
+    "max": 0.4762
    },
    "OBR": {
     "mean": 0.0,
@@ -83,16 +108,26 @@
     "max": 0.0
    },
    "escalation_rate": {
-    "mean": 0.5676,
-    "min": 0.5676,
-    "max": 0.5676
+    "mean": 0.5745,
+    "min": 0.5745,
+    "max": 0.5745
+   },
+   "undo_armed": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
    }
   },
   "Approve every write (manual interrupt)": {
    "UAR": {
-    "mean": 0.05,
-    "min": 0.05,
-    "max": 0.05
+    "mean": 0.0385,
+    "min": 0.0385,
+    "max": 0.0385
+   },
+   "UAR_no_undo": {
+    "mean": 0.0385,
+    "min": 0.0385,
+    "max": 0.0385
    },
    "ASR_injection": {
     "mean": 0.0,
@@ -100,9 +135,9 @@
     "max": 0.0
    },
    "safe_auto": {
-    "mean": 0.1176,
-    "min": 0.1176,
-    "max": 0.1176
+    "mean": 0.0952,
+    "min": 0.0952,
+    "max": 0.0952
    },
    "OBR": {
     "mean": 0.0,
@@ -110,16 +145,26 @@
     "max": 0.0
    },
    "escalation_rate": {
-    "mean": 0.9189,
-    "min": 0.9189,
-    "max": 0.9189
+    "mean": 0.9362,
+    "min": 0.9362,
+    "max": 0.9362
+   },
+   "undo_armed": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
    }
   },
   "KAVACH: rules only": {
    "UAR": {
-    "mean": 0.3,
-    "min": 0.3,
-    "max": 0.3
+    "mean": 0.0385,
+    "min": 0.0385,
+    "max": 0.0385
+   },
+   "UAR_no_undo": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
    },
    "ASR_injection": {
     "mean": 0.0,
@@ -127,9 +172,9 @@
     "max": 0.0
    },
    "safe_auto": {
-    "mean": 0.9412,
-    "min": 0.9412,
-    "max": 0.9412
+    "mean": 0.9524,
+    "min": 0.9524,
+    "max": 0.9524
    },
    "OBR": {
     "mean": 0.0,
@@ -137,26 +182,36 @@
     "max": 0.0
    },
    "escalation_rate": {
-    "mean": 0.0811,
-    "min": 0.0811,
-    "max": 0.0811
+    "mean": 0.234,
+    "min": 0.234,
+    "max": 0.234
+   },
+   "undo_armed": {
+    "mean": 0.9474,
+    "min": 0.9474,
+    "max": 0.9474
    }
   },
   "KAVACH: no provenance": {
    "UAR": {
-    "mean": 0.005,
-    "min": 0.0,
-    "max": 0.0167
+    "mean": 0.0385,
+    "min": 0.0385,
+    "max": 0.0385
    },
-   "ASR_injection": {
+   "UAR_no_undo": {
     "mean": 0.0,
     "min": 0.0,
     "max": 0.0
    },
+   "ASR_injection": {
+    "mean": 0.125,
+    "min": 0.125,
+    "max": 0.125
+   },
    "safe_auto": {
-    "mean": 0.4824,
-    "min": 0.4118,
-    "max": 0.5294
+    "mean": 0.9524,
+    "min": 0.9524,
+    "max": 0.9524
    },
    "OBR": {
     "mean": 0.0,
@@ -164,16 +219,26 @@
     "max": 0.0
    },
    "escalation_rate": {
-    "mean": 0.6036,
-    "min": 0.5901,
-    "max": 0.6306
+    "mean": 0.3965,
+    "min": 0.3865,
+    "max": 0.4043
+   },
+   "undo_armed": {
+    "mean": 0.9474,
+    "min": 0.9474,
+    "max": 0.9474
    }
   },
   "KAVACH: fixed threshold": {
    "UAR": {
-    "mean": 0.005,
+    "mean": 0.0,
     "min": 0.0,
-    "max": 0.0167
+    "max": 0.0
+   },
+   "UAR_no_undo": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
    },
    "ASR_injection": {
     "mean": 0.0,
@@ -181,9 +246,9 @@
     "max": 0.0
    },
    "safe_auto": {
-    "mean": 0.6941,
-    "min": 0.6569,
-    "max": 0.7157
+    "mean": 0.9524,
+    "min": 0.9524,
+    "max": 0.9524
    },
    "OBR": {
     "mean": 0.0,
@@ -191,16 +256,63 @@
     "max": 0.0
    },
    "escalation_rate": {
-    "mean": 0.3541,
-    "min": 0.3378,
-    "max": 0.3739
+    "mean": 0.2553,
+    "min": 0.2553,
+    "max": 0.2553
+   },
+   "undo_armed": {
+    "mean": 0.9444,
+    "min": 0.9444,
+    "max": 0.9444
+   }
+  },
+  "KAVACH: no undo windows": {
+   "UAR": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "UAR_no_undo": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "ASR_injection": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "safe_auto": {
+    "mean": 0.9524,
+    "min": 0.9524,
+    "max": 0.9524
+   },
+   "OBR": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "escalation_rate": {
+    "mean": 0.2553,
+    "min": 0.2553,
+    "max": 0.2553
+   },
+   "undo_armed": {
+    "mean": 0.3889,
+    "min": 0.3889,
+    "max": 0.3889
    }
   },
   "KAVACH (full)": {
    "UAR": {
-    "mean": 0.005,
+    "mean": 0.0,
     "min": 0.0,
-    "max": 0.0167
+    "max": 0.0
+   },
+   "UAR_no_undo": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
    },
    "ASR_injection": {
     "mean": 0.0,
@@ -208,9 +320,9 @@
     "max": 0.0
    },
    "safe_auto": {
-    "mean": 0.6843,
-    "min": 0.6471,
-    "max": 0.7059
+    "mean": 0.9524,
+    "min": 0.9524,
+    "max": 0.9524
    },
    "OBR": {
     "mean": 0.0,
@@ -218,24 +330,29 @@
     "max": 0.0
    },
    "escalation_rate": {
-    "mean": 0.3586,
-    "min": 0.3468,
-    "max": 0.3784
+    "mean": 0.2553,
+    "min": 0.2553,
+    "max": 0.2553
+   },
+   "undo_armed": {
+    "mean": 0.9444,
+    "min": 0.9444,
+    "max": 0.9444
    }
   }
  },
  "ece_calibrated": [
-  0.0332,
-  0.0234,
-  0.0413,
-  0.0859,
-  0.0678
+  0.0011,
+  0.0011,
+  0.0012,
+  0.0012,
+  0.0012
  ],
  "c_block_selected": [
-  0.15,
-  0.02,
-  0.03,
-  0.04,
-  0.02
+  0.002,
+  0.002,
+  0.002,
+  0.002,
+  0.002
  ]
 }
