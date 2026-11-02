@@ -41,6 +41,10 @@ if ! curl -sf http://127.0.0.1:8030/transfers >/dev/null; then       # the sandb
 fi
 echo "Bank:    http://127.0.0.1:8030"
 
+if [ -f .env ] && [ -z "${KAVACH_NO_DOTENV:-}" ]; then   # the Qualcomm key: the judge writes its note on approval cards
+  set -a; . ./.env; set +a                                 # (values are never printed; KAVACH_NO_DOTENV=1 skips it)
+  echo "Qualcomm: key loaded from .env (judge on escalations; console badge QUALCOMM AI ON)"
+fi
 export KAVACH_BANK_URL=http://127.0.0.1:8030 KAVACH_INVOICE_DEMO=1     # INV-101, vendor V001 = TEST-ACCT-001
 export KAVACH_SMTP_HOST=127.0.0.1 KAVACH_SMTP_PORT=1025
 export KAVACH_MAIL_HOLD_S=${KAVACH_MAIL_HOLD_S:-30} KAVACH_PAYMENT_HOLD_S=${KAVACH_PAYMENT_HOLD_S:-60}
