@@ -34,6 +34,8 @@ TARGETED = {"sql_write": None, "ap_release": "invoice_id", "ap_propose": "invoic
             "bank_change": "vendor_id", "ledger_post": "gl_account"}
 # the argument role that picks where an outbound action goes
 DESTINATION = {"email": "to", "transfer": "to_account", "refund": "invoice_id", "ap_release": "invoice_id"}
+# a name typed in a request (file, path, web or email address): something with an inner . / or @ ("pay." stays a word)
+NAME_TOKEN = re.compile(r"['\"]?[^\s'\"]+[./@][^\s'\".,;:!?)]\S*")
 
 
 class PolicyEngine:
@@ -373,9 +375,10 @@ class PolicyEngine:
 
     @staticmethod
     def _asked_for(ctx: TaskContext, tool: str, spec: ToolSpec) -> bool:
-        """The user's request asks for this kind of action (its intent verbs), e.g. "pay" for a transfer."""
+        """The user's request asks for this kind of action (its intent verbs), e.g. "pay" for a transfer. Names the
+        user typed (a file, an address: 'address-change.txt', .../pay/dec-2023) are not words of the request."""
         from .intent import TOOL_VERBS
-        req = ctx.user_request.lower()
+        req = NAME_TOKEN.sub(" ", ctx.user_request.lower())
         return any(re.search(rf"\b{re.escape(v)}", req) for v in (spec.intent_verbs or TOOL_VERBS.get(tool, [])))
 
     def _shell_rule(self, e: dict, add) -> None:
