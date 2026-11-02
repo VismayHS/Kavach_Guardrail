@@ -142,6 +142,51 @@ def default_manifest() -> dict[str, ToolSpec]:
     return {s.name: s for s in specs}
 
 
+def spec_to_dict(s: ToolSpec) -> dict:
+    """A ToolSpec as plain YAML-able data (the format of kavach/manifests/*.yaml)."""
+    d = {"description": s.description, "params": dict(s.params), "required": list(s.required), "effect": s.effect,
+         "sink": s.sink, "reversibility": s.reversibility.value, "control_args": list(s.control_args),
+         "data_args": list(s.data_args), "output_trust": s.output_trust, "output_conf": s.output_conf.value,
+         "staging": s.staging, "safeguard": s.safeguard, "effect_model": s.effect_model or LEGACY_MODELS.get(s.name),
+         "arg_map": dict(s.arg_map), "amount_arg": s.amount_arg, "intent_verbs": list(s.intent_verbs),
+         "untrusted_fields": list(s.untrusted_fields)}
+    return {k: v for k, v in d.items() if v not in (None, [], {})}
+
+
+def spec_from_dict(name: str, d: dict) -> ToolSpec:
+    known = {"description", "params", "required", "effect", "sink", "reversibility", "control_args", "data_args",
+             "output_trust", "output_conf", "staging", "safeguard", "effect_model", "arg_map", "amount_arg",
+             "intent_verbs", "untrusted_fields"}
+    unknown = set(d) - known
+    if unknown:
+        raise ValueError(f"tool {name!r}: unknown manifest keys {sorted(unknown)}")
+    model = d.get("effect_model")
+    if model and model not in EFFECT_MODELS:
+        raise ValueError(f"tool {name!r}: effect_model must be one of {sorted(EFFECT_MODELS)}")
+    return ToolSpec(name, d.get("description", ""), dict(d.get("params") or {}), list(d.get("required") or []),
+                    effect=d.get("effect", "write"), sink=d.get("sink", "external"),
+                    reversibility=Reversibility(d.get("reversibility", "irreversible")),
+                    control_args=list(d.get("control_args") or []), data_args=list(d.get("data_args") or []),
+                    output_trust=d.get("output_trust", "derived"), output_conf=Conf(d.get("output_conf", "internal")),
+                    staging=d.get("staging", "none"), safeguard=d.get("safeguard"), effect_model=model,
+                    arg_map=dict(d.get("arg_map") or {}), amount_arg=d.get("amount_arg"),
+                    intent_verbs=list(d.get("intent_verbs") or []), untrusted_fields=list(d.get("untrusted_fields") or []))
+
+
+def load_manifest(path) -> dict[str, ToolSpec]:
+    """Tool specs from a YAML file: {tools: {name: {...}}}. Missing keys take cautious defaults (a write, external,
+    irreversible): a tool is only as trusted as its manifest says."""
+    import yaml
+    from pathlib import Path
+    data = yaml.safe_load(Path(path).read_text()) or {}
+    return {name: spec_from_dict(name, d or {}) for name, d in (data.get("tools") or {}).items()}
+
+
+def dump_manifest(specs: dict[str, ToolSpec]) -> str:
+    import yaml
+    return yaml.safe_dump({"tools": {n: spec_to_dict(s) for n, s in specs.items()}}, sort_keys=False, width=120)
+
+
 MCP_TYPES = {"string": "str", "integer": "int", "number": "float", "boolean": "bool"}
 JSON_TYPES = {v: k for k, v in MCP_TYPES.items()}
 

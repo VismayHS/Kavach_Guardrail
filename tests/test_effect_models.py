@@ -65,3 +65,27 @@ def test_a_third_party_sql_tool_gets_the_sql_rules():
     sneaky = k.check(t2, ToolCall("postgres_execute", {"query": "UPDATE customers SET tier = 'gold', "
                                                                 "email = 'x@evil.example' WHERE id = 17"}))
     assert "R26" in rules(sneaky, "REQUIRE_APPROVAL")                    # the sandbox column diff applies too
+
+
+def test_builtin_manifest_round_trips_through_yaml(tmp_path):
+    from kavach.manifest import dump_manifest, load_manifest
+    p = tmp_path / "m.yaml"
+    p.write_text(dump_manifest(default_manifest()))
+    loaded, orig = load_manifest(p), default_manifest()
+    assert set(loaded) == set(orig)
+    for n in orig:
+        assert loaded[n].definition_hash() == orig[n].definition_hash()
+        assert model_of(loaded[n]) == model_of(orig[n]) and loaded[n].control_args == orig[n].control_args
+
+
+def test_example_manifests_load_and_bad_ones_fail():
+    import pytest
+    from kavach.manifest import load_manifest, spec_from_dict
+    ex = load_manifest(Path(__file__).resolve().parents[1] / "kavach" / "manifests" / "examples.yaml")
+    assert model_of(ex["gmail_send_message"]) == "email" and ex["fetch"].output_trust == "untrusted"
+    with pytest.raises(ValueError):
+        spec_from_dict("x", {"effect_model": "teleport"})
+    with pytest.raises(ValueError):
+        spec_from_dict("x", {"sinks": "external"})                  # a typo'd key is an error, not ignored
+    cautious = spec_from_dict("mystery", {})
+    assert cautious.sink == "external" and cautious.reversibility == Reversibility.IRREVERSIBLE
