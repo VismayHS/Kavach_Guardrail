@@ -87,6 +87,25 @@ def test_crm_writes_elsewhere_still_run(gw):
     assert d.verdict == Verdict.ALLOW_WITH_SAFEGUARD and "R29" not in rules(d)
 
 
+# ---------------------------------------------------------------- the environment is the server's, not the caller's
+def test_caller_cannot_claim_dev_to_switch_off_production_rules(api):
+    client, server = api
+    r = client.post("/api/v1/check", json={"user_request": "Drop the customers table.", "tool": "crm.execute",
+                                           "args": {"sql": "DROP TABLE customers"}, "role": "support", "env": "dev",
+                                           "execute": True}).json()
+    assert r["verdict"] == "DENY" and any(g["rule_id"] == "R4" for g in r["gates"])
+    assert "customers" in server.env.table_counts()
+
+
+def test_mcp_initialize_cannot_claim_dev(api):
+    client, server = api
+    meta = {"kavach/session": "s-dev", "kavach/userRequest": "Drop the customers table.", "kavach/env": "dev"}
+    client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"_meta": meta}})
+    r = client.post("/mcp", json={"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+        "name": "crm.execute", "arguments": {"sql": "DROP TABLE customers"}, "_meta": meta}}).json()
+    assert r["result"]["_meta"]["kavach/verdict"] == "DENY" and "customers" in server.env.table_counts()
+
+
 # ---------------------------------------------------------------- the sandbox may not reach the disk
 @pytest.mark.parametrize("tool,sql", [
     ("crm.execute", "VACUUM INTO '{out}'"),

@@ -45,6 +45,9 @@ app = FastAPI(title="KAVACH guardrail", version="0.1")
 _mcp_task: dict[tuple[str, str], str] = {}
 _sessions: dict[tuple[str, str], tuple[str, set[str]]] = {}     # (user, session id) -> (task id, context seen)
 AUTH_SECRET = os.environ.get(auth.SECRET_ENV)     # unset = dev mode (role from the request, receipts say so)
+# Which environment this server guards is deployment config. A caller saying "dev" would switch off the production
+# rules while still acting on the same database, so the env field of a request is ignored.
+SERVER_ENV = os.environ.get("KAVACH_ENV", "prod")
 
 
 def caller(authorization: str | None = Header(None)) -> dict | None:
@@ -69,7 +72,7 @@ class CheckIn(BaseModel):
     args: dict
     user_id: str = "demo-user"
     role: str = "support"
-    env: str = "prod"
+    env: str = "prod"               # ignored (see SERVER_ENV); kept so existing callers don't break
     context: list[dict] = []        # earlier tool outputs: [{"tool": "...", "output": ...}] for provenance
     execute: bool = False
     tool_def_hash: str | None = None
@@ -110,7 +113,7 @@ def check(body: CheckIn, who: dict | None = Depends(caller)):
         tid, seen = _sessions[key]
         gw.add_request(tid, body.user_request)
     else:
-        tid, _ = gw.start_task(user, role, body.user_request, body.env, authenticated=authed)
+        tid, _ = gw.start_task(user, role, body.user_request, SERVER_ENV, authenticated=authed)
         seen: set[str] = set()
         if key:
             _sessions[key] = (tid, seen)
@@ -322,8 +325,7 @@ def mcp(rpc: dict, who: dict | None = Depends(caller)):
     session = (who["sub"] if who else "", meta.get("kavach/session", "default"))   # a caller can't reuse another's session
     if method == "initialize":
         user, role, authed = _identity(who, meta.get("kavach/user", "mcp-user"), meta.get("kavach/role", "support"))
-        tid, _ = gw.start_task(user, role, meta.get("kavach/userRequest", ""), meta.get("kavach/env", "prod"),
-                               authenticated=authed)
+        tid, _ = gw.start_task(user, role, meta.get("kavach/userRequest", ""), SERVER_ENV, authenticated=authed)
         _mcp_task[session] = tid
         return {"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": "2025-06-18",
                 "serverInfo": {"name": "kavach-gateway", "version": "0.1"}, "capabilities": {"tools": {}}}}
