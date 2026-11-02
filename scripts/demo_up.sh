@@ -33,7 +33,7 @@ export KAVACH_BANK_URL=http://127.0.0.1:8030 KAVACH_INVOICE_DEMO=1     # INV-101
 export KAVACH_SMTP_HOST=127.0.0.1 KAVACH_SMTP_PORT=1025
 export KAVACH_MAIL_HOLD_S=${KAVACH_MAIL_HOLD_S:-30} KAVACH_PAYMENT_HOLD_S=${KAVACH_PAYMENT_HOLD_S:-60}
 export KAVACH_DB_URL=${KAVACH_DB_URL:-sqlite:///$PWD/.kavach/demo.db}
-export KAVACH_MCP_TOOLS=${KAVACH_MCP_TOOLS:-mail.read_inbox,mail.send,invoice.read,vendor.read,payment.release}
+export KAVACH_MCP_TOOLS=${KAVACH_MCP_TOOLS:-mail.read_inbox,mail.send,invoice.read,vendor.read,payment.release,crm.query}   # crm.query: the poisoned-inbox story (an analyst agent reads the customer records the injected email asks for; Claude, as ap_agent, may not)
 export KAVACH_SWEEP_S=${KAVACH_SWEEP_S:-1}        # check every second, so it leaves when the countdown ends
 echo "Console: http://127.0.0.1:$PORT   (Claude connects to http://127.0.0.1:$PORT/mcp)"
 echo $$ > .kavach/kavach.pid
