@@ -201,6 +201,15 @@ def test_context_from_an_unknown_tool_counts_as_untrusted(api):
     assert r["verdict"] == "DENY" and any(g["rule_id"] == "R1" for g in r["gates"]) and r["outputs_seen"] == 1
 
 
+# ---------------------------------------------------------------- intent: whole words, and questions don't authorise
+@pytest.mark.parametrize("request_text", ["What's the update on invoice 1042?",
+                                          "Show me the settlement status of invoice 1042."])
+def test_a_question_does_not_authorise_a_write(gw, request_text):
+    tid, _ = gw.start_task("asha", "support", request_text)
+    d = gw.check(tid, ToolCall("crm.execute", {"sql": "UPDATE invoices SET status = 'paid' WHERE id = 1042"}))
+    assert d.verdict == Verdict.ESCALATE
+
+
 # ---------------------------------------------------------------- the API says whether a safeguard really exists
 def test_check_alone_reports_no_armed_safeguard(api):
     client, _ = api
