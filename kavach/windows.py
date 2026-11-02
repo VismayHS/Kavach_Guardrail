@@ -11,6 +11,7 @@ Server: on by default (KAVACH_SWEEP_S=5); KAVACH_SWEEP_S=0 turns it off.
 from __future__ import annotations
 
 import threading
+import time
 
 
 class Sweeper:
@@ -18,11 +19,13 @@ class Sweeper:
         self.gw, self.every_s = gw, float(every_s)
         self.stop = threading.Event()
         self.ticks, self.settled = 0, 0
+        self.started, self.last_tick = time.time(), None      # the heartbeat /metrics reports
         self.thread: threading.Thread | None = None
 
     def tick(self, now: float | None = None) -> list[str]:
         done = self.gw.settle(now)
         self.gw.hitl.expire(now)
+        self.last_tick = time.time()
         self.ticks += 1
         self.settled += len(done)
         return done

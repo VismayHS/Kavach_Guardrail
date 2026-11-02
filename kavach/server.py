@@ -106,6 +106,23 @@ def _no_record_no_action(_request, e: ReceiptWriteError):
     return JSONResponse({"error": str(e), "executed": False}, status_code=503)
 
 
+@app.middleware("http")
+async def _time_agent_routes(request: Request, call_next):
+    """End-to-end latency and 5xx of the routes agents call, for /metrics (kavach_request_latency_ms)."""
+    route = {"/mcp": "mcp", "/api/v1/check": "check"}.get(request.url.path)
+    if route is None:
+        return await call_next(request)
+    from .telemetry import REQUESTS
+    t0 = time.perf_counter()
+    try:
+        resp = await call_next(request)
+    except Exception:
+        REQUESTS.observe(route, (time.perf_counter() - t0) * 1000, 500)
+        raise
+    REQUESTS.observe(route, (time.perf_counter() - t0) * 1000, resp.status_code)
+    return resp
+
+
 @app.on_event("startup")
 def _start_sweeper():
     """E6: undo windows close on time and approvals move up their SLA chain with no UI open (KAVACH_SWEEP_S=0: off)."""
@@ -895,7 +912,19 @@ def prometheus():
     from fastapi.responses import PlainTextResponse
 
     from .telemetry import metrics_text
-    return PlainTextResponse(metrics_text(gw), media_type="text/plain; version=0.0.4")
+    return PlainTextResponse(metrics_text(gw, sweeper=SWEEPER, deps=True), media_type="text/plain; version=0.0.4")
+
+
+@app.get("/api/usage")
+def usage():
+    """Model calls, retries and tokens by component (judge, explainer, planner, agent), as the API reported them,
+    and the estimated cost from the versioned price table (unpriced models: tokens counted, cost unknown)."""
+    from .usage import METER
+    s = METER.snapshot()
+    decisions = sum(r["body"].get("type") == "decision" for r in gw.receipts.items)
+    s["decisions"] = decisions
+    s["estimated_cost_per_decision_usd"] = round(s["estimated_cost_usd"] / decisions, 8) if decisions else None
+    return s
 
 
 @app.get("/api/metrics")
