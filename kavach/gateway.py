@@ -892,6 +892,28 @@ class Kavach:
         rec = self.receipts.get(receipt_id) if receipt_id else None
         return rec["body"].get("task_id") if rec else None
 
+    def release_now(self, receipt_id: str, by: str | None = None) -> dict:
+        """Send now: a person lets a queued email or held payment go out before its window ends, the opposite of
+        Cancel. Only while it is still waiting. The release is receipted (who, which hold) before anything leaves,
+        then it goes out by the same path a closing window uses (settle), so it is sent at most once and its outcome
+        is receipted as usual."""
+        epoch, ref = self.recall.get(receipt_id, (None, None))
+        if ref is None or not str(ref).startswith("hold-"):
+            return {"released": False, "reason": "nothing is waiting for this receipt (gone out, cancelled, or never "
+                                                  "held)"}
+        if epoch is not None and epoch != self.env.epoch:
+            return {"released": False, "reason": "the environment was reset since this action; nothing to send"}
+        h = next((x for x in self.env.holds if x["id"] == ref), None)
+        with self.env.lock:
+            if h is None or h["status"] != "held":
+                return {"released": False, "reason": f"{ref} is no longer waiting"}
+            h["settles_at"] = min(h["settles_at"], time.time())
+            self.env._held_changed(h)
+        self.receipts.append({"type": "released-early", "receipt": receipt_id, "hold": ref, "kind": h.get("kind"),
+                              "by": by, "task_id": self._task_of(receipt_id)})
+        self.settle()
+        return {"released": h["status"] not in ("held", "cancelled"), "hold": ref, "outcome": h["status"]}
+
     def undo_action(self, receipt_id: str) -> dict:
         epoch, ref = self.recall.pop(receipt_id, (None, None))
         log = None if ref else self.undo.pop(receipt_id, None)

@@ -570,6 +570,17 @@ def undo(rid: str):
     return gw.undo_action(rid)
 
 
+@app.post("/api/release/{rid}")
+def release_now(rid: str, who: dict | None = Depends(caller)):
+    """Send now: a person lets a waiting email (or payment) go out before its window ends, the opposite of Cancel.
+    With auth on, a payment needs an AP supervisor or an admin: releasing it early skips its safety window."""
+    ref = gw.recall.get(rid, (None, None))[1]
+    h = next((x for x in env.holds if x["id"] == ref), None)
+    if who is not None and h is not None and h.get("kind") == "payment" and who["role"] not in ("admin", "ap_supervisor"):
+        raise HTTPException(403, "only an AP supervisor or an admin can release a payment before its window ends")
+    return gw.release_now(rid, by=(who or {}).get("sub") or "a person at the console")
+
+
 @app.post("/api/settle")
 def settle(advance_s: float = 0.0, who: dict | None = Depends(caller)):
     """Held payments and queued emails whose window has passed go out. advance_s fast-forwards the clock for the

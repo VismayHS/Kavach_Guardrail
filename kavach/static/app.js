@@ -648,7 +648,8 @@ function waitingRow(h) {
   const sub = pay ? `To ${h.tx.to}` : h.msg.subject;
   return `<div class="row">${stamp('queued', pay ? 'Held' : 'Queued')}<div class="row-main"><div class="row-title">${esc(title)}</div><div class="row-sub">${esc(sub)}</div></div>
     <span class="meta">Goes out in <span class="countdown" data-until="${h.settles_at}"></span></span>
-    ${h.receipt ? `<button class="btn danger sm" type="button" data-act="cancel" data-r="${esc(h.receipt)}" data-what="${esc(title)}">${icon('ban')}${pay ? 'Cancel payment' : 'Recall email'}</button>` : ''}</div>`;
+    ${h.receipt ? `<div class="hold-acts"><button class="btn danger sm" type="button" data-act="cancel" data-r="${esc(h.receipt)}" data-what="${esc(title)}">${icon('ban')}${pay ? 'Cancel payment' : 'Recall email'}</button>
+      <button class="btn sm" type="button" data-act="send-now" data-r="${esc(h.receipt)}" data-what="${esc(title)}" title="Manual override: skip the rest of the wait">${icon('send')}${pay ? 'Pay now' : 'Send now'}</button></div>` : ''}</div>`;
 }
 // what the mail server said: it took it, it didn't, or the line broke mid-send (it may have arrived)
 const SENT = { sent: ['done', 'Sent'], paid: ['done', 'Paid'], failed: ['failed', 'Failed'], unknown: ['possible', 'Not sure it arrived'] };
@@ -738,6 +739,8 @@ function stageLine(r) {
     return [stamp('done', 'Approved'), `${titleCase(b.approver)} approved it${role ? ` as ${seatWord(role)}` : ''}`, 'It now waits in its hold before it goes out, and can still be cancelled.'];
   }
   if (b.type === 'human-denied') return [stamp('rejected', 'Refused'), `${titleCase(b.approver)} refused it`, 'Nothing happened.'];
+  if (b.type === 'released-early') return [stamp('done', 'Sent now'), `A person ${b.kind === 'payment' ? 'released the payment' : 'sent the email'} without waiting`,
+    'Manual override: the rest of the wait was skipped. It goes out the same way as when the countdown ends, once.'];
   if (b.type === 'undo') return b.ok === false ? [stamp('failed', 'Too late'), 'Cancel came too late', 'It had already started going out.']
     : [stamp('rejected', 'Cancelled'), 'Cancelled in time', 'It never left: nothing reached the inbox or the bank.'];
   if (b.type === 'window-closed') {
@@ -761,7 +764,8 @@ const holdRow = h => {
   const pay = h.kind === 'payment';
   return `<div class="step-out live">${stamp('queued', pay ? 'Held' : 'Queued')}<div><b>${esc(pay ? `${inr(h.tx.amount)} to ${h.tx.to}` : `Email to ${h.msg.to}`)}</b>
     <p>Goes out in <span class="countdown" data-until="${h.settles_at}"></span> unless someone cancels it.</p></div>
-    ${h.receipt ? `<button class="btn danger" type="button" data-act="stage-cancel" data-r="${esc(h.receipt)}">${icon('ban')}${pay ? 'Cancel payment' : 'Cancel email'}</button>` : ''}</div>`;
+    ${h.receipt ? `<div class="hold-acts"><button class="btn danger" type="button" data-act="stage-cancel" data-r="${esc(h.receipt)}">${icon('ban')}${pay ? 'Cancel payment' : 'Cancel email'}</button>
+      <button class="btn" type="button" data-act="stage-send-now" data-r="${esc(h.receipt)}" title="Manual override: skip the rest of the wait">${icon('send')}${pay ? 'Pay now' : 'Send now'}</button></div>` : ''}</div>`;
 };
 const kindOf = b => b.kind || (S.stage.st.stopped.find(h => h.id === b.cancelled) || {}).kind;   // an undo names only the hold
 const lastOf = (types, test = () => true) => [...S.stage.feed].reverse().find(r => types.includes(r.body.type) && test(r.body));
@@ -964,6 +968,12 @@ const STAGE_ACT = {
     await post(`/api/undo/${b.dataset.r}`).catch(() => {});
     await stageTick();
   },
+  async 'stage-send-now'(b) {
+    flip(b, true);
+    const r = await post(`/api/release/${b.dataset.r}`).catch(e => ({ released: false, reason: e.message }));
+    if (!r.released) S.flash = { tone: 'err', html: esc(titleCase(r.reason || 'It could not be sent now.')) };
+    await stageTick();
+  },
   async 'stage-reset'(b) {
     flip(b, true);
     try {
@@ -982,6 +992,7 @@ const RECEIPT = {
   execution: b => `${stamp('info', 'Ran')} <span class="meta">the action in ${esc(b.decision_receipt)}</span>`,
   plan: () => `${stamp('info', 'Plan checked')}`,
   undo: b => `${stamp('rejected', 'Taken back')} <span class="meta">${esc(b.cancelled || b.receipt)}</span>`,
+  'released-early': b => `${stamp('done', 'Sent now by a person')} <span class="meta">${esc(b.hold)}</span>`,
   'human-approved-execution': () => `${stamp('done', 'A person approved')}`,
   'human-denied': () => `${stamp('rejected', 'A person denied')}`,
   'human-approved-draft': () => `${stamp('info', 'Saved as a draft')}`,
@@ -1426,6 +1437,13 @@ const ACT = {
     catch (e) { out.textContent = e.message; }
     out.hidden = false;
     b.hidden = true;
+  },
+  async 'send-now'(b) {
+    flip(b, true);
+    const r = await post(`/api/release/${b.dataset.r}`).catch(e => ({ released: false, reason: e.message }));
+    S.flash = r.released ? { tone: 'ok', html: `${esc(b.dataset.what)} went out now (${esc(r.outcome)}), without waiting.` } : { tone: 'err', html: esc(titleCase(r.reason)) };
+    await chrome().catch(() => {});
+    route(true);
   },
   async cancel(b) {
     flip(b, true);
