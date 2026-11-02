@@ -144,6 +144,8 @@ class Kavach:
                           plan=plan)
         task = Task(ctx)
         task.prov.lookalike = self.policy.lookalike
+        from .environment import INTERNAL_DOMAIN
+        task.prov.internal_domains = {INTERNAL_DOMAIN}
         task.prov.register_user(request)
         task.policy = self.tenant_policy(tenant)
         if self.candidate is not None and int(hashlib.sha256(tid.encode()).hexdigest(), 16) % 100 < \

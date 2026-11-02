@@ -117,6 +117,10 @@ _ZW = re.compile("[­​-‏⁠-⁤﻿]")
 _AT = re.compile(r"\s*[\[\(\{<]\s*at\s*[\]\)\}>]\s*|\s+at\s+(?=[\w-]+\s*[\[\(\{<]?\s*dot\b)", re.I)
 _DOT = re.compile(r"\s*[\[\(\{<]\s*dot\s*[\]\)\}>]\s*|(?<=\w)\s+dot\s+(?=\w)", re.I)
 _ACC_SPACED = re.compile(r"\bACC[\s_.]+(\d{2})[\s_.]+(\d{4})\b")
+_SPACED_CHARS = re.compile(r"(?<!\S)(?:\S ){4,}\S(?=[\s.,;:!?)\]\"'\\]|$)")   # m a l l o r y @ e v i l . i o.
+_SPOKEN = [(re.compile(r"\s+(?:at|at sign|at-sign)\s+", re.I), "@"), (re.compile(r"\s+(?:dot|period|point)\s+", re.I), "."),
+           (re.compile(r"\s+(?:dash|hyphen|minus)\s+", re.I), "-"), (re.compile(r"\s+underscore\s+", re.I), "_")]
+HOST = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}\b", re.I)
 _B64 = re.compile(r"(?<![\w+/=])[A-Za-z0-9+/]{16,}={0,2}(?![\w+/=])")
 # letters from other scripts that look Latin (a small, high-value subset of Unicode's confusables)
 _CONFUSABLE = str.maketrans({"а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x", "і": "i", "ј": "j",
@@ -128,7 +132,8 @@ _CONFUSABLE = str.maketrans({"а": "a", "е": "e", "о": "o", "р": "p", "с": "
 
 def normalize(text: str) -> str:
     """Canonical form for matching values: NFKC, no invisible characters, HTML entities decoded, look-alike letters
-    folded, '[at]'/'(dot)' spelled out, spaced account ids joined, and base64 tokens that decode to text appended."""
+    folded, '[at]'/'(dot)' spelled out, spaced account ids joined; appended as extra readings: base64 tokens that
+    decode to text, runs of spaced-apart characters joined, and spoken symbols ("at", "dot", "dash") written out."""
     import base64
     import binascii
     import html
@@ -146,6 +151,13 @@ def normalize(text: str) -> str:
             continue
         if raw.isprintable() and sum(c.isalpha() for c in raw) > len(raw) / 2:
             decoded.append(raw)
+    for m in _SPACED_CHARS.finditer(t):                # letters spaced apart: also read them joined
+        decoded.append(m.group(0).replace(" ", ""))
+    spoken = t
+    for rx, sym in _SPOKEN:                             # "mallory at evil dash recon dot io": also read the symbols
+        spoken = rx.sub(sym, spoken)
+    if spoken != t:
+        decoded.append(spoken)
     return t + ("\n" + "\n".join(decoded) if decoded else "")
 
 
@@ -195,10 +207,14 @@ class ProvenanceTracker:
     n_outputs: int = 0
     lookalike: object | None = None      # kavach.lookalike.Lookalike; a lookalike sender is never "reply to sender"
     hostile: set[str] = field(default_factory=set)                 # sources an injection classifier flagged (C3)
+    untrusted_domains: dict[str, str] = field(default_factory=dict)  # domain named in untrusted content -> source (B4)
+    user_domains: set[str] = field(default_factory=set)            # domains the user named
+    internal_domains: set[str] = field(default_factory=set)        # the company's own (never a lead by themselves)
 
     def register_user(self, text: str) -> None:
         self.user_text += " " + text
         self.user_entities |= entities(text)
+        self.user_domains |= {h.lower() for h in HOST.findall(normalize(text))}
 
     def mask(self, text: str) -> str:
         """Replace PII values that came from private tool outputs with [PII] (for receipts and logs)."""
@@ -236,7 +252,8 @@ class ProvenanceTracker:
             if tool == "mail.read_inbox" and isinstance(rec, dict) and rec.get("from"):
                 for addr in parse_recipients(str(rec["from"])):    # the header, not addresses written in the body
                     self.senders[addr] = src
-            text = rec if isinstance(rec, str) else json.dumps(rec, default=str)
+            # ensure_ascii=False: escaped, a Cyrillic 'а' or a zero-width space would never reach normalize()
+            text = rec if isinstance(rec, str) else json.dumps(rec, default=str, ensure_ascii=False)
             t = Trust(trust) if trust in ("untrusted", "derived", "trusted") else Trust.DERIVED
             lab = Label(t, conf, [src])
             for e in entities(text):
@@ -249,6 +266,8 @@ class ProvenanceTracker:
             if lab.trust == Trust.UNTRUSTED:
                 for sh in shingles(text):
                     self.untrusted_shingles.setdefault(sh, src)
+                for h in HOST.findall(normalize(text)):
+                    self.untrusted_domains.setdefault(h.lower(), src)
 
     def third_party_pii(self, recipients: list[str], text: str) -> int:
         """R17: PII values in `text` that belong to someone other than the recipients themselves."""
@@ -312,6 +331,16 @@ class ProvenanceTracker:
                 if lab.conf.rank > conf.rank:
                     conf = lab.conf
 
+        if is_control and trust != Trust.UNTRUSTED:
+            # B4: an address the agent put together (written nowhere as a whole) whose domain only untrusted content
+            # named: "mallory, followed by the at sign, then evil-recon.io" still leads to the email that said it
+            for e in ents:
+                dom = e.split("@", 1)[1] if "@" in e and not e.startswith(("http", "#")) else None
+                if dom and e not in self.user_entities and dom in self.untrusted_domains \
+                        and dom not in self.user_domains and dom not in self.internal_domains \
+                        and not any(s.startswith(("sender:", "suspect-sender:")) for s in sources):
+                    trust = Trust.UNTRUSTED
+                    sources.append(f"{self.untrusted_domains[dom]} (domain {dom})")
         if is_control and ents and all(e in self.user_entities for e in ents) and not copied:
             trust = Trust.TRUSTED
         if not sources:
