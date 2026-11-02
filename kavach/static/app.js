@@ -188,6 +188,14 @@ function undoControl(d) {
   if (u) return u.ok ? `${stamp('rejected', 'Undone')}<span class="meta">${esc(u.msg)}</span>` : `<div class="notice err" role="alert">${esc(u.msg)}</div>`;
   return `<button class="btn" type="button" data-act="undo" data-r="${esc(d.receipt_id)}">${icon('rotate-ccw')}Undo this</button>`;
 }
+function ruleOfTwo(d) {
+  const r = d.rule_of_two;
+  if (!r || r.legs == null) return '';
+  const leg = (on, text) => stamp(on ? 'possible' : 'skipped', text);
+  return `<div class="d-block"><h4>Rule of Two ${tip('Untrusted input, private data and an action that goes outside. Any two are fine; all three in one task and a person decides (rule R14).')}</h4>
+    <p class="legs">${leg(r.untrusted_input, 'Read untrusted input')} ${leg(r.private_data, 'Holds private data')} ${leg(r.outbound_action, 'Goes outside')}
+    <span class="meta">${r.legs} of 3${r.human_required ? ' · a person decides' : ''}</span></p></div>`;
+}
 function decisionDetails(d) {
   const label = d.executed ? 'What it did' : d.verdict?.startsWith('ALLOW') ? 'What it will do' : 'What it would do';
   return `
@@ -195,8 +203,9 @@ function decisionDetails(d) {
     ${d.effect ? `<p class="d-does"><strong>${label}:</strong> ${esc(plain(d.effect.summary))}</p>` : ''}
     ${fourQuestions(d)}
     ${provenance(d)}
+    ${ruleOfTwo(d)}
     ${d.replan_hint ? `<div class="d-block"><h4>What the agent was told</h4><p class="told">${icon('send')}<span>${esc(plain(d.replan_hint))}</span></p></div>` : ''}
-    <div class="d-more">${riskMore(d.risk)}${gatesMore(d)}${d.explanation ? more('Full explanation', 'as the engine wrote it', `<pre class="pre">${esc(d.explanation)}</pre>`) : ''}</div>
+    <div class="d-more">${riskMore(d.risk)}${gatesMore(d)}${d.explanation ? more('Full explanation', 'as the engine wrote it', `<pre class="pre">${esc(d.explanation)}</pre>${d.receipt_id ? `<button class="btn sm quiet" type="button" data-act="hindi" data-r="${esc(d.receipt_id)}">हिन्दी में पढ़ें · Read in Hindi</button><pre class="pre" data-hi hidden></pre>` : ''}`) : ''}</div>
     <div class="d-actions">${undoControl(d)}${d.receipt_id ? `<span class="copy-wrap meta">Receipt</span> ${copyValue(d.receipt_id)}` : ''}</div>`;
 }
 const checkedIn = ms => (ms == null ? '' : `<span class="d-time">Checked in ${ms < 1000 ? `${ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`}</span>`);
@@ -919,6 +928,14 @@ const ACT = {
     chrome().catch(() => {});
   },
   decide(b) { decide(b); },
+  async hindi(b) {
+    flip(b, true);
+    const out = b.parentElement.querySelector('[data-hi]');
+    try { out.textContent = (await api(`/api/receipts/${b.dataset.r}/explain?lang=hi`)).explanation; }
+    catch (e) { out.textContent = e.message; }
+    out.hidden = false;
+    b.hidden = true;
+  },
   async cancel(b) {
     flip(b, true);
     const r = await post(`/api/undo/${b.dataset.r}`).catch(e => ({ undone: false, reason: e.message }));

@@ -44,6 +44,14 @@ def main(routes=None) -> int:
             page.goto(f"{base}/#/{r}")
             page.wait_for_selector("h1", timeout=10000)
             page.wait_for_timeout(300)
+        # a decision card: the Rule-of-Two meter and the explanation in Hindi
+        page.goto(f"{base}/#/scenarios/email_injection")
+        page.click("text=Run this scenario >> nth=0") if page.locator("text=Run this scenario").count() else None
+        page.locator("text=Rule of Two").last.wait_for(state="visible", timeout=15000)   # the deciding step
+        assert page.locator("text=3 of 3").count() >= 1                                # inbox + CRM + send
+        page.click("text=Full explanation >> nth=-1")
+        page.click("text=Read in Hindi >> nth=-1")
+        page.locator("text=रोका गया").first.wait_for(state="visible", timeout=10000)
         # the CFO tier: two seats, two people
         page.request.post(f"{base}/api/demo/ap_cfo_tier")
         page.goto(f"{base}/#/approvals")
