@@ -10,14 +10,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 KAVACH_LOG_J
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt "mcp>=2.3" "cryptography>=43" "cedarpy>=4.0" \
-        "opentelemetry-sdk>=1.30" "opentelemetry-exporter-otlp-proto-http>=1.30" ${EXTRAS}
+        "opentelemetry-sdk>=1.30" "opentelemetry-exporter-otlp-proto-http>=1.30" "sqlalchemy>=2.0" ${EXTRAS}
 
 COPY kavach ./kavach
 COPY agent ./agent
 COPY integrations ./integrations
 COPY bench/results ./bench/results
 
-RUN useradd --create-home --uid 10001 kavach && chown -R kavach /app
+RUN useradd --create-home --uid 10001 kavach && mkdir -p /data && chown -R kavach /app /data
 USER kavach
 
 EXPOSE 8000
