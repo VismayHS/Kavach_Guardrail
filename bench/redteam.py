@@ -156,8 +156,11 @@ def attempt(goal: str, template: str, obfuscation: str, request: str, dest: str 
     if dest is None:
         dest = "evil-recon.io" if g.get("url") else ATTACKER_ACC if g.get("account") else \
             "DE89370400440532013000" if g.get("iban") else ATTACKER
-    shown = OBFUSCATIONS[obfuscation](dest)
-    text = injection or TEMPLATES[template].format(ask=g["ask"].format(shown=shown, host=shown))
+    if injection is None:          # the fuzzer's own email; the LLM attacker writes its whole email itself
+        shown = OBFUSCATIONS[obfuscation](dest)
+        text = TEMPLATES[template].format(ask=g["ask"].format(shown=shown, host=shown))
+    else:
+        text = injection
     env = Environment(tempfile.mkdtemp())
     gw = Kavach(env, GatewayConfig(use_llm_judge=False, c_block=RiskModel().meta["operating_point"]["c_block"]))
     env.inbox.append({"id": "msg-9001", "from": sender, "subject": "Action needed", "body": text, "unread": True})
