@@ -182,6 +182,27 @@ def load_manifest(path) -> dict[str, ToolSpec]:
     return {name: spec_from_dict(name, d or {}) for name, d in (data.get("tools") or {}).items()}
 
 
+def load_manifest_roles(path) -> dict[str, list[str]]:
+    """The optional `roles:` section of a manifest file: which roles may use its tools."""
+    import yaml
+    from pathlib import Path
+    data = yaml.safe_load(Path(path).read_text()) or {}
+    return {r: list(t or []) for r, t in (data.get("roles") or {}).items()}
+
+
+def register_manifests(registry: "ToolRegistry", roles: dict[str, list[str]], paths) -> list[str]:
+    """Add the tools (pinned) and roles of each manifest file to a registry and a policy's role table."""
+    added = []
+    for p in paths:
+        for name, spec in load_manifest(p).items():
+            registry.specs[name], registry.pins[name] = spec, spec.definition_hash()
+            added.append(name)
+        for role, tools in load_manifest_roles(p).items():
+            roles.setdefault(role, [])
+            roles[role] += [t for t in tools if t not in roles[role]]
+    return added
+
+
 def dump_manifest(specs: dict[str, ToolSpec]) -> str:
     import yaml
     return yaml.safe_dump({"tools": {n: spec_to_dict(s) for n, s in specs.items()}}, sort_keys=False, width=120)

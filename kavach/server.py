@@ -46,6 +46,10 @@ env = Environment(tempfile.mkdtemp(prefix="kavach-"), canaries=_canaries)
 gw = Kavach(env)
 if PROFILE.require_tool_hash:
     gw.policy.cfg["require_tool_hash"] = True
+if os.environ.get("KAVACH_MANIFESTS"):             # E3: more tools, e.g. kavach/manifests/claude_code.yaml
+    from .manifest import register_manifests
+    register_manifests(gw.registry, gw.policy.cfg["roles"],
+                       [p.strip() for p in os.environ["KAVACH_MANIFESTS"].split(",") if p.strip()])
 if os.environ.get("KAVACH_PROBE") == "1":          # C3: scan untrusted content with the CPU classifier
     from .injection_probe import InjectionProbe
     _probe = InjectionProbe()
