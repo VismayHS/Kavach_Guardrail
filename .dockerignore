@@ -1,0 +1,12 @@
+.git
+.venv
+.env
+*.env
+keys/
+.kavach/
+**/__pycache__
+.pytest_cache
+bench/agentdojo_runs
+examples/mcp/sent_mail.jsonl
+deliverables
+docs/img

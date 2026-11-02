@@ -1,0 +1,22 @@
+# E10: a shell for agents, judged by KAVACH. Register with KAVACH_SHELL=1 (or KAVACH_MANIFESTS=.../shell.yaml).
+# Every command is read (kavach/shell.py), then dry-run in a Docker sandbox with no network on the workspace; an
+# allowed one runs the same way and only the files it changed are written back (snapshotted first, so Undo works).
+roles:
+  developer: [shell.run, files.read, files.write, files.delete]
+tools:
+  shell.run:
+    description: Run a shell command in the workspace (sandboxed, no network).
+    params: {command: str}
+    required: [command]
+    effect: write
+    sink: internal
+    reversibility: reversible
+    control_args: [command]
+    output_trust: derived
+    output_conf: internal
+    staging: sandbox
+    safeguard: snapshot+undo
+    effect_model: shell
+    intent_verbs: [run, test, build, lint, check, clean, format, count, list, find, compile, generate, compute, calculate,
+                   summarise, summarize, sum, total, back, backup, copy, move, rename, show, print, search, grep, sort,
+                   convert, archive, compress, remove, delete, tidy, measure]

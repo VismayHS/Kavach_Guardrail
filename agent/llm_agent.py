@@ -89,8 +89,10 @@ def typed(gw: Kavach, tool: str, args: dict) -> dict:
 
 
 def run(request: str, guard: bool = True, role: str = "analyst", model: str | None = None, max_steps: int = 8,
-        trace: list | None = None) -> dict:
-    """Run the agent on `request`. Pass your own `trace` list to watch the steps arrive while it runs (dashboard)."""
+        trace: list | None = None, melon: bool | None = None) -> dict:
+    """Run the agent on `request`. Pass your own `trace` list to watch the steps arrive while it runs (dashboard).
+    melon (C1, default KAVACH_MELON=1): before a state-changing call runs, ask the model again with the request
+    masked out; if it still proposes the call, the call goes to a person (R27)."""
     env = Environment(tempfile.mkdtemp())
     gw = Kavach(env)
     llm = QualcommCloudAI(model=model or os.environ.get("KAVACH_AGENT_MODEL", "Llama-3.3-70B"), timeout=60)
@@ -98,6 +100,12 @@ def run(request: str, guard: bool = True, role: str = "analyst", model: str | No
         raise SystemExit("Set IMAGINE_API_KEY and IMAGINE_API_ENDPOINT (or INFERENCE_CLOUD_API_KEY and "
                          "INFERENCE_CLOUD_ENDPOINT) for the Qualcomm Inference Cloud.")
     tid, plan = gw.start_task("ravi", role, request)
+    use_melon = guard and (melon if melon is not None else os.environ.get("KAVACH_MELON") == "1")
+    masked = None
+    if use_melon:
+        from kavach.melon import Melon
+        masked = Melon(lambda m, t: llm.chat(m, tools=t, max_tokens=1000)["choices"][0]["message"],
+                       name_map=lambda n: n.replace("__", "."))
     msgs = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": request}]
     trace = [] if trace is None else trace
     for _ in range(max_steps):
@@ -109,6 +117,7 @@ def run(request: str, guard: bool = True, role: str = "analyst", model: str | No
         if not calls:
             trace.append({"final": msg.get("content")})
             break
+        before = msgs[:-1]           # the conversation up to (not including) the turn that proposed these calls
         for c in calls:
             name = c["function"]["name"].replace("__", ".")
             try:
@@ -118,7 +127,9 @@ def run(request: str, guard: bool = True, role: str = "analyst", model: str | No
             args = typed(gw, name, args if isinstance(args, dict) else {})
             try:      # a broken call (no arguments, unknown tool) goes back to the agent as an error, like a real runner
                 if guard:
-                    d = gw.run(tid, ToolCall(name, args))
+                    probe = (lambda call, b=before: masked.check(b, openai_tools(gw), call.tool, call.args)) \
+                        if masked is not None else None
+                    d = gw.execute(tid, gw.check(tid, ToolCall(name, args), melon=probe))
                     ok = d.verdict.value.startswith("ALLOW")
                     content = json.dumps(d.result, default=str)[:3000] if ok else \
                         f"BLOCKED by KAVACH ({d.verdict.value}): {d.reason} {d.replan_hint or ''}"
@@ -137,6 +148,8 @@ def run(request: str, guard: bool = True, role: str = "analyst", model: str | No
     return {"guarded": guard, "model": llm.model, "endpoint_host": urlparse(getattr(llm, "endpoint", "") or "").hostname or "",
             "role": role, "request": request, "trace": trace, "external_emails_sent": leaked,
             "payments": env.ledger, "waiting_held_or_queued": waiting, "receipts_valid": gw.receipts.verify(),
+            "melon": None if masked is None else {"calls": masked.calls, "matches": masked.matches,
+                                                  "ms": masked.ms, "errors": masked.errors},
             "receipts": gw.receipts.items if guard else [], "messages": msgs}
 
 
@@ -160,12 +173,13 @@ if __name__ == "__main__":
     ap.add_argument("--no-guard", action="store_true")
     ap.add_argument("--role", default="analyst")
     ap.add_argument("--model")
+    ap.add_argument("--melon", action="store_true", help="masked re-execution before state-changing calls (C1)")
     ap.add_argument("--both", action="store_true", help="run without and then with KAVACH")
     ap.add_argument("--save-log", action="store_true", help="save each run's full transcript under bench/results/live/")
     a = ap.parse_args()
     when = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     for guard in ((False, True) if a.both else (not a.no_guard,)):
-        out = run(a.request, guard=guard, role=a.role, model=a.model)
+        out = run(a.request, guard=guard, role=a.role, model=a.model, melon=a.melon or None)
         if a.save_log:
             print("saved", save_log(out, when), file=sys.stderr)
         print(json.dumps({k: v for k, v in out.items() if k not in ("messages", "receipts")}, indent=1, default=str))

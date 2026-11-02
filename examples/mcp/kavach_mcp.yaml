@@ -1,0 +1,45 @@
+# KAVACH MCP proxy configuration (python -m kavach.mcp_proxy --config examples/mcp/kavach_mcp.yaml)
+#
+# upstreams: the real MCP servers KAVACH sits in front of. Each is a command (stdio) or a url (Streamable HTTP).
+upstreams:
+  demo:
+    command: python
+    args: [examples/mcp/demo_upstream.py]
+  # filesystem:                              # the reference servers work the same way, e.g.:
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp/kavach-sandbox"]
+  # fetch:
+  #   command: uvx
+  #   args: ["mcp-server-fetch"]
+  # remote:
+  #   url: https://mcp.example.com/mcp
+
+# What each tool does, for KAVACH (effect model, which arguments pick the target, reversibility...). Keyed by the
+# exposed name (<server>__<tool>) or the upstream's own name. Tools not described here are judged from their MCP
+# annotations with MCP's cautious defaults (not read-only, destructive, open world).
+manifests: [../../kavach/manifests/examples.yaml]
+tools:
+  send_email:
+    effect: external_send
+    sink: external
+    reversibility: irreversible
+    control_args: [to]
+    data_args: [subject, body]
+    effect_model: email
+    intent_verbs: [email, send, mail, reply, tell]
+  read_page:
+    effect: ingress
+    sink: none
+    reversibility: idempotent
+    control_args: [url]
+    effect_model: web_fetch
+    output_trust: untrusted
+    output_conf: public
+
+pins: ../../.kavach/mcp_pins.json      # pinned tool definitions (rug-pull detection survives restarts)
+trust_on_first_use: true                # pin new tools on first sight; false = each new tool waits for approval
+request: ""                             # the user's request, if the client doesn't send _meta kavach/userRequest
+user: mcp-user
+approval_wait_s: 60                     # how long an escalated call waits for a person before it fails
+judge: false                            # Qualcomm judge on escalations (needs the Qualcomm key)
+probe: false                            # CPU prompt-injection classifier on upstream outputs (needs torch)

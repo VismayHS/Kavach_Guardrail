@@ -4,6 +4,31 @@
 version: "2026.10-demo"
 
 internal_domains: ["infycorp.com"]
+# Vendor master domains: with internal_domains, the names a lookalike domain imitates (R25)
+known_domains: ["northwind-supplies.de", "contoso.com", "fabrikam.ae"]
+
+# Sensitivity of workspace files by name (first match wins). Unlisted files are internal. (N2)
+file_sensitivity:
+  - {pattern: "*salary*", conf: pii}
+  - {pattern: "*payroll*", conf: pii}
+  - {pattern: "q3_*", conf: confidential}
+  - {pattern: "*revenue*", conf: confidential}
+  - {pattern: "*finance*", conf: confidential}
+  - {pattern: "*.csv", conf: confidential}
+  - {pattern: "*.xlsx", conf: confidential}
+
+# Columns whose change must be asked for by name (R26). Each lists the words that count as asking for it.
+sensitive_columns:
+  email: ["email", "e-mail", "mail address", "contact"]
+  phone: ["phone", "mobile", "number", "contact"]
+  name: ["name"]
+  iban: ["iban", "bank", "account"]
+  bank_verified: ["verif"]
+  sanctioned: ["sanction"]
+  amount: ["amount", "price", "total", "value", "refund", "correct"]
+  customer_id: ["customer", "reassign", "move", "transfer"]
+  vendor_id: ["vendor", "reassign"]
+  proposed_by: ["propos"]
 
 roles:
   analyst:  ["crm.query", "files.read", "files.write", "mail.read_inbox", "mail.send", "web.fetch"]
@@ -26,6 +51,13 @@ limits:
   outbound_chars_max: 2000       # characters an email to an outside address may carry without approval
   encoded_token_min: 200         # an unbroken run this long in an outside email looks like encoded data
   task_outbound_chars_max: 4000  # characters one task may send to outside addresses in total (data split into parts)
+  shell_delete_max: 5            # files a shell command may delete (in its dry run) before a person decides (R34)
+
+# Approvals (F8): how long a request waits (seconds) before it goes one step up the chain; after the last step it
+# expires, denied. An empty chain means expiry is the first deadline.
+approvals:
+  sla_s: 300
+  chain: [team_lead, ops_manager]
 
 change_freeze: false             # when true: no writes to prod (Replit incident lesson)
 require_tool_hash: false         # when true: calls must present the pinned tool definition hash (MCP clients)
@@ -36,11 +68,13 @@ finance:
   currency: EUR
   role_release_limit:            # "≤ €25,000: AP Supervisor (single signatory)"
     ap_supervisor: 25000
-  release_tiers:                 # "Payment Authorisation Limits"
-    - {max: 25000,  approvers: "AP Supervisor (single signatory)"}
-    - {max: 100000, approvers: "Finance Manager + AP Supervisor (dual control)"}
-    - {max: 500000, approvers: "Finance Director + Finance Manager (dual control)"}
-    - {max: null,   approvers: "CFO + Finance Director (dual control)"}
+  release_tiers:                 # "Payment Authorisation Limits"; quorum = verified roles that must approve (N4)
+    - {max: 25000,  approvers: "AP Supervisor (single signatory)", quorum: {ap_supervisor: 1}}
+    - {max: 100000, approvers: "Finance Manager + AP Supervisor (dual control)",
+       quorum: {finance_manager: 1, ap_supervisor: 1}}
+    - {max: 500000, approvers: "Finance Director + Finance Manager (dual control)",
+       quorum: {finance_director: 1, finance_manager: 1}}
+    - {max: null,   approvers: "CFO + Finance Director (dual control)", quorum: {cfo: 1, finance_director: 1}}
   retention_years: 7             # "Invoices (AP and AR): 7 years. Block deletion"
   retained_tables: ["ap_invoices", "payment_proposals", "sap_documents"]
   # The finance rules read these tables, so raw SQL may not change them (R35); only the finance tools may.
@@ -49,6 +83,17 @@ finance:
 
 # matched case-insensitively anywhere in the path
 sensitive_paths: ["deploy.env", ".env", "secret", "id_rsa", "credential", ".pem", ".key", ".netrc", ".ssh", "token"]
+
+# Canary records (R28): planted where an attacker would look, needed by no legitimate task. Any external action
+# carrying one of these values is blocked; moving them internally is allowed and recorded. Seeded by the server
+# (KAVACH_CANARIES=0 to turn off), not by tests or benchmarks.
+canaries:
+  customers:
+    - {id: 0, name: "Ritika Menon", email: "ritika.menon0@client0.com", phone: "+91-9876500001", city: "Pune",
+       status: "active", last_active_days: 12, tier: "gold"}
+  files:
+    vendor_portal_keys.txt: "PORTAL_API_KEY=kv-live-7f3a9c2e1b8d4f60\n"
+  values: ["ritika.menon0@client0.com", "+91-9876500001", "kv-live-7f3a9c2e1b8d4f60"]
 
 # Rule catalogue (ids are cited in every receipt)
 rules:
@@ -76,6 +121,16 @@ rules:
   R22: "Invoices, payment records and posted documents may not be deleted (retention)."
   R23: "Invoices must pass the 3-way match (PO, goods receipt, invoice within 2% or EUR 100) before release."
   R24: "An email about an invoice the user named goes to that invoice's customer, an internal address, or an address the user gave; anyone else needs approval."
+  R25: "A recipient, sender or URL host whose domain imitates the company's or a known vendor's (lookalike) needs approval, and a lookalike sender is never trusted as 'reply to sender'."
+  R26: "A change to a sensitive column (email, phone, IBAN, amount, owner...) that the request doesn't ask for needs approval."
+  R27: "If the agent still proposes a state-changing action when the user's request is masked out (MELON), the action is driven by injected content and needs approval."
+  R28: "Canary records exist only to be stolen: any external action carrying one is blocked."
+  R30: "Bank accounts must be valid: an IBAN with the wrong length or check digits is blocked (a typo, or an invented account)."
+  R31: "Confirmation of Payee: a new bank account registered to someone other than the vendor needs approval."
+  R32: "Raw credentials (API keys, tokens, private keys) never pass through an agent's arguments; tools get them from the secrets broker."
+  R33: "A delegated agent can use only the tools it was delegated, within the user's role: authority only narrows down a delegation chain."
+  R34: "Shell commands are read and dry-run in a sandbox with no network: decode-and-run, privilege, persistence, secrets plus network, and writes outside the workspace are refused; network, secrets and mass deletes go to a person."
+  R29: "If a classifier flagged injected instructions in content the task read, state-changing actions need approval unless every target was typed by the user (a model signal: it escalates, never blocks)."
   # R25-R34 belong to the Phase 5 roadmap; R35-R40 are the vismay-dev gap rules.
   R35: "Raw SQL may not change the tables the finance rules read (vendors, invoices, POs, receipts, proposals, SAP documents); only the finance tools may."
   R36: "One task's totals count: rows changed across statements, money moved across payments, characters emailed outside, and repeats of the same payment or email need approval."

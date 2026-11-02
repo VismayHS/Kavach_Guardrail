@@ -5,30 +5,99 @@ auto-allowed) or DENY (final). The rule id travels into the receipt.
 """
 from __future__ import annotations
 
+import fnmatch
+import hashlib
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
 import yaml
 
-from .manifest import ToolRegistry, ToolSpec
+from .addresses import domain_of, parse_recipients
+from .finance import iban_check, name_similarity
+from .intent import BREADTH
+from .lookalike import Lookalike, registered
+from .manifest import ToolRegistry, ToolSpec, arg, argname, model_of
 from .models import Conf, GateResult, Label, TaskContext, ToolCall, Trust
 from .provenance import URL, arg_targets, named_records, named_targets
 
-# actions aimed at specific records (R16): if the user named records, the action must touch one of them, and the
-# argument that picks the record (None for SQL, whose numbers are mostly values) must be one the user named
-TARGETED = {"crm.execute": None, "payment.release": "invoice_id", "payment.propose": "invoice_id",
-            "payments.refund": "invoice_id", "vendor.update_bank": "vendor_id", "sap.post": "gl_account"}
-# the argument that picks where an outbound action goes
-DESTINATION = {"mail.send": "to", "payments.transfer": "to_account", "payments.refund": "invoice_id",
-               "payment.release": "invoice_id"}
+RANGE = re.compile(r"\b\d+\s*(?:to|-|–|through|till|until)\s*\d+\b", re.I)
+# "invoice 1042", "customer #17", "vendor V002", "invoice INV-3040": the record kind and its id
+NAMED_KIND = re.compile(r"\b(invoice|customer|client|vendor)s?\s*(?:no\.?|number)?\s*[#:=]?\s*([A-Z]{1,5}-?\d{2,}|\d+)\b",
+                        re.I)
+KIND_TABLES = {"invoice": ("invoices", "ap_invoices"), "customer": ("customers",), "client": ("customers",),
+               "vendor": ("vendors",)}
+
+# Rules read a tool's effect model (E3), not its name, so any tool declared as "email" or "sql_write" gets them.
+# Actions aimed at specific records (R16): if the user named records, the action must touch one of them, and the
+# argument role that picks the record (None for SQL, whose numbers are mostly values) must be one the user named
+TARGETED = {"sql_write": None, "ap_release": "invoice_id", "ap_propose": "invoice_id", "refund": "invoice_id",
+            "bank_change": "vendor_id", "ledger_post": "gl_account"}
+# the argument role that picks where an outbound action goes
+DESTINATION = {"email": "to", "transfer": "to_account", "refund": "invoice_id", "ap_release": "invoice_id"}
 
 
 class PolicyEngine:
     def __init__(self, path: str | Path | None = None):
         path = path or Path(__file__).parent / "policies" / "default.yaml"
-        self.cfg = yaml.safe_load(Path(path).read_text())
+        raw = Path(path).read_bytes()
+        self.sha256 = hashlib.sha256(raw).hexdigest()
+        self._check_signature(Path(path))
+        self.cfg = yaml.safe_load(raw)
         self.version = self.cfg["version"]
         self.rules = self.cfg["rules"]
+        self.lookalike = Lookalike(list(self.cfg.get("internal_domains", [])) + list(self.cfg.get("known_domains", [])))
+        import os
+
+        from .finance import SanctionsList
+        self.sanctions = SanctionsList.load(os.environ.get("KAVACH_SANCTIONS_CSV") or self.cfg.get("sanctions_list"))
+
+    @classmethod
+    def from_text(cls, text: str) -> "PolicyEngine":
+        """A draft policy from YAML text (for replay): never loaded from disk, so no signature applies."""
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
+            f.write(text)
+        import os
+        saved = os.environ.pop("KAVACH_POLICY_PUBKEY", None)
+        try:
+            return cls(f.name)
+        finally:
+            if saved is not None:
+                os.environ["KAVACH_POLICY_PUBKEY"] = saved
+            os.unlink(f.name)
+
+    def _check_signature(self, path: Path) -> None:
+        """F9: with KAVACH_POLICY_PUBKEY set, a policy loads only with a valid Ed25519 signature (<file>.sig)."""
+        import json
+        import os
+        pub = os.environ.get("KAVACH_POLICY_PUBKEY")
+        if not pub:
+            self.signed_by = None
+            return
+        from .signing import key_id, load_public, verify
+        sig = path.with_name(path.name + ".sig")
+        key = load_public(Path(pub).read_text())
+        if not sig.exists():
+            raise PermissionError(f"{path} has no signature ({sig.name}); refusing to load an unsigned policy")
+        s = json.loads(sig.read_text())
+        if s.get("sha256") != self.sha256 or s.get("kid") != key_id(key) or \
+                not verify(key, self.sha256.encode(), s.get("sig", "")):
+            raise PermissionError(f"{path}: signature does not match the file or the trusted key; refusing to load")
+        self.signed_by = s["kid"]
+
+    def file_conf(self, path: str) -> Conf | None:
+        """Sensitivity of a workspace file by name (N2); None = the tool's default."""
+        name = Path(str(path)).name.lower()
+        for item in self.cfg.get("file_sensitivity", []):
+            if fnmatch.fnmatch(name, item["pattern"].lower()):
+                return Conf(item["conf"])
+        return None
+
+    def release_quorum(self, amount: float) -> dict[str, int]:
+        tiers = self.cfg["finance"]["release_tiers"]
+        tier = next(t for t in tiers if t["max"] is None or amount <= t["max"])
+        return dict(tier.get("quorum") or {})
 
     def evaluate(self, ctx: TaskContext, call: ToolCall, spec: ToolSpec | None, registry: ToolRegistry,
                  labels: dict[str, Label], staged: dict | None = None) -> list[GateResult]:
@@ -53,6 +122,8 @@ class PolicyEngine:
             add("R6", "PASS", "Tool is in the approved manifest and its definition hash matches." if call.tool_def_hash
                 else "Tool is in the approved manifest (no definition hash presented, so the pin was not checked).")
 
+        m = model_of(spec)
+
         # R7 schema
         errs = registry.validate_args(spec, call.args)
         if errs:
@@ -69,7 +140,7 @@ class PolicyEngine:
 
         # R18-R23 the accounts-payable rulebook, enforced on facts read from the records
         st = staged or {}
-        self._finance_rules(ctx, call, labels, st, add)
+        self._finance_rules(ctx, call, spec, labels, st, add)
 
         # R1 untrusted destination for external actions
         if spec.sink == "external" or spec.effect == "ingress":
@@ -94,7 +165,8 @@ class PolicyEngine:
         # R2 PII leaving the company
         if spec.sink == "external" and spec.effect == "external_send":
             pii = sum(l.pii_entities for k, l in labels.items() if k in spec.data_args)
-            to = str(call.args.get("to", ""))
+            pii = max(pii, st.get("detected_pii") or 0)     # E8: Presidio also counts PII typed from memory
+            to = ", ".join(str(arg(spec, call.args, r)) for r in ("to", "cc", "bcc") if arg(spec, call.args, r))
             internal = self._all_internal(to)    # every recipient, not just the end of the string
             if pii > self.cfg["limits"]["pii_external_max"] and not internal:
                 add("R2", "REQUIRE_APPROVAL", f"{pii} PII values would be sent to external address {to}.",
@@ -111,9 +183,16 @@ class PolicyEngine:
                 inv = ", ".join(st.get("effect", {}).get("named_invoices", []))
                 add("R24", "REQUIRE_APPROVAL", f"The user named invoice {inv}, but {', '.join(st['stray_recipients'])}"
                     " is not that invoice's customer in the CRM.", recipients=st["stray_recipients"])
+            # R25 a recipient whose domain imitates ours or a vendor's, unless the user typed that address
+            given = st.get("given") or (lambda _v: False)
+            fakes = [(r, self.lookalike.check(domain_of(r))) for r in parse_recipients(to)]
+            fakes = [(r, p) for r, p in fakes if p and not given(r)]
+            if fakes:
+                add("R25", "REQUIRE_APPROVAL", "Lookalike domain: " + "; ".join(f"{r} imitates {p}" for r, p in fakes)
+                    + ".", recipients=[r for r, _ in fakes])
             # R37 bulk or encoded data needs no recognisable PII to be a leak (base64, reformatted phone numbers...)
             lim = self.cfg["limits"]
-            text = f"{call.args.get('subject', '')} {call.args.get('body', '')}"
+            text = f"{arg(spec, call.args, 'subject', '')} {arg(spec, call.args, 'body', '')}"
             longest = max((len(w) for w in text.split()), default=0)
             if not internal and (len(text) > lim["outbound_chars_max"] or longest >= lim["encoded_token_min"]):
                 add("R37", "REQUIRE_APPROVAL", f"This email to {to} carries {len(text):,} characters"
@@ -121,34 +200,35 @@ class PolicyEngine:
                     + "; a person should see what is leaving.", chars=len(text), longest=longest)
 
         # R40 nothing was shown, so lineage has nothing to trace: an outside destination must then be the user's
-        if call.tool in ("mail.send", "payments.transfer") and st.get("outputs_seen") == 0 \
-                and not st.get("destination_given") and not self._internal_destination(call, st):
-            dest = DESTINATION[call.tool]
+        if m in ("email", "transfer") and st.get("outputs_seen") == 0 \
+                and not st.get("destination_given") and not self._internal_destination(call, spec, st):
+            dest = argname(spec, DESTINATION[m])
             add("R40", "REQUIRE_APPROVAL", f"No tool output was shown for this task, so where {call.args.get(dest)!r} "
                 "came from can't be checked, and the user didn't give it.", arg=dest)
 
         # R39 bank details or links from untrusted content, passed on by email (inside the company too)
-        if call.tool == "mail.send" and st.get("untrusted_details"):
+        if m == "email" and st.get("untrusted_details"):
             add("R39", "REQUIRE_APPROVAL", f"The email repeats {', '.join(st['untrusted_details'])} from untrusted "
                 "content; payment details and links from outside need a person to check them before staff act on them.",
                 values=st["untrusted_details"])
 
         # R36 one task's characters to outside addresses: a list split into short emails adds up
-        if call.tool == "mail.send" and st.get("task_outbound_chars", 0) > self.cfg["limits"]["task_outbound_chars_max"]:
+        if m == "email" and st.get("task_outbound_chars", 0) > self.cfg["limits"]["task_outbound_chars_max"]:
             add("R36", "REQUIRE_APPROVAL", f"This task would have emailed {st['task_outbound_chars']:,} characters to "
                 f"outside addresses in total (limit {self.cfg['limits']['task_outbound_chars_max']:,}); data may be "
                 "leaving in parts.", chars=st["task_outbound_chars"])
 
         # R38 instructions in untrusted content can name a destination in a form value matching can't trace
         # ("payouts [at] fin-desk [dot] io"): after untrusted content, an outside destination must come from the user
-        if call.tool in ("mail.send", "payments.transfer") and st.get("untrusted_seen") \
-                and not st.get("destination_given") and not self._internal_destination(call, st):
-            dest = DESTINATION[call.tool]
+        if m in ("email", "transfer") and st.get("untrusted_seen") \
+                and not st.get("destination_given") and not self._internal_destination(call, spec, st) \
+                and not any(g.rule_id == "R1" and g.outcome == "DENY" for g in out):   # R1 already traced it
+            dest = argname(spec, DESTINATION[m])
             add("R38", "REQUIRE_APPROVAL", f"This task read untrusted content, and '{dest}' = {call.args.get(dest)!r} "
                 "was not given by the user.", arg=dest)
 
         # R15 values the agent made up: they appear nowhere in the request or in any tool output
-        if call.tool in ("payments.transfer", "payments.refund", "sap.post"):
+        if m in ("transfer", "refund", "ledger_post"):
             for a in spec.control_args:
                 lab, v = labels.get(a), call.args.get(a)
                 grounded = lab is not None and (lab.trust == Trust.TRUSTED or lab.sources != ["agent"])
@@ -157,30 +237,42 @@ class PolicyEngine:
                         "output; the agent made it up.", arg=a)
 
         # R16 the user named specific records, and this action touches none of them or picks another one
-        if call.tool in TARGETED:
+        if m in TARGETED:
             named = named_targets(ctx.user_request)
-            key = TARGETED[call.tool]
+            key = argname(spec, TARGETED[m]) if TARGETED[m] else None
             pick = arg_targets({key: call.args[key]}) if key in call.args else set()
             other = bool(pick) and not pick & (named_records(ctx.user_request) or named)
             if named and (not named & arg_targets(call.args) or other):
                 what = f"picks {', '.join(sorted(pick))}" if other else "touches none of them"
                 add("R16", "REQUIRE_APPROVAL", f"The user named {', '.join(sorted(named))}, but this action {what}.",
                     named=sorted(named))
+            elif m == "sql_write":
+                self._rows_rule(ctx, st.get("effect") or {}, add)
+        if m == "sql_write":
+            self._columns_rule(ctx, st.get("effect") or {}, add)
 
         # R13 data leaving through a URL / R14 lethal trifecta at runtime
-        if call.tool == "web.fetch":
-            self._url_rule(ctx, call, labels, st, add)
+        if m == "web_fetch":
+            self._url_rule(ctx, call, spec, labels, st, add)
         if spec.sink == "external" and st.get("private_seen") and st.get("untrusted_seen"):
-            dest = DESTINATION.get(call.tool)
+            dest = argname(spec, DESTINATION[m]) if m in DESTINATION else None
             lab = labels.get(dest) if dest else None
-            if not (lab and lab.trust == Trust.TRUSTED) and not self._internal_destination(call, st):
+            if not (lab and lab.trust == Trust.TRUSTED) and not self._internal_destination(call, spec, st):
                 add("R14", "REQUIRE_APPROVAL", "This task has read private data and untrusted content, and "
                     f"'{dest}' = {call.args.get(dest)!r} was not given by the user.", arg=dest)
 
+        # R29 a classifier flagged injected instructions in what this task read (C3): state changes go to a human
+        # unless every destination/target was typed by the user. A model signal: it escalates, it never blocks.
+        if st.get("hostile") and spec.effect in ("write", "payment", "external_send"):
+            ctrl = [labels[a] for a in spec.control_args if a in labels]
+            if not ctrl or not all(l.trust == Trust.TRUSTED for l in ctrl):
+                add("R29", "REQUIRE_APPROVAL", f"A classifier flagged injected instructions in {', '.join(st['hostile'][:3])}"
+                    "; this action's target wasn't typed by the user.", sources=st["hostile"][:10])
+
         # R3 change freeze / R4 DDL / R10 bulk (SQL facts come from SQLite's compiler, see sql.py)
         sql_info = st.get("sql") or {}
-        if call.tool == "crm.execute":
-            sql = str(call.args.get("sql", ""))
+        if m == "sql_write":
+            sql = str(arg(spec, call.args, "sql", ""))
             if ctx.env == "prod" and (self.cfg.get("change_freeze") or (staged or {}).get("freeze")):
                 add("R3", "DENY", "Change freeze is active: production writes are blocked.")
             if ctx.env == "prod" and sql_info.get("ddl"):
@@ -199,18 +291,18 @@ class PolicyEngine:
                 add("R36", "REQUIRE_APPROVAL", f"This task would have changed {st['task_rows']} rows in total "
                     f"(limit {self.cfg['limits']['task_rows_approval']}); a big change may be split into small ones.",
                     rows=st["task_rows"])
-        if call.tool == "crm.query" and (sql_info.get("writes") or sql_info.get("ddl")):
-            add("R7", "DENY", f"crm.query is read-only but the statement would {', '.join(sql_info['sql_ops'])}.",
+        if m == "sql_read" and (sql_info.get("writes") or sql_info.get("ddl")):
+            add("R7", "DENY", f"{call.tool} is read-only but the statement would {', '.join(sql_info['sql_ops'])}.",
                 ops=sql_info.get("sql_ops"))
-        if call.tool.startswith("files.") and spec.effect == "write" and ctx.env == "prod" \
+        if m in ("file_write", "file_delete") and spec.effect == "write" and ctx.env == "prod" \
                 and (self.cfg.get("change_freeze") or (staged or {}).get("freeze")):
             add("R3", "DENY", "Change freeze is active.")
 
         # R5 payments (amount given in the call; payment.release is covered by R18 on the invoice record)
-        if call.tool in ("payments.transfer", "payments.refund"):
+        if m in ("transfer", "refund"):
             lim = self.cfg["limits"]
-            amt = float(call.args.get("amount", 0))
-            if call.tool == "payments.refund":
+            amt = float(arg(spec, call.args, "amount", 0))
+            if m == "refund":
                 if amt > lim["refund_hard_max"]:
                     add("R5", "DENY", f"Refund {amt:,.0f} exceeds hard cap {lim['refund_hard_max']:,}.")
                 elif amt > lim["refund_auto_max"]:
@@ -218,7 +310,10 @@ class PolicyEngine:
                 else:
                     add("R5", "PASS", f"Refund {amt:,.0f} within auto limit.")
             else:
-                payee_known = call.args.get("to_account") in (staged or {}).get("payees", {})
+                payee_known = arg(spec, call.args, "to_account") in (staged or {}).get("payees", {})
+                acct = str(arg(spec, call.args, "to_account", ""))
+                if re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9 ]{8,34}", acct.upper()) and not iban_check(acct)[0]:
+                    add("R30", "DENY", f"{acct!r} is not a valid IBAN: {iban_check(acct)[1]}.", iban=acct)
                 if amt > lim["transfer_hard_max"]:
                     add("R5", "DENY", f"Transfer {amt:,.0f} exceeds hard cap.")
                 elif not payee_known or amt > lim["transfer_auto_max"]:
@@ -233,23 +328,82 @@ class PolicyEngine:
             add("R36", "REQUIRE_APPROVAL", f"This task would have moved INR {task_money['INR']:,.0f} in total "
                 f"(limit {self.cfg['limits']['task_money_approval']:,}).", total=task_money["INR"])
         release_limit = self.cfg["finance"]["role_release_limit"].get(ctx.principal.role, 0)
-        if call.tool == "payment.release" and task_money.get("EUR", 0) > release_limit:
+        if m == "ap_release" and task_money.get("EUR", 0) > release_limit:
             add("R36", "REQUIRE_APPROVAL", f"This task would have released EUR {task_money['EUR']:,.0f} in total; role "
                 f"'{ctx.principal.role}' may release up to EUR {release_limit:,.0f}.", total=task_money["EUR"])
 
         # R9 secrets: not into the agent's context, and not overwritten or deleted either
-        if call.tool in ("files.read", "files.write", "files.delete"):
-            p = str(call.args.get("path", ""))
+        if m in ("file_read", "file_write", "file_delete"):
+            p = str(arg(spec, call.args, "path", ""))
             if any(s in p.lower() for s in self.cfg["sensitive_paths"]):
-                what = "reading it into an agent context" if call.tool == "files.read" else "changing it"
+                what = "reading it into an agent context" if m == "file_read" else "changing it"
                 add("R9", "DENY", f"'{p}' is a credential file; {what} is blocked.")
+
+        # R34 shell commands (E10): read and dry-run in a sandbox by the consequence engine
+        if m == "shell":
+            self._shell_rule(st.get("effect") or {}, add)
+
+        # R32 raw credentials in the arguments: a key passed through the agent (use {{secret:NAME}} instead)
+        from .secret_broker import raw_credentials
+        creds = raw_credentials(call.args)
+        if creds:
+            add("R32", "DENY", f"The arguments carry a raw credential ({', '.join(creds)}). Keys must never pass "
+                "through an agent: reference it as {{secret:NAME}} and the secrets broker supplies it at execution.",
+                kinds=creds)
+
+        # R28 canary records (last, so a provenance rule stays the stated reason and the canary is extra evidence)
+        self._canary_rule(call, spec, add)
         return out
 
-    def _finance_rules(self, ctx: TaskContext, call: ToolCall, labels: dict[str, Label], staged: dict, add) -> None:
+    def _shell_rule(self, e: dict, add) -> None:
+        """R34: a shell command is refused for what it reaches, and goes to a person for what it might do."""
+        deny = []
+        if e.get("decode_and_run"):
+            deny.append(f"runs code it downloads or decodes ({', '.join(e['decode_and_run'][:2])})")
+        if e.get("privilege"):
+            deny.append(f"asks for more privileges ({', '.join(e['privilege'][:2])})")
+        if e.get("persistence"):
+            deny.append(f"installs something that outlives the task ({', '.join(e['persistence'][:2])})")
+        if e.get("secrets") and e.get("network"):
+            deny.append("reads secrets and reaches the network in the same command")
+        if e.get("outside_writes"):
+            deny.append(f"writes or deletes outside the workspace ({', '.join(e['outside_writes'][:2])})")
+        ev = {k: e.get(k) for k in ("programs", "network", "hosts", "secrets", "outside_writes", "decode_and_run")}
+        if deny:
+            add("R34", "DENY", "The command " + "; ".join(deny) + ".", **ev)
+            return
+        ask, dry = [], e.get("dry_run") or {}
+        files = dry.get("files") or {}
+        if e.get("network"):
+            ask.append(f"reaches the network ({', '.join(e['network'][:2])}"
+                       + (f" to {', '.join(e['hosts'][:3])}" if e.get("hosts") else "") + ")")
+        if e.get("secrets"):
+            ask.append(f"reads secrets ({', '.join(e['secrets'][:2])})")
+        n_del = len(files.get("deleted", []))
+        if n_del > self.cfg["limits"].get("shell_delete_max", 5):
+            ask.append(f"deleted {n_del} files in the dry run")
+        if dry.get("timed_out"):
+            ask.append("did not finish within the dry run's time limit")
+        if dry.get("network_attempted") and not e.get("network"):
+            ask.append("tried to reach the network in the dry run, though nothing in the command says so")
+        if e.get("parse_error"):
+            ask.append(f"could not be read ({e['parse_error']})")
+        if e.get("destructive") and not dry:
+            ask.append("deletes or rewrites files and was not dry-run")
+        if ask:
+            add("R34", "REQUIRE_APPROVAL", "The command " + "; ".join(ask) + ".", **ev)
+        else:
+            add("R34", "PASS", "Read the command: no network, secrets, privileges or writes outside the workspace"
+                + (f"; the dry run changed {sum(len(v) for v in files.values())} file(s) in the workspace." if files
+                   else "."))
+
+    def _finance_rules(self, ctx: TaskContext, call: ToolCall, spec: ToolSpec, labels: dict[str, Label], staged: dict,
+                       add) -> None:
         """R18-R23: rules from the accounts-payable rulebook (Infosys AgentOS sample tenant, fa_judgment.md).
         Amounts, payees and proposers are read from the records by the consequence engine, not parsed from text."""
         fin, e = self.cfg["finance"], staged.get("effect") or {}
-        if call.tool == "payment.release" and "amount" in e:
+        m = model_of(spec)
+        if m == "ap_release" and "amount" in e:
             inv, amt, cur = e["invoice_id"], e["amount"], e["currency"]
             if e["sanctioned"]:
                 add("R21", "DENY", f"{e['vendor_name']} is on the sanctions watch list; payments are blocked.",
@@ -271,49 +425,119 @@ class PolicyEngine:
                 tier = next(t for t in fin["release_tiers"] if t["max"] is None or amt <= t["max"])
                 add("R18", "REQUIRE_APPROVAL", f"Releasing {cur} {amt:,.0f} for {inv} needs {tier['approvers']}; "
                     f"role '{ctx.principal.role}' may release up to {cur} {limit:,.0f}.",
-                    amount=amt, approvers=tier["approvers"])
+                    amount=amt, approvers=tier["approvers"], quorum=dict(tier.get("quorum") or {}))
             else:
                 add("R18", "PASS", f"{cur} {amt:,.0f} is within role '{ctx.principal.role}'s release limit "
                     f"({cur} {limit:,.0f}).")
-        if call.tool == "vendor.update_bank":
-            lab = labels.get("iban")
+        if m == "ap_release" and "amount" in e:
+            hit = self.sanctions.screen(e.get("vendor_name", ""))          # F7: the list, not only a database flag
+            if hit and not e["sanctioned"]:
+                add("R21", "DENY", f"{e['vendor_name']} matches sanctions list entry '{hit['match']}' "
+                    f"(similarity {hit['score']}); payments are blocked.", vendor=e["vendor_id"], screening=hit)
+            ok, why = iban_check(e.get("iban", ""))
+            if not ok:
+                add("R30", "DENY", f"The vendor's bank account on record is not a valid IBAN ({why}); fix the vendor "
+                    "master before paying.", iban=e.get("iban"))
+        if m == "bank_change":
+            lab = labels.get(argname(spec, "iban"))
             if lab and lab.trust == Trust.UNTRUSTED:
-                add("R20", "DENY", f"The new bank account {call.args.get('iban')!r} came from {', '.join(lab.sources)}; "
+                add("R20", "DENY", f"The new bank account {arg(spec, call.args, 'iban')!r} came from {', '.join(lab.sources)}; "
                     "bank details are never changed based on an email or document alone.", arg="iban",
                     sources=lab.sources)
             else:
                 add("R20", "REQUIRE_APPROVAL", "Bank detail changes need independent verification (a call to the "
                     "vendor's registered number) and AP Manager sign-off.")
-        if call.tool == "crm.execute":
+            # after R20, so provenance stays the stated reason when both apply
+            new = str(arg(spec, call.args, "iban", ""))
+            ok, why = iban_check(new)
+            if not ok:
+                add("R30", "DENY", f"{new!r} is not a valid IBAN: {why}.", iban=new)
+            holder = e.get("holder_name")
+            if holder and name_similarity(holder, e.get("vendor_name", "")) < 0.85:
+                add("R31", "REQUIRE_APPROVAL", f"Confirmation of Payee: the account is registered to {holder!r}, not "
+                    f"{e.get('vendor_name')!r}.", holder=holder)
+        if m == "sql_write":
             kept = set(e.get("tables_written") or []) & set(fin["retained_tables"])
             if kept and {"delete", "drop"} & set(e.get("sql_ops") or []):
                 add("R22", "DENY", f"Records in {', '.join(sorted(kept))} must be kept for "
                     f"{fin['retention_years']} years; deleting them is blocked.", tables=sorted(kept))
 
+    def _canary_rule(self, call: ToolCall, spec: ToolSpec, add) -> None:
+        values = [str(v).lower() for v in (self.cfg.get("canaries") or {}).get("values", [])]
+        if not values:
+            return
+        blob = " ".join(str(v) for v in call.args.values()).lower()
+        hits = [v for v in values if v in blob]
+        if not hits:
+            return
+        outbound = spec.sink == "external" or model_of(spec) == "web_fetch"
+        if outbound:
+            add("R28", "DENY", f"Canary tripped: {', '.join(hits)} is a planted record no legitimate task needs, and "
+                "this action would send it outside the company.", canaries=hits)
+        else:
+            add("R28", "PASS", f"Canary data moved internally ({', '.join(hits)}); recorded.", canaries=hits)
+
+    def _rows_rule(self, ctx: TaskContext, e: dict, add) -> None:
+        """R16 on measured rows (N5): the user named records ("invoice 1042") and asked for nothing broad, so every
+        row of THAT kind the sandbox saw the statement update or delete must be one of them. A named customer says
+        nothing about which invoice rows may change ("delete the invoices for customer 23" is fine)."""
+        req = ctx.user_request
+        if not e.get("rows_changed") or BREADTH.search(req) or RANGE.search(req):
+            return
+        named: dict[str, set[str]] = {}
+        for kind, rid in NAMED_KIND.findall(req):
+            for table in KIND_TABLES.get(kind.lower(), ()):
+                named.setdefault(table, set()).update({rid, rid.rsplit("-", 1)[-1]})
+        extra = {t: [i for i in v if str(i) not in named[t]] for t, v in e["rows_changed"].items() if t in named}
+        extra = {t: v for t, v in extra.items() if v}
+        if extra:
+            ids = sorted({i for s in named.values() for i in s})
+            what = "; ".join(f"{t} {', '.join(map(str, v[:5]))}{' ...' if len(v) > 5 else ''}" for t, v in extra.items())
+            add("R16", "REQUIRE_APPROVAL", f"The user named {', '.join(ids)}, but the statement also changes {what}.",
+                named=ids, extra={t: v[:20] for t, v in extra.items()})
+
+    def _columns_rule(self, ctx: TaskContext, e: dict, add) -> None:
+        """R26 (N6): a sensitive column changed that the request never asks for."""
+        req = ctx.user_request.lower()
+        sens = self.cfg.get("sensitive_columns", {})
+        hits = [f"{t}.{c}" for t, cols in (e.get("columns_changed") or {}).items() for c in cols
+                if c in sens and not any(w in req for w in sens[c])]
+        if hits:
+            add("R26", "REQUIRE_APPROVAL", f"The statement also changes {', '.join(hits)}, which the request doesn't "
+                "ask for.", columns=hits)
+
     def _internal_host(self, host: str) -> bool:
         return any(host == d or host.endswith("." + d) for d in self.cfg["internal_domains"])
 
     def _all_internal(self, to: str) -> bool:
-        recipients = [r.strip().lower() for r in to.split(",") if r.strip()]
-        return bool(recipients) and all(self._internal_host(r.rsplit("@", 1)[-1]) for r in recipients)
+        recipients = parse_recipients(to)
+        return bool(recipients) and all(self._internal_host(domain_of(r)) for r in recipients)
 
-    def _internal_destination(self, call: ToolCall, staged: dict) -> bool:
-        if call.tool == "mail.send":
-            return self._all_internal(str(call.args.get("to", "")))
-        if call.tool == "payments.transfer":
-            return call.args.get("to_account") in staged.get("payees", {})
+    def _internal_destination(self, call: ToolCall, spec: ToolSpec, staged: dict) -> bool:
+        m = model_of(spec)
+        if m == "email":
+            return self._all_internal(str(arg(spec, call.args, "to", "")))
+        if m == "transfer":
+            return arg(spec, call.args, "to_account") in staged.get("payees", {})
         return False
 
-    def _url_rule(self, ctx: TaskContext, call: ToolCall, labels: dict[str, Label], staged: dict, add) -> None:
+    def _url_rule(self, ctx: TaskContext, call: ToolCall, spec: ToolSpec, labels: dict[str, Label], staged: dict,
+                  add) -> None:
         """R13: a URL is an outbound channel. Unknown hosts may not receive private values or bulk data."""
-        parts = urlparse(str(call.args.get("url", "")))
+        parts = urlparse(str(arg(spec, call.args, "url", "")))
         host = (parts.hostname or "").lower()
         user_hosts = {(urlparse(u).hostname or "").lower() for u in URL.findall(ctx.user_request)}
         if host in user_hosts or self._internal_host(host):
             return
-        lab = labels.get("url")
+        imitates = self.lookalike.check(host)
+        if imitates:
+            add("R25", "REQUIRE_APPROVAL", f"Lookalike domain: {host!r} imitates {imitates}.", host=host)
+        lab = labels.get(argname(spec, "url"))
         private = bool(lab and (lab.pii_entities or lab.conf.rank >= Conf.CONFIDENTIAL.rank))
-        payload = len(parts.query) + len(parts.fragment)
+        # everything the URL can carry (N2): query, fragment, path, and labels in front of the registered domain
+        name, tld = registered(host)
+        sub = host[: -len(f"{name}.{tld}")].rstrip(".") if tld and host.endswith(f"{name}.{tld}") else ""
+        payload = len(parts.query) + len(parts.fragment) + len(parts.path.strip("/")) + len(sub)
         if private or payload > self.cfg["limits"]["url_payload_max"]:
             what = "private values" if private else f"a {payload}-character payload"
             add("R13", "DENY", f"URL to {host!r}, a host the user never named, carries {what}.", host=host)

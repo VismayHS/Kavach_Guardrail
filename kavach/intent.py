@@ -86,13 +86,16 @@ def _mentions(req: str, verb: str) -> bool:
     return bool(re.search(rf"(?<![\w-])\b{re.escape(verb)}{_FORMS}\b(?!-)", req))
 
 
-def heuristic_alignment(user_request: str, tool: str, labels: dict[str, Label]) -> dict:
+def heuristic_alignment(user_request: str, tool: str, labels: dict[str, Label], spec=None) -> dict:
+    """Cheap intent signal. The verbs and whether the tool changes state come from its manifest entry when there is
+    one (so a tool KAVACH has never seen, described by an MCP server or a benchmark, is judged on its own words)."""
     req = user_request.lower()
-    verbs = TOOL_VERBS.get(tool, [])
+    verbs = (spec.intent_verbs if spec is not None and spec.intent_verbs else None) or TOOL_VERBS.get(tool, [])
+    changes_state = spec.effect not in ("read", "ingress") if spec is not None else tool in STATE_CHANGING
     verb_hit = not QUESTION.search(user_request) and any(_mentions(req, v) for v in verbs)
     trusted_dest = all(l.trust.value != "untrusted" for l in labels.values())
     user_traced = any("user" in l.sources for l in labels.values())
-    read_only_ask = bool(READ_INTENT.search(user_request)) and tool in STATE_CHANGING and not verb_hit
+    read_only_ask = bool(READ_INTENT.search(user_request)) and changes_state and not verb_hit
     score = 0.15 + (0.5 if verb_hit else 0.0) + (0.2 if trusted_dest else -0.25) + (0.15 if user_traced else 0.0) \
         - (0.3 if read_only_ask else 0.0)
     reasons = ["request mentions this kind of action" if verb_hit else "request never asks for this kind of action"]
@@ -114,8 +117,8 @@ class IntentJudge:
         self.cache: dict[str, dict] = {}
 
     def score(self, user_request: str, tool: str, args: dict, labels: dict[str, Label],
-              ambiguous: bool) -> dict:
-        base = heuristic_alignment(user_request, tool, labels)
+              ambiguous: bool, spec=None) -> dict:
+        base = heuristic_alignment(user_request, tool, labels, spec)
         # The LLM is consulted only when the cheap signals are inconclusive (cost + attack surface).
         if not (self.use_llm and self.llm.enabled and ambiguous):
             return base

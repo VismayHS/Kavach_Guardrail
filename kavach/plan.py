@@ -36,7 +36,7 @@ def validate_plan(plan: list[dict], user_request: str, role_tools: list[str], re
                                  "msg": f"Lethal-trifecta path: untrusted input (step {seen_untrusted}) + private "
                                         f"data (step {seen_private}) + external sink (step {i}). Destination "
                                         "arguments must trace to the user at runtime."})
-        al = heuristic_alignment(user_request, tool, {})
+        al = heuristic_alignment(user_request, tool, {}, spec)
         if al["alignment"] < 0.6 and spec.effect not in ("read", "ingress"):
             findings.append({"step": i, "level": "CAUTION", "code": "P5",
                              "msg": f"Step {i} ({tool}) is a state-changing action the request does not ask for."})

@@ -1,0 +1,40 @@
+# Third-party tools described for KAVACH. Declaring an effect_model gives a tool every rule for that kind of action;
+# arg_map maps the model's argument roles to the tool's own argument names. Load with
+# kavach.manifest.load_manifest(path), or list the file under `manifests:` in the MCP proxy config.
+tools:
+  gmail_send_message:                 # e.g. a Gmail MCP server
+    description: Send an email from the user's mailbox.
+    params: {recipients: str, subject: str, text: str}
+    required: [recipients, text]
+    effect: external_send
+    sink: external
+    reversibility: irreversible
+    control_args: [recipients]
+    data_args: [subject, text]
+    effect_model: email
+    arg_map: {to: recipients, body: text}
+    safeguard: recall-window
+    intent_verbs: [email, send, reply, mail, forward]
+  postgres_execute:                   # e.g. a Postgres MCP server's write tool
+    description: Run a SQL statement that changes the database.
+    params: {query: str}
+    required: [query]
+    effect: write
+    sink: internal
+    reversibility: reversible
+    control_args: [query]
+    effect_model: sql_write
+    arg_map: {sql: query}
+    staging: sqlite
+    safeguard: snapshot+undo
+  fetch:                              # the reference MCP fetch server
+    description: Fetch a URL and return its contents.
+    params: {url: str, max_length: int}
+    required: [url]
+    effect: ingress
+    sink: none
+    reversibility: idempotent
+    control_args: [url]
+    effect_model: web_fetch
+    output_trust: untrusted
+    output_conf: public

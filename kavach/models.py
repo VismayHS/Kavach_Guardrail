@@ -75,6 +75,7 @@ class Principal:
     role: str                     # e.g. analyst, support, admin
     department: str = "ops"
     authenticated: bool = False   # True only when user and role came from a verified token
+    tenant: str = "default"       # F10: which organisation the principal acts for
 
 
 @dataclass
@@ -142,6 +143,7 @@ class Decision:
     hitl_id: str | None = None
     executed: bool = False
     result: Any = None
+    rule_of_two: dict = field(default_factory=dict)   # which legs of the lethal trifecta this call completes
 
     def to_dict(self) -> dict:
         d = {
@@ -159,6 +161,7 @@ class Decision:
             "receipt_id": self.receipt_id,
             "hitl_id": self.hitl_id,
             "executed": self.executed,
+            "rule_of_two": self.rule_of_two,
         }
         if self.result is not None:
             d["result_preview"] = str(self.result)[:400]

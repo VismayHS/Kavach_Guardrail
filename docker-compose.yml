@@ -1,0 +1,85 @@
+# KAVACH with its observability stack.
+#
+#   docker compose up -d --build
+#
+#   KAVACH console + API   http://localhost:8000
+#   Grafana dashboard      http://localhost:3000   (KAVACH folder; anonymous view, admin/admin to edit)
+#   Prometheus             http://localhost:9090   (alerts: canary tripped, deny spike, approval backlog, slow p95)
+#   Jaeger traces          http://localhost:16686  (service "kavach": one span per decision, no arguments)
+#   Mailpit                http://localhost:8025   (every email KAVACH let out, after its recall window)
+#
+# State (receipt chain, pauses, undo windows, tool pins) is kept in the kavach-data volume: a restart continues the
+# chain. `docker compose down -v` starts from scratch.
+#
+# Qualcomm keys (INFERENCE_CLOUD_API_KEY, INFERENCE_CLOUD_ENDPOINT) are read from .env if it exists.
+# For a production-profile run, set KAVACH_PROFILE=prod plus KAVACH_AUTH_SECRET, KAVACH_RECEIPT_KEY and
+# KAVACH_SIGNING_KEY in .env (the server refuses to start without them).
+name: kavach
+
+services:
+  kavach:
+    build: .
+    image: kavach:latest
+    ports: ["8000:8000"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      KAVACH_LOG_JSON: "1"
+      KAVACH_DB_URL: sqlite:////data/kavach.db
+      KAVACH_SMTP_HOST: mailpit
+      KAVACH_SMTP_PORT: "1025"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: kavach
+    volumes:
+      - kavach-data:/data
+    depends_on:
+      otel-collector: {condition: service_started}
+      mailpit: {condition: service_started}
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.139.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./deploy/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    depends_on: [jaeger]
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports: ["16686:16686"]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports: ["9090:9090"]
+    depends_on: [kavach]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/kavach.json
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3000:3000"]
+    depends_on: [prometheus]
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports: ["8025:8025"]
+    restart: unless-stopped
+
+volumes:
+  kavach-data:

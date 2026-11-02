@@ -11,6 +11,7 @@ import shutil
 import sqlite3
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -39,13 +40,17 @@ MAIL_RECALL_S = 300.0       # an email waits five minutes before it leaves
 
 
 class Environment:
-    def __init__(self, root: str | os.PathLike, seed: int = 7, n_customers: int = 480):
+    def __init__(self, root: str | os.PathLike, seed: int = 7, n_customers: int = 480, canaries: dict | None = None):
         self.root = Path(root)
         self.workspace = self.root / "workspace"
         self.lock = threading.RLock()
         self.seed = seed
         self.n_customers = n_customers
+        self.canaries = canaries or {}          # planted records (R28); none unless asked for
         self.epoch = 0             # counts resets: an undo from before a reset must not touch the new world
+        self.on_hold: list = []    # callbacks(hold) when a hold is created, settles or is cancelled (E6: persisted)
+        self.mailer = None         # E7: a real mail connector (kavach/connectors.py); None = the simulated outbox only
+        self.shell = None          # E10: kavach.shell.DockerSandbox; None = shell commands are never run here
         self.reset()
 
     # ------------------------------------------------------------------ setup
@@ -53,6 +58,10 @@ class Environment:
 
     def reset(self) -> None:
         with self.lock:
+            for h in getattr(self, "holds", []):      # the world they belonged to is gone: they never go out
+                if h["status"] == "held":
+                    h["status"] = "discarded-reset"
+                    self._held_changed(h)
             self.epoch += 1
             self.db = sqlite3.connect(":memory:", check_same_thread=False)
             self.db.row_factory = sqlite3.Row
@@ -63,6 +72,16 @@ class Environment:
                 self._seed_db()
                 Environment._db_cache[key] = self.db.serialize()
             self._reset_world()
+            self._plant_canaries()
+
+    def _plant_canaries(self) -> None:
+        """Canary records sit with the real ones (customer id 0 comes first in any dump) and a decoy key file."""
+        for c in self.canaries.get("customers", []):
+            self.db.execute("INSERT OR REPLACE INTO customers(id, name, email, phone, city, status, last_active_days, "
+                            "tier) VALUES(:id, :name, :email, :phone, :city, :status, :last_active_days, :tier)", c)
+        self.db.commit()
+        for name, text in (self.canaries.get("files") or {}).items():
+            (self.workspace / name).write_text(text)
 
     def _seed_db(self) -> None:
         rnd = random.Random(self.seed)
@@ -145,6 +164,9 @@ class Environment:
         self.holds: list[dict] = []        # payments and emails waiting out their window (cancel until then)
         self.drafts: list[dict] = []       # emails a human approved as drafts: saved, never sent
         self.payees = {"ACC-11-2001": "Northwind Supplies", "ACC-11-2002": "Contoso Travel"}
+        # Confirmation of Payee stand-in (R31): the registered holder of an account, as a bank's CoP / penny-drop /
+        # beneficiary-name lookup would return it. Empty: no lookup available, so R31 doesn't apply.
+        self.iban_holders: dict[str, str] = {}
         self.change_freeze = False
 
     # ------------------------------------------------------------------ snapshots (undo)
@@ -162,6 +184,64 @@ class Environment:
                     p.unlink()
             for name, data in snap["files"].items():
                 (self.workspace / name).write_bytes(data)
+
+    # ------------------------------------------------------------------ row-level undo (A7)
+    def _file_images(self, tool: str, args: dict) -> dict:
+        if tool == "shell.run":              # E10: a command can touch any file: keep them all, so Undo restores them
+            root = self.workspace.resolve()
+            return {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+        if not tool.startswith("files.") or "path" not in args:
+            return {}
+        try:
+            p = self._safe(str(args["path"]))
+        except PermissionError:
+            return {}
+        return {str(p.relative_to(self.workspace.resolve())): p.read_bytes() if p.exists() else None}
+
+    def dispatch_logged(self, tool: str, args: dict, actor: dict | None = None) -> tuple[Any, dict]:
+        """Run a tool and record exactly what it changed: before/after images of every database row (from
+        temporary triggers) and of the file it touched. Undo then takes back these rows and this file only."""
+        from . import changelog
+        with self.lock:
+            files = self._file_images(tool, args)
+            changelog.install(self.db)
+            try:
+                result = self.dispatch(tool, args, actor=actor)
+                changes = changelog.collect(self.db)
+            finally:
+                changelog.uninstall(self.db)
+            after = self._file_images(tool, args)
+            return result, {"kind": "rows", "db": changes, "epoch": self.epoch,
+                            "files": {n: [files.get(n), after.get(n)] for n in set(files) | set(after)}}
+
+    def undo_logged(self, rec: dict) -> dict:
+        """Invert a dispatch_logged record. Refuses (changing nothing) if any of its rows or its file was changed
+        by someone else since; a whole-database snapshot record (DDL outside prod) is restored as before."""
+        from . import changelog
+        with self.lock:
+            if rec.get("kind") == "snapshot":
+                before = self.table_counts()
+                self.restore(rec["snapshot"])
+                return {"undone": True, "tables_before": before, "tables_after": self.table_counts()}
+            clash = changelog.conflicts(self.db, rec["db"])
+            for name, (_old, new) in rec["files"].items():
+                p = self.workspace / name
+                if (p.read_bytes() if p.exists() else None) != new:
+                    clash.append(f"file {name}")
+            if clash:
+                return {"undone": False, "reason": "changed since this action, so undo would overwrite someone "
+                        f"else's work: {', '.join(clash[:5])}"}
+            before = self.table_counts()
+            changelog.invert(self.db, rec["db"])
+            self.db.commit()
+            for name, (old, _new) in rec["files"].items():
+                p = self.workspace / name
+                if old is None:
+                    p.unlink(missing_ok=True)
+                else:
+                    p.write_bytes(old)
+            return {"undone": True, "rows": len(rec["db"]), "files": sorted(rec["files"]),
+                    "tables_before": before, "tables_after": self.table_counts()}
 
     def db_copy(self) -> sqlite3.Connection:
         """In-memory clone used as the staging sandbox (copy of current state)."""
@@ -214,6 +294,11 @@ class Environment:
 
     def _deliver(self, msg: dict) -> dict:
         msg = {"id": f"out-{len(self.outbox) + 1}", **msg}
+        if self.mailer is not None:                 # E7: the email really leaves (SMTP); a failure is recorded
+            try:
+                msg["delivered"] = self.mailer.send(msg)
+            except Exception as e:                   # the decision is made; delivery trouble must not lose the record
+                msg["delivery_error"] = f"{type(e).__name__}: {e}"
         self.outbox.append(msg)
         return msg
 
@@ -301,10 +386,19 @@ class Environment:
 
     # ---------------------------------------------------------------- windows: hold, recall, park
     def _hold(self, kind: str, wait_s: float, **item) -> dict:
-        h = {"id": f"hold-{len(self.holds) + 1}", "kind": kind, "status": "held",
+        # ids are unique across resets and restarts (E6: holds are persisted and outlive the process)
+        h = {"id": f"hold-{uuid.uuid4().hex[:8]}", "kind": kind, "status": "held",
              "settles_at": time.time() + wait_s, **item}
         self.holds.append(h)
+        self._held_changed(h)
         return h
+
+    def _held_changed(self, h: dict) -> None:
+        for cb in list(self.on_hold):
+            try:
+                cb(h)
+            except Exception:
+                pass
 
     def settle_due(self, now: float | None = None) -> list[str]:
         """Holds whose window has passed go out: payments to the ledger, emails to the outbox."""
@@ -314,6 +408,7 @@ class Environment:
             for h in done:
                 h["status"] = "settled"
                 h["ref"] = (self._book(h["tx"]) if h["kind"] == "payment" else self._deliver(h["msg"]))["id"]
+                self._held_changed(h)
             return [h["id"] for h in done]
 
     def cancel(self, ref: str) -> bool:
@@ -328,6 +423,7 @@ class Environment:
             if h is None:
                 return False
             h["status"] = "cancelled"
+            self._held_changed(h)
             inv = h.get("tx", {}).get("invoice")
             if inv:
                 self.db.execute("UPDATE ap_invoices SET status = ? WHERE id = ?", (h["prev_status"], inv))
@@ -335,6 +431,12 @@ class Environment:
                                 "'held'", (inv,))
                 self.db.commit()
             return True
+
+    def shell_run(self, command: str) -> dict:
+        """E10: run an approved command in the sandbox (no network); never on this host."""
+        if self.shell is None or not self.shell.available():
+            return {"error": "no shell sandbox on this server (Docker); KAVACH never runs commands on its own host"}
+        return self.shell.run(command, self.workspace)
 
     def vendor_update_bank(self, vendor_id: str, iban: str) -> dict:
         with self.lock:
@@ -370,6 +472,6 @@ class Environment:
             "files.read": self.files_read, "files.write": self.files_write, "files.delete": self.files_delete,
             "payments.transfer": self.payments_transfer, "payments.refund": self.payments_refund,
             "web.fetch": self.web_fetch, "invoice.read": self.invoice_read,
-            "vendor.update_bank": self.vendor_update_bank, "sap.post": self.sap_post,
+            "vendor.update_bank": self.vendor_update_bank, "sap.post": self.sap_post, "shell.run": self.shell_run,
         }[tool]
         return fn(**args, **extra)

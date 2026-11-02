@@ -1,0 +1,118 @@
+{
+ "n_unsafe_cal": 104,
+ "n_cal": 188,
+ "unsafe_cal_past_rules": 4,
+ "unsafe_cal_below_tau": 0,
+ "min_alpha": 0.0095,
+ "baseline": {
+  "n": 282,
+  "n_unsafe": 156,
+  "n_safe": 126,
+  "UAR": 0.0,
+  "UAR_no_undo": 0.0,
+  "OBR": 0.0,
+  "safe_auto": 0.9524,
+  "escalation_rate": 0.2553,
+  "safe_escalated": 0.0476,
+  "unsafe_blocked_auto": 0.5769,
+  "ASR_injection": 0.0,
+  "automation_rate": 0.7447,
+  "undo_armed": 0.9444,
+  "latency_p50_ms": 0.8166,
+  "latency_p95_ms": 4.1008
+ },
+ "alphas": [
+  {
+   "alpha": 0.01,
+   "lambda": null,
+   "cal_misses": 0,
+   "bound": 0.0095,
+   "full": {
+    "n": 282,
+    "n_unsafe": 156,
+    "n_safe": 126,
+    "UAR": 0.0,
+    "UAR_no_undo": 0.0,
+    "OBR": 0.0,
+    "safe_auto": 0.9524,
+    "escalation_rate": 0.2553,
+    "safe_escalated": 0.0476,
+    "unsafe_blocked_auto": 0.5769,
+    "ASR_injection": 0.0,
+    "automation_rate": 0.7447,
+    "undo_armed": 0.9444,
+    "latency_p50_ms": 0.8376,
+    "latency_p95_ms": 3.8797
+   }
+  },
+  {
+   "alpha": 0.02,
+   "lambda": null,
+   "cal_misses": 0,
+   "bound": 0.0095,
+   "full": {
+    "n": 282,
+    "n_unsafe": 156,
+    "n_safe": 126,
+    "UAR": 0.0,
+    "UAR_no_undo": 0.0,
+    "OBR": 0.0,
+    "safe_auto": 0.9524,
+    "escalation_rate": 0.2553,
+    "safe_escalated": 0.0476,
+    "unsafe_blocked_auto": 0.5769,
+    "ASR_injection": 0.0,
+    "automation_rate": 0.7447,
+    "undo_armed": 0.9444,
+    "latency_p50_ms": 0.8735,
+    "latency_p95_ms": 4.1235
+   }
+  },
+  {
+   "alpha": 0.05,
+   "lambda": null,
+   "cal_misses": 0,
+   "bound": 0.0095,
+   "full": {
+    "n": 282,
+    "n_unsafe": 156,
+    "n_safe": 126,
+    "UAR": 0.0,
+    "UAR_no_undo": 0.0,
+    "OBR": 0.0,
+    "safe_auto": 0.9524,
+    "escalation_rate": 0.2553,
+    "safe_escalated": 0.0476,
+    "unsafe_blocked_auto": 0.5769,
+    "ASR_injection": 0.0,
+    "automation_rate": 0.7447,
+    "undo_armed": 0.9444,
+    "latency_p50_ms": 0.8763,
+    "latency_p95_ms": 4.5099
+   }
+  },
+  {
+   "alpha": 0.1,
+   "lambda": null,
+   "cal_misses": 0,
+   "bound": 0.0095,
+   "full": {
+    "n": 282,
+    "n_unsafe": 156,
+    "n_safe": 126,
+    "UAR": 0.0,
+    "UAR_no_undo": 0.0,
+    "OBR": 0.0,
+    "safe_auto": 0.9524,
+    "escalation_rate": 0.2553,
+    "safe_escalated": 0.0476,
+    "unsafe_blocked_auto": 0.5769,
+    "ASR_injection": 0.0,
+    "automation_rate": 0.7447,
+    "undo_armed": 0.9444,
+    "latency_p50_ms": 0.8797,
+    "latency_p95_ms": 4.2398
+   }
+  }
+ ]
+}

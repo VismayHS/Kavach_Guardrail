@@ -1,0 +1,29 @@
+# OpenTelemetry collector: KAVACH sends one span per decision (OTLP/HTTP); the collector batches them and forwards
+# to Jaeger (trace UI on :16686). Add any other exporter here (Grafana Tempo, Datadog, Honeycomb...) without
+# touching KAVACH. Tool arguments and results are never in the spans.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    timeout: 2s
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/jaeger, debug]

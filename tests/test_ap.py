@@ -126,9 +126,12 @@ def test_human_approval_releases_the_payment_and_records_the_approver(gw):
     hid = steps[-1].hitl_id
     with pytest.raises(PermissionError):                      # four-eyes: the requester can't approve
         gw.resolve_hitl(hid, "meera", approve=True)
-    out = gw.resolve_hitl(hid, "cfo@infycorp.com", approve=True)
+    # the CFO tier needs two verified roles, two different people (Phase 5, N4)
+    assert not gw.resolve_hitl(hid, "cfo@infycorp.com", approve=True, approver_role="cfo")["executed"]
+    out = gw.resolve_hitl(hid, "fd@infycorp.com", approve=True, approver_role="finance_director")
     gw.env.settle_due(time.time() + PAYMENT_HOLD_S)                     # an approved payment still waits out its hold
-    assert out["executed"] and gw.env.ledger[-1]["released_by"] == "cfo@infycorp.com"
+    assert out["executed"] and gw.env.ledger[-1]["released_by"] == "fd@infycorp.com"
+    assert [a["role"] for a in out["hitl"]["approvals"]] == ["cfo", "finance_director"]
     assert gw.env.ledger[-1]["amount"] == 650000.0
 
 
