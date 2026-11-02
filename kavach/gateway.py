@@ -336,6 +336,47 @@ class Kavach:
     def killed(self, task_id: str) -> dict | None:
         return next((k for k in self.kills.values() if self._matches(k, task_id)), None)
 
+    def _who(self, receipt_id: str | None) -> dict:
+        """Whose action a receipt is about (task, user, role, tenant), from the receipt chain, so it is known also
+        after a restart, when the tasks themselves (kept in memory) are gone."""
+        rec = self.receipts.get(receipt_id) if receipt_id else None
+        b = rec["body"] if rec else {}
+        tid = b.get("task_id")
+        if tid in self.tasks:
+            p = self.tasks[tid].ctx.principal
+            return {"task_id": tid, "user": p.user_id, "role": p.role, "tenant": p.tenant}
+        first = b if b.get("type") == "decision" else next(
+            (r["body"] for r in self.receipts.items if r["body"].get("type") == "decision"
+             and r["body"].get("task_id") == tid), {}) if tid else {}
+        return {"task_id": tid, "user": first.get("principal"), "role": first.get("role"), "tenant": first.get("tenant")}
+
+    def _kill_for(self, receipt_id: str | None) -> dict | None:
+        """The active pause, if any, that covers the action behind this receipt."""
+        if not self.kills:
+            return None
+        who = self._who(receipt_id)
+        if who["task_id"] in self.tasks:
+            return self.killed(who["task_id"])
+        return next((k for k in self.kills.values() if k["scope"] == "global"
+                     or (k["scope"] == "task" and k["target"] == who["task_id"])
+                     or (k["scope"] == "user" and k["target"] == who["user"])
+                     or (k["scope"] == "role" and k["target"] == who["role"])), None)
+
+    def _stop_paused(self) -> list[str]:
+        """Waiting payments, emails and SAP documents whose agent is paused never go out: cancelled (and receipted)
+        instead, also those left from before a restart and any that started waiting while the pause was coming in."""
+        stopped = []
+        for rid, (_epoch, ref) in list(self.recall.items()):
+            k = self._kill_for(rid)
+            if k is not None and self.env.cancel(ref):
+                stopped.append(ref)
+                self.recall.pop(rid, None)
+                self._uncount_action(rid)
+                self.receipts.append({"type": "undo", "receipt": rid, "cancelled": ref, "ok": True,
+                                      "by": "kill switch", "kill": k["id"], "corr": self._corr_of(rid),
+                                      "task_id": self._task_of(rid)})
+        return stopped
+
     def _corr_of(self, receipt_id: str | None) -> str | None:
         rec = self.receipts.get(receipt_id) if receipt_id else None
         if rec is None:
@@ -345,7 +386,9 @@ class Kavach:
 
     def kill(self, scope: str, target: str | None, by: str, reason: str = "") -> dict:
         """Pause agents now (EU AI Act Art. 14(4)(e): immediate interruption). New calls in scope are denied;
-        payments, emails and SAP documents they left waiting are cancelled; their pending approvals are closed."""
+        payments, emails and SAP documents they left waiting are cancelled (also ones waiting from before a restart:
+        the scope is matched against the receipts, not only the tasks in memory, and the windows check again before
+        anything goes out); their pending approvals are closed."""
         if scope not in self.KILL_SCOPES or (scope != "global" and not target):
             raise ValueError(f"scope must be one of {self.KILL_SCOPES}, with a target unless global")
         kid = "kill-" + uuid.uuid4().hex[:6]
@@ -355,10 +398,10 @@ class Kavach:
         in_scope = {t for t in self.tasks if self._matches(k, t)}
         cancelled = []
         for rid, (_epoch, ref) in list(self.recall.items()):
-            rec = self.receipts.get(rid)
-            if rec and rec["body"].get("task_id") in in_scope and self.env.cancel(ref):
+            if self._kill_for(rid) is not None and self.env.cancel(ref):
                 cancelled.append(ref)
                 del self.recall[rid]
+                self._uncount_action(rid)
         closed = []
         for hid, item in self.hitl.items.items():
             if item["status"] == "pending" and item["task_id"] in in_scope:
@@ -866,6 +909,11 @@ class Kavach:
 
     def resolve_hitl(self, hid: str, approver: str, approve: bool, mode: str = "execute",
                      approver_role: str | None = None) -> dict:
+        pending = self.hitl.items.get(hid)
+        if approve and pending is not None and pending["status"] == "pending":
+            stop = self.killed(pending["task_id"]) if pending["task_id"] in self.tasks else None
+            if stop is not None:                     # paused after this was asked: nothing in scope may run
+                raise PermissionError(f"paused by the kill switch ({stop['id']}); resume before approving")
         item = self.hitl.resolve(hid, approver, approve, mode, approver_role=approver_role)
         corr = (item.get("decision") or {}).get("call", {}).get("call_id")
         if item["status"] == "pending":              # a quorum seat was filled; others still needed
@@ -918,7 +966,10 @@ class Kavach:
 
     def settle(self, now: float | None = None) -> list[str]:
         """Undo windows whose time has passed close: held payments are booked, queued emails leave. Each is
-        receipted with what really happened (outcome: settled for a payment; sent, failed or unknown for an email)."""
+        receipted with what really happened (outcome: settled for a payment; sent, failed or unknown for an email).
+        A paused agent's waiting actions are cancelled first, never let out."""
+        if self.kills:
+            self._stop_paused()
         done = self.env.settle_due(now)
         by_id = {h["id"]: h for h in self.env.holds}
         back = {ref: rid for rid, (_e, ref) in self.recall.items()}
@@ -995,6 +1046,11 @@ class Kavach:
                                                   "held)"}
         if epoch is not None and epoch != self.env.epoch:
             return {"released": False, "reason": "the environment was reset since this action; nothing to send"}
+        stop = self._kill_for(receipt_id)
+        if stop is not None:                       # a pause wins over Send now: it is cancelled, not let out
+            self._stop_paused()
+            return {"released": False, "reason": f"this agent is paused by the kill switch ({stop['id']}); it was "
+                                                 "cancelled instead"}
         h = next((x for x in self.env.holds if x["id"] == ref), None)
         with self.env.lock:
             if h is None or h["status"] != "held":
