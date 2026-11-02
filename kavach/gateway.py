@@ -138,6 +138,7 @@ class Kavach:
                       f"{call.args.get('subject', '')} {call.args.get('body', '')}") if call.tool == "mail.send" else 0,
                   "stray_recipients": [r for r in (effect.magnitude.get("not_invoice_customer") or [] if effect else [])
                                        if not task.prov.given(r)],
+                  "destination_given": self._destination_given(task, call),
                   "repeat": self._action_key(call) in ctx.actions_run,
                   "task_rows": ctx.rows_changed + (effect.magnitude.get("rows_affected", 0) if effect else 0),
                   "task_money": self._money_after(ctx, call, effect)}
@@ -227,6 +228,13 @@ class Kavach:
             ctx.money_moved[money[0]] = max(0.0, ctx.money_moved.get(money[0], 0.0) - money[1])
         if call.tool == "crm.execute" and effect is not None:
             ctx.rows_changed = max(0, ctx.rows_changed - (effect.magnitude.get("rows_affected", 0) or 0))
+
+    @staticmethod
+    def _destination_given(task: Task, call: ToolCall) -> bool:
+        """R32: every destination of an email or transfer was typed by the user (or is the sender they reply to)."""
+        dest = {"mail.send": "to", "payments.transfer": "to_account"}.get(call.tool)
+        return dest is None or all(task.prov.given(v.strip()) for v in str(call.args.get(dest, "")).split(",")
+                                   if v.strip())
 
     @staticmethod
     def _for_receipt(dd: dict, prov: ProvenanceTracker) -> dict:

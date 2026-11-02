@@ -23,6 +23,8 @@ limits:
   url_payload_max: 200           # query+fragment characters a URL to an unknown host may carry
   task_rows_approval: 50         # rows one task may change in prod across all its statements (split deletes)
   task_money_approval: 10000     # INR one task may move in transfers and refunds without approval
+  outbound_chars_max: 2000       # characters an email to an outside address may carry without approval
+  encoded_token_min: 200         # an unbroken run this long in an outside email looks like encoded data
 
 change_freeze: false             # when true: no writes to prod (Replit incident lesson)
 require_tool_hash: false         # when true: calls must present the pinned tool definition hash (MCP clients)
@@ -75,3 +77,5 @@ rules:
   # R25-R28 are reserved by the Phase 5 roadmap.
   R29: "Raw SQL may not change the tables the finance rules read (vendors, invoices, POs, receipts, proposals, SAP documents); only the finance tools may."
   R30: "One task's totals count: rows changed across statements, money moved across payments, and repeats of the same payment or email need approval."
+  R31: "An email to an outside address that is very long or carries a long encoded run needs approval, whatever its content appears to be."
+  R32: "Once a task has read untrusted content, an email or transfer to an outside destination the user didn't give needs approval."

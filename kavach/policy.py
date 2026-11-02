@@ -111,6 +111,22 @@ class PolicyEngine:
                 inv = ", ".join(st.get("effect", {}).get("named_invoices", []))
                 add("R24", "REQUIRE_APPROVAL", f"The user named invoice {inv}, but {', '.join(st['stray_recipients'])}"
                     " is not that invoice's customer in the CRM.", recipients=st["stray_recipients"])
+            # R31 bulk or encoded data needs no recognisable PII to be a leak (base64, reformatted phone numbers...)
+            lim = self.cfg["limits"]
+            text = f"{call.args.get('subject', '')} {call.args.get('body', '')}"
+            longest = max((len(w) for w in text.split()), default=0)
+            if not internal and (len(text) > lim["outbound_chars_max"] or longest >= lim["encoded_token_min"]):
+                add("R31", "REQUIRE_APPROVAL", f"This email to {to} carries {len(text):,} characters"
+                    + (f", including an unbroken run of {longest:,}" if longest >= lim["encoded_token_min"] else "")
+                    + "; a person should see what is leaving.", chars=len(text), longest=longest)
+
+        # R32 instructions in untrusted content can name a destination in a form value matching can't trace
+        # ("payouts [at] fin-desk [dot] io"): after untrusted content, an outside destination must come from the user
+        if call.tool in ("mail.send", "payments.transfer") and st.get("untrusted_seen") \
+                and not st.get("destination_given") and not self._internal_destination(call, st):
+            dest = DESTINATION[call.tool]
+            add("R32", "REQUIRE_APPROVAL", f"This task read untrusted content, and '{dest}' = {call.args.get(dest)!r} "
+                "was not given by the user.", arg=dest)
 
         # R15 values the agent made up: they appear nowhere in the request or in any tool output
         if call.tool in ("payments.transfer", "payments.refund"):
