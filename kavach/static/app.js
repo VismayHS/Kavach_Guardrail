@@ -10,13 +10,31 @@ const pct = x => (x == null ? '–' : `${(x * 100).toFixed(1)}%`);
 const titleCase = s => String(s ?? '').replace(/^./, c => c.toUpperCase());
 
 const S = { draft: null, runId: null, shown: {}, scenarios: null, results: {}, last: {}, undone: {}, approver: 'reviewer-1', receiptFilter: 'all', check: null, flash: null };
+try { S.token = localStorage.getItem('kavach-token') || ''; } catch { S.token = ''; }
 
-async function api(path, opts) {
+// With KAVACH_AUTH_SECRET set, every call carries a signed token; user, role and tenant come from it, never the page.
+function tokenClaims(t = S.token) {
+  try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch { return null; }
+}
+function paintSignin() {
+  const b = $('#signin'), c = tokenClaims();
+  if (!b) return;
+  b.classList.toggle('has', !!c);
+  b.title = c ? `Signed in as ${c.sub} (${c.role}${c.tenant && c.tenant !== 'default' ? `, ${c.tenant}` : ''})` : (S.authOn ? 'Sign-in is on: paste a token' : 'Sign in');
+  b.setAttribute('aria-label', b.title);
+}
+async function api(path, opts = {}) {
   let r;
-  try { r = await fetch(path, opts); } catch { throw new Error("Can't reach the KAVACH server. Check that it is still running."); }
+  const headers = { ...(opts.headers || {}), ...(S.token ? { Authorization: `Bearer ${S.token}` } : {}) };
+  try { r = await fetch(path, { ...opts, headers }); } catch { throw new Error("Can't reach the KAVACH server. Check that it is still running."); }
   const body = await r.json().catch(() => ({}));
   if (r.ok) return body;
-  if (r.status === 401) throw new Error('This server has sign-in turned on (KAVACH_AUTH_SECRET), and this console only works without it.');
+  if (r.status === 401) {
+    S.authOn = true;
+    paintSignin();
+    throw new Error(S.token ? 'Your sign-in token was refused (expired, or made for another server). Sign in again with the key button at the top.'
+      : 'Sign-in is on for this server. Use the key button at the top to paste a token (python -m kavach.auth mint <you> <role>).');
+  }
   const d = body.detail;
   const msg = Array.isArray(d) ? d.map(x => `${(x.loc || []).slice(1).join('.')}: ${x.msg}`).join('; ') : d;
   throw Object.assign(new Error(msg || `The server answered with an error (${r.status}).`), { status: r.status });
@@ -510,7 +528,10 @@ function approvalCard(it, open) {
       ${decisionDetails(d)}
       ${reviewNote(d)}
       <div data-err></div>
-      <div class="d-actions">${Object.keys(it.remaining || {}).length
+      <div class="d-actions">${Object.keys(it.remaining || {}).length && tokenClaims()
+        ? (it.remaining[tokenClaims().role] ? `<button class="btn primary" type="button" data-act="decide" data-id="${it.id}" data-approve="1" data-mode="execute" data-role="${esc(tokenClaims().role)}">${icon('check')}Approve as ${esc(seatWord(tokenClaims().role))}</button>`
+          : `<span class="meta">Your role (${esc(seatWord(tokenClaims().role))}) isn't one of the approvers this still needs.</span>`)
+        : Object.keys(it.remaining || {}).length
         ? Object.keys(it.remaining).map(r => `<button class="btn primary" type="button" data-act="decide" data-id="${it.id}" data-approve="1" data-mode="execute" data-role="${esc(r)}">${icon('check')}Approve as ${esc(seatWord(r))}</button>`).join('')
         : `<button class="btn primary" type="button" data-act="decide" data-id="${it.id}" data-approve="1" data-mode="execute">${icon('check')}Approve</button>`}
         ${d.call.tool === 'mail.send' ? `<button class="btn quiet" type="button" data-act="decide" data-id="${it.id}" data-approve="1" data-mode="safeguard">${icon('pencil-line')}Approve as a draft</button>` : ''}
@@ -526,15 +547,17 @@ async function pageApprovals() {
   return `<div class="page narrow">${head('Approvals', 'When a rule demands a person, the agent stops and the request waits here. Nothing below has happened yet. If nobody answers in time, the answer is no.')}
     ${flash()}
     ${fatigue}
-    <div class="panel approver"><div class="labelled"><label for="approver">Deciding as</label><input class="input" id="approver" value="${esc(S.approver)}" autocomplete="off"></div>
-      <p>Some actions need a second person, so the one who asked can't approve them. Type the same name to see it refused.</p></div>
+    ${tokenClaims() ? `<div class="panel approver"><div class="labelled"><span class="label">Deciding as</span><b>${esc(tokenClaims().sub)}</b> <span class="meta">${esc(seatWord(tokenClaims().role))}, from your sign-in</span></div>
+      <p>Your name and role come from your signed token, so nobody can approve as someone else.</p></div>`
+    : `<div class="panel approver"><div class="labelled"><label for="approver">Deciding as</label><input class="input" id="approver" value="${esc(S.approver)}" autocomplete="off"></div>
+      <p>Some actions need a second person, so the one who asked can't approve them. Type the same name to see it refused. With sign-in on, the name and role come from the token instead.</p></div>`}
     ${list}
     <p class="hint" style="margin-top:16px">Live agent runs use their own copy of the company, so their requests don't appear here.</p></div>`;
 }
 async function decide(btn) {
   const { id, approve, mode } = btn.dataset;
   const card = btn.closest('.fold-body');
-  S.approver = $('#approver').value.trim() || 'reviewer-1';
+  S.approver = tokenClaims()?.sub || $('#approver')?.value.trim() || 'reviewer-1';
   $$('button', card).forEach(b => { b.disabled = true; });
   try {
     const role = btn.dataset.role || null;
@@ -925,6 +948,26 @@ const ACT = {
   },
   report(b, e) { e.preventDefault(); openReport(b.dataset.name); },
   'close-dialog'() { $('#dialog').close(); },
+  signin() {
+    const c = tokenClaims();
+    openDialog('Sign in', `<p>${c ? `Signed in as <b>${esc(c.sub)}</b>, role <b>${esc(seatWord(c.role))}</b>${c.tenant && c.tenant !== 'default' ? `, tenant <b>${esc(c.tenant)}</b>` : ''}; expires ${esc(new Date(c.exp * 1000).toLocaleString())}.`
+      : 'When the server runs with sign-in on (KAVACH_AUTH_SECRET), paste a token here. Your name, role and tenant then come from it.'}</p>
+      <div class="labelled" style="margin:16px 0"><label for="token-in">Token</label><input class="input" id="token-in" autocomplete="off" spellcheck="false" placeholder="eyJ..."></div>
+      <p class="hint">Make one with <code>python -m kavach.auth mint &lt;you&gt; &lt;role&gt;</code> on the server.</p>
+      <div class="d-actions"><button class="btn primary" type="button" data-act="signin-save">${icon('key-round')}Sign in</button>${c ? `<button class="btn quiet" type="button" data-act="signin-clear">Sign out</button>` : ''}</div>`);
+  },
+  'signin-save'() {
+    const v = ($('#token-in')?.value || '').trim();
+    if (!tokenClaims(v)) { $('#token-in').setAttribute('aria-invalid', 'true'); return; }
+    S.token = v;
+    try { localStorage.setItem('kavach-token', v); } catch { /* not remembered */ }
+    $('#dialog').close(); paintSignin(); chrome().catch(() => {}); route();
+  },
+  'signin-clear'() {
+    S.token = '';
+    try { localStorage.removeItem('kavach-token'); } catch { /* fine */ }
+    $('#dialog').close(); paintSignin(); chrome().catch(() => {}); route();
+  },
   'check-example'(b) {
     S.check.form = checkForm(CHECK_EXAMPLES[+b.dataset.i][1]);
     S.check.mode = 'form';
@@ -1015,6 +1058,7 @@ document.addEventListener('focusout', () => { tooltip.hidden = true; });
 window.addEventListener('hashchange', () => route());
 try { if (localStorage.getItem('kavach-rail') === 'hidden') $('#app').classList.add('rail-off'); } catch { /* fine */ }
 (async () => {
+  paintSignin();
   await chrome();
   route();
   setInterval(async () => {

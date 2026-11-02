@@ -97,6 +97,7 @@ code { font-family: var(--vx-mono); font-size: .92em; }
 .icon-btn .i { width: 22px; height: 22px; }
 .icon-btn.out { border: 1px solid var(--vx-rule-strong); background: var(--vx-sheet); }
 .icon-btn.out:hover { border-color: var(--vx-stamp); background: var(--vx-sheet); }
+.icon-btn.has { border-color: var(--vx-strong); color: var(--vx-strong); background: var(--vx-strong-wash); }  /* signed in */
 .badge { position: absolute; top: -4px; right: -4px; min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--vx-stamp); color: #fff; font-size: 12.5px; font-weight: 600; line-height: 20px; text-align: center; }
 main { flex: 1; min-width: 0; outline: 0; }
 .page { padding: 40px 40px 112px; }

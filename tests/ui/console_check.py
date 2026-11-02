@@ -61,6 +61,18 @@ def main(routes=None) -> int:
         page.fill("#approver", "rahul")
         page.click("text=Approve as Finance Director")
         page.wait_for_selector("text=waiting in an undo window", timeout=10000)
+        # sign-in: with auth on, the console asks for a token; signed in, it works and shows who you are
+        from kavach import auth, server
+        server.AUTH_SECRET = "kavach-test-secret-at-least-32-bytes-long"
+        page.goto(f"{base}/#/approvals")
+        page.reload()
+        page.wait_for_selector("text=Sign-in is on for this server", timeout=10000)
+        problems[:] = [x for x in problems if "status of 401" not in x]              # the refusals are expected
+        page.click("#signin")
+        page.fill("#token-in", auth.mint("anita", "cfo", secret=server.AUTH_SECRET))
+        page.click("text=Sign in >> nth=-1")
+        page.wait_for_selector("text=from your sign-in", timeout=10000)
+        server.AUTH_SECRET = None
         b.close()
     srv.should_exit = True
     for x in problems:
