@@ -698,15 +698,22 @@ _agent_slots = threading.Semaphore(2)        # one request = two runs side by si
 AGENT_ROLES = ("analyst", "support", "finance", "ap_supervisor")
 
 
+RECORDING = ROOT.parent / "bench" / "results" / "live_agent_recording.json"
+
+
+def agent_outcome(out: dict) -> dict:
+    """What a live run left behind, as the console shows it (also what a recording keeps)."""
+    return {"emails_out": [{"to": m["to"], "subject": m["subject"], "chars": len(m["body"])}
+                           for m in out["external_emails_sent"]],
+            "payments": out["payments"], "waiting": len(out["waiting_held_or_queued"]), "model": out["model"]}
+
+
 def _agent_worker(slot: dict, request: str, guard: bool, role: str) -> None:
     from agent import llm_agent
     with _agent_slots:
         try:
             out = llm_agent.run(request, guard=guard, role=role, trace=slot["trace"])
-            slot["outcome"] = {"emails_out": [{"to": m["to"], "subject": m["subject"], "chars": len(m["body"])}
-                                              for m in out["external_emails_sent"]],
-                               "payments": out["payments"], "waiting": len(out["waiting_held_or_queued"]),
-                               "model": out["model"]}
+            slot["outcome"] = agent_outcome(out)
         except (Exception, SystemExit) as e:          # SystemExit: run() exits when the model isn't configured
             slot["error"] = f"{type(e).__name__}: {e}"
         finally:
@@ -744,7 +751,37 @@ def agent_run_status(rid: str):
         raise HTTPException(404, "unknown run")
     view = lambda r: {**{k: v for k, v in r.items() if k != "trace"}, "trace": list(r["trace"])}  # noqa: E731
     return {"request": runs["request"], "role": runs["role"], "seconds": round(time.time() - runs["started"]),
-            "unguarded": view(runs["unguarded"]), "guarded": view(runs["guarded"])}
+            "unguarded": view(runs["unguarded"]), "guarded": view(runs["guarded"]), "recorded": runs.get("recorded")}
+
+
+def _replay_worker(slot: dict, rec: dict, step_s: float) -> None:
+    for t in rec["trace"]:
+        time.sleep(step_s)
+        slot["trace"].append(t)
+    slot["outcome"] = rec.get("outcome")
+    if rec.get("error"):
+        slot["error"] = rec["error"]
+    slot["done"] = True
+
+
+@app.post("/api/agent/replay")
+def agent_replay(step_s: float = 1.2):
+    """The fallback for a stage: replay a real run recorded earlier (scripts/record_live_agent.py), step by step,
+    through the same view as a live run. It is labelled as a recording, with its date and model."""
+    if not RECORDING.exists():
+        raise HTTPException(404, "no recorded run yet: python scripts/record_live_agent.py")
+    rec = json.loads(RECORDING.read_text())
+    rid = "rec-" + uuid.uuid4().hex[:6]
+    runs = {"request": rec["request"], "role": rec["role"], "started": time.time(),
+            "recorded": {"at": rec["recorded_at"], "model": rec["model"], "seconds": rec.get("seconds")},
+            "unguarded": {"trace": [], "done": False}, "guarded": {"trace": [], "done": False}}
+    while len(_agent_runs) >= 20:
+        _agent_runs.pop(next(iter(_agent_runs)))
+    _agent_runs[rid] = runs
+    for key in ("unguarded", "guarded"):
+        threading.Thread(target=_replay_worker, args=(runs[key], rec[key], max(0.0, min(step_s, 5.0))),
+                         daemon=True).start()
+    return {"run_id": rid, "role": rec["role"], "recorded": runs["recorded"]}
 
 
 @app.get("/api/autonomy", dependencies=[Depends(caller)])
