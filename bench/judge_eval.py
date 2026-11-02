@@ -1,8 +1,10 @@
-"""What the two-stage Qualcomm judge changes, and what it costs in latency.
+"""What the two-stage Qualcomm judge changes, and what it costs in latency, in each judge mode (C2).
 
     python -m bench.judge_eval      # needs IMAGINE_API_KEY and IMAGINE_API_ENDPOINT; writes bench/results/JUDGE.md
 
-Runs the seed-0 test split and the fresh holdout with the judge off and on, at the shipped operating point.
+Runs the seed-0 test split and the fresh holdout with the judge off, inline (in the path of every state-changing
+call, the Phase 4 behaviour) and escalations-only (the Phase 5 default), at the shipped operating point. Latency is
+reported for every call and for the auto-completed ones, which are the calls a user actually waits on.
 Against the offline stand-in (uvicorn scripts.fake_imagine:app --port 9100, IMAGINE_API_ENDPOINT=http://localhost:9100,
 IMAGINE_API_KEY=x) this rehearses the plumbing only, and the report says so: that "model" is a script.
 """
@@ -34,7 +36,9 @@ def pct(xs, q):
 def main() -> dict | None:
     c_block = RiskModel().meta["operating_point"]["c_block"]
     env = Environment(tempfile.mkdtemp())
-    on = Kavach(env, GatewayConfig(use_llm_judge=True, c_block=c_block))
+    on = Kavach(env, GatewayConfig(use_llm_judge=True, judge_mode="inline", c_block=c_block))
+    esc = Kavach(env, GatewayConfig(use_llm_judge=True, judge_mode="escalations-only", c_block=c_block))
+    esc.judge = on.judge                  # one judge (and one cache-free comparison: see below)
     llm = on.judge.llm
     if not llm.enabled:
         print("IMAGINE_API_KEY / IMAGINE_API_ENDPOINT not set (or httpx missing): nothing to measure.")
@@ -42,9 +46,10 @@ def main() -> dict | None:
     off = Kavach(env, GatewayConfig(use_llm_judge=False, c_block=c_block))
     suite, split = make_suite(20, 0)
     scenarios = [s for s in suite if split[s.sid] == "test"] + holdout()
-    rows = {"off": [], "on": []}
+    rows = {"off": [], "on": [], "escalations-only": []}
     for sc in scenarios:
-        for name, k in (("off", off), ("on", on)):
+        on.judge.cache.clear()            # each mode pays for its own model calls
+        for name, k in (("off", off), ("on", on), ("escalations-only", esc)):
             rows[name].append({"sid": sc.sid, "family": sc.family, "label": sc.label, "injection": sc.injection,
                                "tool": sc.action.tool, **run_kavach(k, env, sc)})
     src = Counter((r["intent"] or {}).get("source", "no intent check") for r in rows["on"])
@@ -58,6 +63,9 @@ def main() -> dict | None:
            "distinct_calls_asked": len(on.judge.cache),
            "check_ms": {k: {"p50": pct([r["ms"] for r in v], 0.5), "p95": pct([r["ms"] for r in v], 0.95)}
                         for k, v in rows.items()},
+           "auto_ms": {k: {"p50": pct([r["ms"] for r in v if r["verdict"].startswith("ALLOW")], 0.5),
+                           "p95": pct([r["ms"] for r in v if r["verdict"].startswith("ALLOW")], 0.95)}
+                       for k, v in rows.items()},
            "llm_call_ms": {"p50": pct(stage_ms, 0.5), "p95": pct(stage_ms, 0.95), "n": len(stage_ms)},
            "verdict_changes": [{"family": f, "off": a, "on": b, "n": n} for (f, a, b), n in sorted(changes.items())]}
     (OUT / "judge.json").write_text(json.dumps(out, indent=1))
@@ -78,7 +86,12 @@ def write_report(out: dict) -> None:
            "| Judge | Unsafe auto-allowed | Injection success | Safe auto-completed | Escalated | check() p50 / p95 ms |",
            "|---|---|---|---|---|---|",
            line("Off (heuristic only)", m["off"], out["check_ms"]["off"]),
-           line("On (two-stage)", m["on"], out["check_ms"]["on"]), "",
+           line("Inline (Phase 4: judge in every state-changing call)", m["on"], out["check_ms"]["on"]),
+           *([line("Escalations-only (Phase 5 default)", m["escalations-only"], out["check_ms"]["escalations-only"])]
+             if "escalations-only" in m else []), "",
+           *(["Latency of auto-completed calls (what a user waits on), p50 / p95 ms: " + ", ".join(
+               f"{k} {v['p50']} / {v['p95']}" for k, v in out["auto_ms"].items()) + ".", ""]
+             if out.get("auto_ms") else []),
            f"Judge path per decision: {', '.join(f'{k} {v}' for k, v in sorted(out['judge_sources'].items()))}. "
            f"Distinct calls sent to the model: {out['distinct_calls_asked']} (the rest came from the cache). "
            f"Model calls: {out['llm_call_ms']['n']}, p50 {out['llm_call_ms']['p50']} ms, p95 {out['llm_call_ms']['p95']} ms.",
