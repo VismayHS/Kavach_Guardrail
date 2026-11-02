@@ -101,7 +101,12 @@ class Kavach:
         op = self.risk.meta.get("operating_point") if config is None else None
         if op:   # use the operating point selected on the calibration split
             self.cfg.c_block = op["c_block"]
-        self.receipts = ReceiptLog()
+        try:                                        # F5: Ed25519-signed receipts when cryptography is installed
+            from .signing import Signer
+            signer = Signer.from_env()
+        except ImportError:
+            signer = None
+        self.receipts = ReceiptLog(signer=signer)
         self.hitl = ApprovalQueue()
         self.tasks: dict[str, Task] = {}
         self.undo: dict[str, dict] = {}       # receipt id -> snapshot

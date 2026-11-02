@@ -291,6 +291,21 @@ def verify():
     return gw.receipts.verify()
 
 
+@app.get("/api/receipts/export", dependencies=[Depends(caller)])
+def receipts_export():
+    """The whole chain as JSONL (a header with the public key, then every receipt), for an auditor:
+    python -m kavach.receipts verify export.jsonl --pubkey kavach_signing.pub.pem"""
+    return StreamingResponse(gw.receipts.export_lines(), media_type="application/x-ndjson",
+                             headers={"Content-Disposition": "attachment; filename=kavach-receipts.jsonl"})
+
+
+@app.get("/api/receipts/public-key")
+def receipts_public_key():
+    s = gw.receipts.signer
+    return {"kid": s.key_id if s else None, "public_key": s.public_pem if s else None,
+            "ephemeral": bool(s and s.ephemeral)}
+
+
 @app.get("/api/tools/drafts", dependencies=[Depends(caller)])
 def tool_drafts():
     """Tools onboarded from their MCP annotations that a human hasn't approved yet (calls to them escalate)."""

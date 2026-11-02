@@ -9,3 +9,4 @@ __pycache__/
 bench/agentdojo_runs/
 .kavach/
 examples/mcp/sent_mail.jsonl
+keys/

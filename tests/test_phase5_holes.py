@@ -264,7 +264,10 @@ def test_a9_prod_profile_needs_real_secrets():
         check_profile({"KAVACH_PROFILE": "prod"})
     with pytest.raises(ProfileError):
         check_profile({"KAVACH_PROFILE": "prod", "KAVACH_AUTH_SECRET": SECRET, "KAVACH_RECEIPT_KEY": "demo-receipt-key"})
-    p = check_profile({"KAVACH_PROFILE": "prod", "KAVACH_AUTH_SECRET": SECRET, "KAVACH_RECEIPT_KEY": "k" * 40})
+    with pytest.raises(ProfileError):                                    # no Ed25519 signing key
+        check_profile({"KAVACH_PROFILE": "prod", "KAVACH_AUTH_SECRET": SECRET, "KAVACH_RECEIPT_KEY": "k" * 40})
+    p = check_profile({"KAVACH_PROFILE": "prod", "KAVACH_AUTH_SECRET": SECRET, "KAVACH_RECEIPT_KEY": "k" * 40,
+                       "KAVACH_SIGNING_KEY": "keys/kavach_signing.pem"})
     assert p.prod and p.require_tool_hash and not p.demo_endpoints
     assert not check_profile({}).prod
 
