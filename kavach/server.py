@@ -891,8 +891,7 @@ def mcp(rpc: dict, who: dict | None = Depends(caller)):
                         tool_def_hash=meta.get("kavach/definitionHash"))
         d = gw.run(tid, call)
         allowed = d.verdict.value.startswith("ALLOW")
-        text = json.dumps(d.result, default=str)[:4000] if allowed else (
-            f"KAVACH {d.verdict.value}: {d.reason}" + (f" Suggested: {d.replan_hint}" if d.replan_hint else ""))
+        text = json.dumps(d.result, default=str)[:4000] if allowed else Kavach.agent_message(d)
         return {"jsonrpc": "2.0", "id": mid, "result": {
             "content": [{"type": "text", "text": text}], "isError": not allowed,
             "_meta": {"kavach/verdict": d.verdict.value, "kavach/receipt": d.receipt_id, "kavach/hitl": d.hitl_id}}}

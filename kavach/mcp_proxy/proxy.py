@@ -251,11 +251,9 @@ class KavachMCPProxy:
         if d.verdict == Verdict.ESCALATE:
             status = await self._await_human(d.hitl_id)
             if status != "approved":
-                return _error(f"KAVACH ESCALATE: a person had to approve this call and it was {status} "
-                              f"({d.reason}).", "ESCALATE", d.receipt_id, d.hitl_id)
+                return _error(Kavach.agent_message(d, status=status), "ESCALATE", d.receipt_id, d.hitl_id)
         elif d.verdict == Verdict.DENY:
-            return _error(f"KAVACH DENY: {d.reason}" + (f" Suggested: {d.replan_hint}" if d.replan_hint else ""),
-                          "DENY", d.receipt_id)
+            return _error(Kavach.agent_message(d), "DENY", d.receipt_id)
         try:                                           # F1: credentials only now, never in the agent's view
             args = self.gw.secrets.resolve(name, call.args)
         except PermissionError as e:

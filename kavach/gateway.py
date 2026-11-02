@@ -686,6 +686,22 @@ class Kavach:
         return Verdict.ALLOW, reason, None
 
     @staticmethod
+    def agent_message(d: Decision, status: str | None = None) -> str:
+        """What an agent is told when its call doesn't run: the rule and reason, a suggestion if there is one, then
+        plainly that the call did not run and what to tell the user (an agent told only "blocked" has reported the
+        blocked action as done). status: how a person decided, when the caller waited for them."""
+        msg = f"KAVACH {d.verdict.value}: {d.reason}" + (f" Suggested: {d.replan_hint}" if d.replan_hint else "")
+        if d.verdict == Verdict.ESCALATE and status is None:
+            tail = ("This call has not run: it is waiting for a person to approve it. Tell the user it is waiting for "
+                    "approval and why; don't say it was done.")
+        elif d.verdict == Verdict.ESCALATE:
+            tail = (f"A person had to approve this call and it was {status}, so it did not run. Tell the user; don't "
+                    "say it was done.")
+        else:
+            tail = "This call did not run. Tell the user it was refused and why; don't say it was done."
+        return f"{msg} {tail}"
+
+    @staticmethod
     def _hint(rule_id, spec):
         return {
             "R1": "Use only destinations the user provided. Summarise the content to the requesting user instead.",

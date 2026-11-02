@@ -132,8 +132,7 @@ def run(request: str, guard: bool = True, role: str = "analyst", model: str | No
                         if masked is not None else None
                     d = gw.execute(tid, gw.check(tid, ToolCall(name, args), melon=probe))
                     ok = d.verdict.value.startswith("ALLOW")
-                    content = json.dumps(d.result, default=str)[:3000] if ok else \
-                        f"BLOCKED by KAVACH ({d.verdict.value}): {d.reason} {d.replan_hint or ''}"
+                    content = json.dumps(d.result, default=str)[:3000] if ok else Kavach.agent_message(d)
                     trace.append({"tool": name, "args": args, "verdict": d.verdict.value, "reason": d.reason,
                                   "receipt": d.receipt_id})
                 else:
