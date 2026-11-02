@@ -171,11 +171,80 @@ def server(url: str):
     return bool(ok), f"{url}: receipts {r.json()}, /api/state {s.status_code}"
 
 
+def _get(url, headers=None, timeout=5):
+    import urllib.request
+    req = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.status, dict(r.headers), r.read()
+
+
+@check("demo: KAVACH ready")
+def demo_kavach(url: str):
+    import json
+    _, _, body = _get(f"{url}/readyz")
+    r = json.loads(body)
+    import urllib.request
+    req = urllib.request.Request(f"{url}/mcp", data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).encode(),
+                                 headers={"Content-Type": "application/json"})
+    names = [t["name"] for t in json.loads(urllib.request.urlopen(req, timeout=5).read())["result"]["tools"]]
+    want = {"mail.read_inbox", "mail.send", "invoice.read", "vendor.read", "payment.release"}
+    ok = r["ready"] and r["chain_valid"] and r.get("windows_sweeper") and want <= set(names) and r["store"]
+    return bool(ok), (f"ready {r['ready']}, chain {r['chain_valid']} ({r.get('chain_reason') or 'ok'}), store "
+                      f"{(r['store'] or {}).get('backend')}, sweeper {r.get('windows_sweeper')}, /mcp offers {len(names)} tools")
+
+
+@check("demo: Mailpit (inbox, SMTP, CORS)")
+def demo_mailpit(console: str):
+    import socket
+    _, h, _ = _get("http://127.0.0.1:8025/api/v1/messages?limit=1", headers={"Origin": console})
+    socket.create_connection(("127.0.0.1", 1025), timeout=1).close()
+    cors = h.get("Access-Control-Allow-Origin") or h.get("access-control-allow-origin")
+    return bool(cors), f"API ok, SMTP 1025 open, CORS for {console}: {cors or 'MISSING (the Live demo page cannot read the inbox)'}"
+
+
+@check("demo: sandbox bank")
+def demo_bank():
+    s, _, body = _get("http://127.0.0.1:8030/transfers")
+    return s == 200, f"{len(__import__('json').loads(body))} transfers"
+
+
+@check("demo: Claude Code, locked to KAVACH")
+def demo_claude():
+    import shutil
+    import subprocess
+    exe = shutil.which("claude")
+    if not exe:
+        return False, "claude CLI not found (npm i -g @anthropic-ai/claude-code); the scripted agent still works"
+    v = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=20).stdout.strip()
+    sh = (ROOT / "scripts" / "demo_claude.sh").read_text()
+    locked = all(x in sh for x in ('--tools ""', "--strict-mcp-config", "--no-chrome"))
+    return locked, f"{v}; demo_claude.sh: no built-in tools, no other MCP servers, no browser: {locked}"
+
+
+@check("demo: Prometheus, Grafana, alerts")
+def demo_observability():
+    import json
+    t = json.loads(_get("http://127.0.0.1:9090/api/v1/targets")[2])["data"]["activeTargets"]
+    up = [x["labels"].get("where") for x in t if x["health"] == "up"]
+    rules = sum(len(g["rules"]) for g in json.loads(_get("http://127.0.0.1:9090/api/v1/rules")[2])["data"]["groups"])
+    g = json.loads(_get("http://127.0.0.1:3000/api/health")[2])
+    return "host" in up, f"KAVACH scraped: {up or 'none'}; {rules} alert rules; Grafana {g.get('database')}"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--offline", action="store_true", help="hide the Qualcomm key for this run")
     ap.add_argument("--url", help="also check a running KAVACH server")
+    ap.add_argument("--demo", action="store_true", help="also check the live demo stack (scripts/demo_up.sh): KAVACH, "
+                    "Mailpit, the bank, Claude Code, Prometheus and Grafana")
     a = ap.parse_args()
+    if a.demo:
+        a.url = a.url or "http://127.0.0.1:8000"
+        demo_kavach(a.url)
+        demo_mailpit(a.url)
+        demo_bank()
+        demo_claude()
+        demo_observability()
     load_dotenv()
     if a.offline:
         for k in QUALCOMM_VARS:
