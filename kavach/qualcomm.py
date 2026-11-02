@@ -41,6 +41,29 @@ def _env(*names: str) -> str:
     return next((os.environ[n] for n in names if os.environ.get(n)), "")
 
 
+def sequential_tool_calls(messages: list[dict]) -> list[dict]:
+    """The Inference Cloud answers 500 "Model Config not found" to any request holding two tool results in a row
+    (measured 2 Nov 2026), i.e. after the model made parallel tool calls. Re-send such a turn as one (assistant call,
+    tool result) pair per call; the model sees the same calls and results, in order."""
+    out, used = [], set()
+    for i, m in enumerate(messages):
+        if m.get("role") == "tool" and m.get("tool_call_id") in used:
+            continue
+        calls = m.get("tool_calls") or []
+        if m.get("role") != "assistant" or len(calls) < 2:
+            out.append(m)
+            continue
+        results = {r.get("tool_call_id"): r for r in messages[i + 1:] if r.get("role") == "tool"}
+        if not all(c.get("id") in results for c in calls):
+            out.append(m)                       # unpaired: leave it as it was
+            continue
+        for j, c in enumerate(calls):
+            out.append({**m, "content": m.get("content") if j == 0 else "", "tool_calls": [c]})
+            out.append(results[c["id"]])
+            used.add(c["id"])
+    return out
+
+
 class QualcommCloudAI:
     def __init__(self, endpoint: str | None = None, api_key: str | None = None,
                  model: str | None = None, timeout: float = 8.0):
@@ -61,13 +84,14 @@ class QualcommCloudAI:
         r = httpx.post(f"{self.endpoint}/{path}", json=body, timeout=self.timeout,
                        headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json",
                                 "User-Agent": "kavach-guardrail/0.1"})
-        r.raise_for_status()
+        if r.status_code >= 400:                # keep the service's own message: "500" alone hid the cause once
+            raise httpx.HTTPStatusError(f"{r.status_code} from {path}: {r.text[:300]}", request=r.request, response=r)
         self.last_latency_ms = round((time.perf_counter() - t0) * 1000, 1)
         return r.json()
 
     def chat(self, messages: list[dict], max_tokens: int = 256, temperature: float = 0.0,
              tools: list[dict] | None = None, model: str | None = None) -> dict:
-        body = {"model": model or self.model, "messages": messages, "max_tokens": max_tokens,
+        body = {"model": model or self.model, "messages": sequential_tool_calls(messages), "max_tokens": max_tokens,
                 "temperature": temperature, "stream": False}
         if tools:
             body["tools"] = tools

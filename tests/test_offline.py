@@ -49,3 +49,18 @@ def test_dashboard_endpoints_answer_offline(offline, monkeypatch):
     run = c.post("/api/demo/email_injection").json()
     assert run["steps"][-1]["verdict"] == "DENY" and run["state"]["outbox"] == 0
     assert c.get("/api/receipts/verify").json()["valid"]
+
+
+def test_parallel_tool_calls_are_sent_as_sequential_pairs():
+    from kavach.qualcomm import sequential_tool_calls
+    call = lambda i: {"id": i, "type": "function", "function": {"name": "f", "arguments": "{}"}}  # noqa: E731
+    msgs = [{"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "doing both", "tool_calls": [call("a"), call("b")]},
+            {"role": "tool", "tool_call_id": "a", "content": "A"}, {"role": "tool", "tool_call_id": "b", "content": "B"},
+            {"role": "assistant", "content": "done"}]
+    out = sequential_tool_calls(msgs)
+    assert [m["role"] for m in out] == ["user", "assistant", "tool", "assistant", "tool", "assistant"]
+    assert [m.get("tool_call_id") or [c["id"] for c in m.get("tool_calls", [])] for m in out[1:5]] == [["a"], "a", ["b"], "b"]
+    assert out[1]["content"] == "doing both" and out[3]["content"] == ""
+    single = [{"role": "assistant", "content": "", "tool_calls": [call("x")]}, {"role": "tool", "tool_call_id": "x", "content": "X"}]
+    assert sequential_tool_calls(single) == single
