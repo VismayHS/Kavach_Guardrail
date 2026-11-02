@@ -32,7 +32,7 @@ from .provenance import ProvenanceTracker
 from .receipts import ReceiptLog
 from .risk import RiskModel, featurize
 
-SAFETY_RULES = {"R2", "R9", "R10", "R13", "R16", "R17", "R22", "R23", "R24"}
+SAFETY_RULES = {"R2", "R9", "R10", "R13", "R16", "R17", "R22", "R23", "R24", "R25", "R26", "R27", "R28", "R29"}
 AUTH_RULES = {"R1", "R3", "R4", "R5", "R6", "R7", "R8", "R11", "R12", "R14", "R15", "R18", "R19", "R20", "R21"}
 
 
@@ -56,6 +56,7 @@ class GatewayConfig:
     use_windows: bool = True                 # ablation switch: False => payments, email, SAP go out at once
     use_rules: bool = True                   # ablation switch: False => only R6/R7 (unknown tool, schema); the model
                                              # decides everything else (measures what the model alone catches)
+    use_injection_probe: bool = False        # C3: scan untrusted content with a CPU classifier (needs torch)
 
 
 @dataclass
@@ -67,9 +68,13 @@ class Task:
 
 class Kavach:
     def __init__(self, env: Environment, config: GatewayConfig | None = None, policy: PolicyEngine | None = None,
-                 registry: ToolRegistry | None = None, risk: RiskModel | None = None):
+                 registry: ToolRegistry | None = None, risk: RiskModel | None = None, probe=None):
         self.env = env
         self.cfg = config or GatewayConfig()
+        if probe is None and self.cfg.use_injection_probe:
+            from .injection_probe import InjectionProbe
+            probe = InjectionProbe()
+        self.probe = probe if probe is not None and probe.enabled else None
         self.policy = policy or PolicyEngine()
         self.registry = registry or ToolRegistry()
         self.consequence = ConsequenceEngine(env)
@@ -115,8 +120,28 @@ class Kavach:
         (gateway execution, human-approved execution, API context, benchmark setup)."""
         trust, conf = self.output_label(call)
         spec = self.registry.get(call.tool)
-        self.tasks[task_id].prov.register_output(call.tool, output, trust, conf,
-                                                 spec.untrusted_fields if spec is not None else ())
+        fields = spec.untrusted_fields if spec is not None else ()
+        self.tasks[task_id].prov.register_output(call.tool, output, trust, conf, fields)
+        if self.probe is not None and (trust == "untrusted" or fields):
+            self._probe(task_id, call.tool, output, fields)
+
+    def _probe(self, task_id: str, tool: str, output, fields) -> None:
+        """C3: scan each piece of untrusted content; a hit marks its exact source hostile (and is receipted)."""
+        prov = self.tasks[task_id].prov
+        for rec in (output if isinstance(output, list) else [output]):
+            src = f"tool:{tool}" + (f"#{rec['id']}" if isinstance(rec, dict) and "id" in rec else "")
+            if isinstance(rec, dict):
+                part = {k: v for k, v in rec.items() if k in fields} if fields else rec
+                text = " ".join(str(v) for v in part.values())
+            else:
+                text = str(rec)
+            if not text.strip():
+                continue
+            hit = self.probe.scan(text)
+            if hit["injection"]:
+                prov.hostile.add(src)
+                self.receipts.append({"type": "injection-detected", "task_id": task_id, "source": src,
+                                      "score": hit["score"], "model": hit["model"]})
 
     def add_request(self, task_id: str, request: str) -> None:
         """A later user turn in the same session: its values count as typed by the user, and intent follows it."""
@@ -163,7 +188,7 @@ class Kavach:
                       f"{call.args.get('subject', '')} {call.args.get('body', '')}") if call.tool == "mail.send" else 0,
                   "stray_recipients": [r for r in (effect.magnitude.get("not_invoice_customer") or [] if effect else [])
                                        if not task.prov.given(r)],
-                  "given": task.prov.given}
+                  "given": task.prov.given, "hostile": sorted(task.prov.hostile)}
         gates = self.policy.evaluate(ctx, call, spec, self.registry, labels, staged)
         if effect and effect.magnitude.get("inside_workspace") is False:
             gates.append(GateResult("R12", "DENY", "Path escapes the agent workspace."))

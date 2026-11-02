@@ -179,6 +179,14 @@ class PolicyEngine:
                 add("R14", "REQUIRE_APPROVAL", "This task has read private data and untrusted content, and "
                     f"'{dest}' = {call.args.get(dest)!r} was not given by the user.", arg=dest)
 
+        # R29 a classifier flagged injected instructions in what this task read (C3): state changes go to a human
+        # unless every destination/target was typed by the user. A model signal: it escalates, it never blocks.
+        if st.get("hostile") and spec.effect in ("write", "payment", "external_send"):
+            ctrl = [labels[a] for a in spec.control_args if a in labels]
+            if not ctrl or not all(l.trust == Trust.TRUSTED for l in ctrl):
+                add("R29", "REQUIRE_APPROVAL", f"A classifier flagged injected instructions in {', '.join(st['hostile'][:3])}"
+                    "; this action's target wasn't typed by the user.", sources=st["hostile"][:10])
+
         # R3 change freeze / R4 DDL / R10 bulk (SQL facts come from SQLite's compiler, see sql.py)
         sql_info = st.get("sql") or {}
         if call.tool == "crm.execute":
