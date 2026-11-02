@@ -37,6 +37,12 @@ TARGETED = {"sql_write": None, "ap_release": "invoice_id", "ap_propose": "invoic
 DESTINATION = {"email": "to", "transfer": "to_account", "refund": "invoice_id", "ap_release": "invoice_id"}
 
 
+def credential_path(cfg: dict, path) -> bool:
+    """R9: a credential file (one matcher for the Python rules and the Cedar facts)."""
+    p = str(path or "").lower()
+    return any(s in p for s in cfg["sensitive_paths"])
+
+
 class PolicyEngine:
     def __init__(self, path: str | Path | None = None):
         path = path or Path(__file__).parent / "policies" / "default.yaml"
@@ -190,9 +196,47 @@ class PolicyEngine:
             if fakes:
                 add("R25", "REQUIRE_APPROVAL", "Lookalike domain: " + "; ".join(f"{r} imitates {p}" for r, p in fakes)
                     + ".", recipients=[r for r, _ in fakes])
+            # R37 bulk or encoded data needs no recognisable PII to be a leak (base64, reformatted phone numbers...)
+            lim = self.cfg["limits"]
+            text = f"{arg(spec, call.args, 'subject', '')} {arg(spec, call.args, 'body', '')}"
+            longest = max((len(w) for w in text.split()), default=0)
+            if not internal and (len(text) > lim["outbound_chars_max"] or longest >= lim["encoded_token_min"]):
+                add("R37", "REQUIRE_APPROVAL", f"This email to {to} carries {len(text):,} characters"
+                    + (f", including an unbroken run of {longest:,}" if longest >= lim["encoded_token_min"] else "")
+                    + "; a person should see what is leaving.", chars=len(text), longest=longest)
+
+        # R40 nothing was shown, so lineage has nothing to trace: an outside destination must then be the user's
+        if m in ("email", "transfer") and st.get("outputs_seen") == 0 \
+                and not st.get("destination_given") and not self._internal_destination(call, spec, st):
+            dest = argname(spec, DESTINATION[m])
+            add("R40", "REQUIRE_APPROVAL", f"No tool output was shown for this task, so where {call.args.get(dest)!r} "
+                "came from can't be checked, and the user didn't give it.", arg=dest)
+
+        # R39 bank details or links from untrusted content, passed on by email (inside the company too)
+        if m == "email" and st.get("untrusted_details"):
+            add("R39", "REQUIRE_APPROVAL", f"The email repeats {', '.join(st['untrusted_details'])} from untrusted "
+                "content; payment details and links from outside need a person to check them before staff act on them.",
+                values=st["untrusted_details"])
+
+        # R36 one task's characters to outside addresses: a list split into short emails adds up
+        prior = st.get("task_prior") or {}
+        if m == "email" and prior.get("chars", 0) > 0 \
+                and st.get("task_outbound_chars", 0) > self.cfg["limits"]["task_outbound_chars_max"]:
+            add("R36", "REQUIRE_APPROVAL", f"This task would have emailed {st['task_outbound_chars']:,} characters to "
+                f"outside addresses in total (limit {self.cfg['limits']['task_outbound_chars_max']:,}); data may be "
+                "leaving in parts.", chars=st["task_outbound_chars"])
+
+        # R38 instructions in untrusted content can name a destination in a form value matching can't trace
+        # ("payouts [at] fin-desk [dot] io"): after untrusted content, an outside destination must come from the user
+        if m in ("email", "transfer") and st.get("untrusted_seen") \
+                and not st.get("destination_given") and not self._internal_destination(call, spec, st) \
+                and not any(g.rule_id == "R1" and g.outcome == "DENY" for g in out):   # R1 already traced it
+            dest = argname(spec, DESTINATION[m])
+            add("R38", "REQUIRE_APPROVAL", f"This task read untrusted content, and '{dest}' = {call.args.get(dest)!r} "
+                "was not given by the user.", arg=dest)
 
         # R15 values the agent made up: they appear nowhere in the request or in any tool output
-        if m in ("transfer", "refund"):
+        if m in ("transfer", "refund", "ledger_post"):
             for a in spec.control_args:
                 lab, v = labels.get(a), call.args.get(a)
                 grounded = lab is not None and (lab.trust == Trust.TRUSTED or lab.sources != ["agent"])
@@ -245,6 +289,17 @@ class PolicyEngine:
             if ctx.env == "prod" and rows > self.cfg["limits"]["bulk_rows_approval"]:
                 add("R10", "REQUIRE_APPROVAL", f"Statement would change {rows} rows "
                     f"(limit {self.cfg['limits']['bulk_rows_approval']}).", rows=rows)
+            # R35 the finance rules trust these records, so changing them with SQL would switch the rules off
+            e = st.get("effect") or {}
+            guarded = sorted(set(e.get("tables_written") or []) & set(self.cfg["finance"]["protected_tables"]))
+            if guarded:
+                add("R35", "DENY", f"Raw SQL may not change {', '.join(guarded)}: the finance rules rely on these "
+                    "records. Use the finance tools, which go through approval.", tables=guarded)
+            if ctx.env == "prod" and (st.get("task_prior") or {}).get("rows", 0) > 0 \
+                    and st.get("task_rows", 0) > self.cfg["limits"]["task_rows_approval"]:
+                add("R36", "REQUIRE_APPROVAL", f"This task would have changed {st['task_rows']} rows in total "
+                    f"(limit {self.cfg['limits']['task_rows_approval']}); a big change may be split into small ones.",
+                    rows=st["task_rows"])
         if m == "sql_read" and (sql_info.get("writes") or sql_info.get("ddl")):
             add("R7", "DENY", f"{call.tool} is read-only but the statement would {', '.join(sql_info['sql_ops'])}.",
                 ops=sql_info.get("sql_ops"))
@@ -274,11 +329,25 @@ class PolicyEngine:
                     add("R5", "REQUIRE_APPROVAL",
                         f"Transfer of {amt:,.0f} to {'unknown' if not payee_known else 'known'} payee needs approval.")
 
-        # R9 secrets
-        if m == "file_read":
+        # R36 one task's totals: repeats of an outbound action, and money across several small payments
+        if spec.effect in ("payment", "external_send") and st.get("repeat"):
+            add("R36", "REQUIRE_APPROVAL", f"This task already ran the same {call.tool} call; a repeat needs a person.")
+        task_money = st.get("task_money") or {}
+        before = (st.get("task_prior") or {}).get("money") or {}
+        if before.get("INR", 0) > 0 and task_money.get("INR", 0) > self.cfg["limits"]["task_money_approval"]:
+            add("R36", "REQUIRE_APPROVAL", f"This task would have moved INR {task_money['INR']:,.0f} in total "
+                f"(limit {self.cfg['limits']['task_money_approval']:,}).", total=task_money["INR"])
+        release_limit = self.cfg["finance"]["role_release_limit"].get(ctx.principal.role, 0)
+        if m == "ap_release" and before.get("EUR", 0) > 0 and task_money.get("EUR", 0) > release_limit:
+            add("R36", "REQUIRE_APPROVAL", f"This task would have released EUR {task_money['EUR']:,.0f} in total; role "
+                f"'{ctx.principal.role}' may release up to EUR {release_limit:,.0f}.", total=task_money["EUR"])
+
+        # R9 secrets: not into the agent's context, and not overwritten or deleted either
+        if m in ("file_read", "file_write", "file_delete"):
             p = str(arg(spec, call.args, "path", ""))
-            if any(s in p for s in self.cfg["sensitive_paths"]):
-                add("R9", "DENY", f"'{p}' is a credential file; reading it into an agent context is blocked.")
+            if credential_path(self.cfg, p):
+                what = "reading it into an agent context" if m == "file_read" else "changing it"
+                add("R9", "DENY", f"'{p}' is a credential file; {what} is blocked.")
 
         # R34 shell commands (E10): read and dry-run in a sandbox by the consequence engine
         if m == "shell":

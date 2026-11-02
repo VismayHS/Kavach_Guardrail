@@ -683,7 +683,9 @@ async function pageReceipts() {
   const v = S.chainCheck;
   const band = !v ? '' : `<div class="panel" style="margin-bottom:24px"><div class="stack">${v.valid
     ? `${stamp('sealed', 'Sealed', { cls: `lg ${S.chainJust ? 'vx-land' : ''}` })}<span>All ${plural(v.count, 'receipt')} check out. Each one holds the hash of the one before it, so changing any of them breaks the chain.</span>`
-    : `${stamp('failed', 'Broken', { cls: 'lg' })}<span>The chain breaks at receipt ${esc(v.broken_at)}. A record was changed after it was written.</span>`}</div></div>`;
+    : `${stamp('failed', 'Broken', { cls: 'lg' })}<span>${String(v.reason || '').startsWith('checkpoint')
+      ? `Receipts are missing from the end of the log, or its signed checkpoint was changed or removed (${esc(v.reason.replace(/^checkpoint: /, ''))}).`
+      : `The chain breaks at receipt ${esc(v.broken_at)}. A record was changed after it was written.`}</span>`}</div></div>`;
   S.chainJust = false;
   const table = !all.length
     ? emptyNote('No receipts yet', `Every decision KAVACH makes writes one here. Try ${runLink('email_injection', 'the poisoned email')}.`)

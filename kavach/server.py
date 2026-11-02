@@ -4,6 +4,7 @@
 
 Endpoints
   POST /api/v1/check            raw action input -> decision + receipt   (the PS's "agent action input")
+  POST /api/v1/session          the orchestrator opens a session: the user's request and tool outputs (agent tokens can't)
   POST /api/v1/plan             validate a whole plan before step one
   POST /mcp                     MCP-style JSON-RPC (tools/list, tools/call) so an MCP client can sit behind KAVACH
   POST /api/demo/{scenario}     replay a scripted scenario through the gateway
@@ -115,6 +116,9 @@ app.add_middleware(CORSMiddleware, allow_origins=_origins,
 _mcp_task: dict[tuple[str, str], str] = {}
 _sessions: dict[tuple[str, str], tuple[str, set[str]]] = {}     # (user, session id) -> (task id, context seen)
 AUTH_SECRET = os.environ.get(auth.SECRET_ENV)     # unset = dev mode (role from the request, receipts say so)
+# Which environment this server guards is deployment config. A caller saying "dev" would switch off the production
+# rules while still acting on the same database, so the env field of a request is ignored.
+SERVER_ENV = os.environ.get("KAVACH_ENV", "prod")
 
 
 def caller(authorization: str | None = Header(None)) -> dict | None:
@@ -153,12 +157,12 @@ def _identity(who: dict | None, user: str, role: str) -> tuple[str, str, bool]:
 
 
 class CheckIn(BaseModel):
-    user_request: str
+    user_request: str = ""          # an agent token leaves this out: its session holds the request
     tool: str
     args: dict
     user_id: str = "demo-user"
     role: str = "support"
-    env: str = "prod"
+    env: str = "prod"               # ignored (see SERVER_ENV); kept so existing callers don't break
     context: list[dict] = []        # earlier tool outputs: [{"tool": "...", "output": ...}] for provenance
     execute: bool = False
     tool_def_hash: str | None = None
@@ -167,6 +171,14 @@ class CheckIn(BaseModel):
     tool_description: str = ""      # for a tool KAVACH doesn't know: its MCP description, schema and annotations
     tool_schema: dict | None = None
     tool_annotations: dict | None = None
+
+
+class SessionIn(BaseModel):
+    session_id: str
+    user_request: str
+    context: list[dict] = []
+    user_id: str = "demo-user"
+    role: str = "support"
 
 
 class AgentRunIn(BaseModel):
@@ -222,40 +234,76 @@ def index():
     return FileResponse(ROOT / "static" / "index.html", headers={"Cache-Control": "no-cache"})
 
 
+def _session(user: str, role: str, authed: bool, session_id: str | None, request: str,
+             tenant: str = "default") -> tuple[str, set[str]]:
+    key = (user, session_id) if session_id else None
+    if key in _sessions:
+        tid, seen = _sessions[key]
+        gw.add_request(tid, request)
+        return tid, seen
+    tid, _ = gw.start_task(user, role, request, SERVER_ENV, authenticated=authed, tenant=tenant)
+    seen: set[str] = set()
+    if key:
+        _sessions[key] = (tid, seen)
+    return tid, seen
+
+
+def _add_context(tid: str, seen: set[str], context: list[dict]) -> None:
+    for c in context:
+        h = hashlib.sha256(json.dumps(c, sort_keys=True, default=str).encode()).hexdigest()
+        if h not in seen:                            # a session resends its history; count each output once
+            seen.add(h)
+            # every output counts, also a tool KAVACH has no manifest for: gateway.output_label makes that one
+            # untrusted and confidential, since it could be anything
+            gw.register_output(tid, ToolCall(c.get("tool") or "unknown", c.get("args") or {}), c.get("output"))
+
+
+@app.post("/api/v1/session")
+def open_session(body: SessionIn, who: dict | None = Depends(caller)):
+    """The orchestrator states the user's request and hands over the tool outputs so far; agent tokens can't."""
+    if auth.kind_of(who) != "orchestrator":
+        raise HTTPException(403, "only the orchestrator may state the user's request or supply tool outputs")
+    user, role, authed = _identity(who, body.user_id, body.role)
+    tid, seen = _session(user, role, authed, body.session_id, body.user_request, _tenant_of(who))
+    _add_context(tid, seen, body.context)
+    return {"task_id": tid, "session_id": body.session_id, "outputs_seen": gw.tasks[tid].prov.n_outputs}
+
+
 @app.post("/api/v1/check")
 def check(body: CheckIn, who: dict | None = Depends(caller)):
     user, role, authed = _identity(who, body.user_id, body.role)
-    key = (user, body.session_id) if body.session_id else None
-    if body.task_id:
+    kind = auth.kind_of(who)
+    if body.task_id:                                 # F2: a delegated agent checks its calls in the task it was given
         if body.task_id not in gw.tasks or not _sees(who, _task_tenant(body.task_id)):
             raise HTTPException(404, f"no task {body.task_id}")
+        if kind == "agent" and body.context:
+            raise HTTPException(403, "agent tokens can't supply tool outputs; the orchestrator hands them over")
         tid, seen = body.task_id, set()
-    elif key in _sessions:
-        tid, seen = _sessions[key]
-        gw.add_request(tid, body.user_request)
+    elif kind == "agent":
+        # an agent checks its own calls inside a session the orchestrator opened; it can't restate the task
+        if body.context or not body.session_id or (user, body.session_id) not in _sessions:
+            raise HTTPException(403, "agent tokens act inside a session the orchestrator opened (POST "
+                                     "/api/v1/session) and can't supply the request or tool outputs")
+        tid, seen = _sessions[(user, body.session_id)]
     else:
-        tid, _ = gw.start_task(user, role, body.user_request, body.env, authenticated=authed, tenant=_tenant_of(who))
-        seen: set[str] = set()
-        if key:
-            _sessions[key] = (tid, seen)
-    for c in body.context:
-        h = hashlib.sha256(json.dumps(c, sort_keys=True, default=str).encode()).hexdigest()
-        spec = gw.registry.get(c.get("tool", ""))
-        if spec and h not in seen:                   # a session resends its history; count each output once
-            seen.add(h)
-            gw.register_output(tid, ToolCall(c["tool"], c.get("args") or {}), c.get("output"))
+        tid, seen = _session(user, role, authed, body.session_id, body.user_request, _tenant_of(who))
+    _add_context(tid, seen, body.context)
     if gw.registry.get(body.tool) is None and body.tool_annotations is not None:
         gw.registry.add_draft(body.tool, body.tool_description, body.tool_schema, body.tool_annotations, body.args)
     d = gw.check(tid, ToolCall(body.tool, body.args, tool_def_hash=body.tool_def_hash))
     if body.execute:
         gw.execute(tid, d)
-    return {"task_id": tid, **d.to_dict(), "explanation": d.explanation}
+    # A hold, recall window or snapshot exists only if KAVACH ran the call. outputs_seen = 0 means provenance had
+    # nothing to trace: no context was sent, so "not from an email" only means no email was shown.
+    return {"task_id": tid, **d.to_dict(), "explanation": d.explanation,
+            "safeguard_armed": d.receipt_id in gw.undo or d.receipt_id in gw.recall,
+            "outputs_seen": gw.tasks[tid].prov.n_outputs}
 
 
 @app.post("/api/v1/plan")
 def plan(body: PlanIn, who: dict | None = Depends(caller)):
     user, role, authed = _identity(who, body.user_id, body.role)
-    _, report = gw.start_task(user, role, body.user_request, plan=body.plan, authenticated=authed,
+    _, report = gw.start_task(user, role, body.user_request, SERVER_ENV, plan=body.plan, authenticated=authed,
                               tenant=_tenant_of(who))
     return report
 
@@ -282,7 +330,7 @@ def plan_run(body: PlanRunIn, who: dict | None = Depends(caller)):
             plan = planner.plan(body.user_request, gw.registry, gw.policy.cfg["roles"].get(role, []))
         except Exception as e:
             raise HTTPException(502, f"the planner failed: {e}")
-    tid, _ = gw.start_task(user, role, body.user_request, authenticated=authed, tenant=_tenant_of(who))
+    tid, _ = gw.start_task(user, role, body.user_request, SERVER_ENV, authenticated=authed, tenant=_tenant_of(who))
     try:
         return {"plan": plan, **PlanRunner(gw).run(tid, plan)}
     except PlanError as e:
@@ -787,9 +835,12 @@ def mcp(rpc: dict, who: dict | None = Depends(caller)):
     meta = params.get("_meta", {}) or {}
     session = (who["sub"] if who else "", meta.get("kavach/session", "default"))   # a caller can't reuse another's session
     if method == "initialize":
+        if auth.kind_of(who) != "orchestrator":
+            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32001, "message":
+                    "only the orchestrator may initialize a session (it states the user's request)"}}
         user, role, authed = _identity(who, meta.get("kavach/user", "mcp-user"), meta.get("kavach/role", "support"))
-        tid, _ = gw.start_task(user, role, meta.get("kavach/userRequest", ""), meta.get("kavach/env", "prod"),
-                               authenticated=authed)
+        tid, _ = gw.start_task(user, role, meta.get("kavach/userRequest", ""), SERVER_ENV, authenticated=authed,
+                               tenant=_tenant_of(who))
         _mcp_task[session] = tid
         return {"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": "2025-06-18",
                 "serverInfo": {"name": "kavach-gateway", "version": "0.1"}, "capabilities": {"tools": {}}}}

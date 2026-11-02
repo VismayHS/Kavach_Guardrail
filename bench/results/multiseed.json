@@ -192,6 +192,43 @@
     "max": 0.9474
    }
   },
+  "KAVACH: model only (rules off)": {
+   "UAR": {
+    "mean": 0.6923,
+    "min": 0.6923,
+    "max": 0.6923
+   },
+   "UAR_no_undo": {
+    "mean": 0.1538,
+    "min": 0.1538,
+    "max": 0.1538
+   },
+   "ASR_injection": {
+    "mean": 0.375,
+    "min": 0.375,
+    "max": 0.375
+   },
+   "safe_auto": {
+    "mean": 1.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "OBR": {
+    "mean": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "escalation_rate": {
+    "mean": 0.1489,
+    "min": 0.1489,
+    "max": 0.1489
+   },
+   "undo_armed": {
+    "mean": 0.8611,
+    "min": 0.8611,
+    "max": 0.8611
+   }
+  },
   "KAVACH: no provenance": {
    "UAR": {
     "mean": 0.0385,
@@ -209,9 +246,9 @@
     "max": 0.125
    },
    "safe_auto": {
-    "mean": 0.9524,
-    "min": 0.9524,
-    "max": 0.9524
+    "mean": 0.9048,
+    "min": 0.9048,
+    "max": 0.9048
    },
    "OBR": {
     "mean": 0.0,
@@ -224,9 +261,9 @@
     "max": 0.4043
    },
    "undo_armed": {
-    "mean": 0.9474,
-    "min": 0.9474,
-    "max": 0.9474
+    "mean": 0.9444,
+    "min": 0.9444,
+    "max": 0.9444
    }
   },
   "KAVACH: fixed threshold": {
@@ -342,11 +379,11 @@
   }
  },
  "ece_calibrated": [
-  0.0011,
-  0.0011,
   0.0012,
   0.0012,
-  0.0012
+  0.0013,
+  0.0012,
+  0.0013
  ],
  "c_block_selected": [
   0.002,

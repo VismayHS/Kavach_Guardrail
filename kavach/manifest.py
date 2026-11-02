@@ -237,7 +237,8 @@ class ToolRegistry:
         spec = ToolSpec(name, description, params, list((input_schema or {}).get("required", [])),
                         effect="read" if read else "write",
                         sink="external" if ann.get("openWorldHint", True) else "internal",
-                        reversibility=rev, control_args=[] if read else list(params))
+                        reversibility=rev, control_args=[] if read else list(params),
+                        output_trust="untrusted", output_conf=Conf.CONFIDENTIAL)   # unknown output: assume the worst
         self.specs[name], self.pins[name] = spec, spec.definition_hash()
         self.drafts.add(name)
         return spec

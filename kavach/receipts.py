@@ -5,6 +5,10 @@ an HMAC over its own hash (the operator's integrity check) and, when a signer is
 (the auditor's check: verifiable with the public key alone, see kavach/signing.py). Editing or deleting any past
 receipt breaks verification from that point on.
 
+A chain can't tell that it was cut short (deleting the newest receipts leaves a valid chain), so each receipt also
+moves a signed checkpoint (count + head hash). The store keeps it in a file apart from the database
+(kavach/store.py); verify() checks that the log still reaches it.
+
     python -m kavach.receipts keygen keys/                         # an Ed25519 signing key pair
     python -m kavach.receipts verify receipts.jsonl [--pubkey k.pem]   # check an exported chain, nothing secret needed
 Export: GET /api/receipts/export (JSONL: a header with the public key, then every receipt).
@@ -35,6 +39,8 @@ class ReceiptLog:
         self.listeners: list = []          # callables(receipt) after each append (telemetry, SIEM, persistence)
         self.known_keys: dict[str, str] = {}   # kid -> public PEM of keys that signed earlier receipts (rotation,
                                                # or a restart with a new key): old receipts verify with their own key
+        self.checkpoint: dict | None = None    # {count, head, sig} of the newest receipt
+        self.checkpoint_missing = False        # receipts were restored but their checkpoint is gone (store sets it)
 
     def append(self, body: dict) -> dict:
         with self.lock:
@@ -46,6 +52,7 @@ class ReceiptLog:
             if self.signer is not None:
                 rec["ed25519"] = {"kid": self.signer.key_id, "sig": self.signer.sign(h.encode())}
             self.items.append(rec)
+            self.checkpoint = self.checkpoint_for(rec)
         for fn in list(self.listeners):
             try:
                 fn(rec)
@@ -60,8 +67,29 @@ class ReceiptLog:
         cur = [self.signer.public_pem] if self.signer is not None else []
         return cur + [p for p in self.known_keys.values() if p not in cur]
 
+    def checkpoint_for(self, rec: dict) -> dict:
+        return {"count": rec["seq"], "head": rec["hash"],
+                "sig": hmac.new(self.key, f"{rec['seq']}:{rec['hash']}".encode(), hashlib.sha256).hexdigest()}
+
     def verify(self) -> dict:
-        return verify_chain(self.items, hmac_key=self.key, public_pems=self.public_keys() or None)
+        out = verify_chain(self.items, hmac_key=self.key, public_pems=self.public_keys() or None)
+        if not out["valid"]:
+            return {**out, "reason": "chain: a receipt was edited or removed"}
+        n = len(self.items)
+        if self.checkpoint_missing:
+            return {"valid": False, "broken_at": None, "checked": n,
+                    "reason": "checkpoint: missing, though receipts were stored (the checkpoint file was removed)"}
+        cp = self.checkpoint
+        if cp is not None:
+            want = hmac.new(self.key, f"{cp.get('count')}:{cp.get('head')}".encode(), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(str(cp.get("sig", "")), want):
+                return {"valid": False, "broken_at": None, "checked": n,
+                        "reason": "checkpoint: its signature is wrong"}
+            k = int(cp["count"])
+            if n < k or (k and self.items[k - 1]["hash"] != cp["head"]):
+                return {"valid": False, "broken_at": f"rcpt-{min(n, k) + 1:05d}", "checked": n,
+                        "reason": f"checkpoint: the last signed checkpoint covers {k} receipts, the log has {n}"}
+        return out
 
     def export_lines(self):
         """JSONL: a header (public key, key id, head), then every receipt in order."""

@@ -33,9 +33,9 @@ from .receipts import ReceiptLog
 from .risk import RiskModel, featurize
 
 SAFETY_RULES = {"R2", "R9", "R10", "R13", "R16", "R17", "R22", "R23", "R24", "R25", "R26", "R27", "R28", "R29",
-                "R34"}
+                "R34", "R36", "R37"}
 AUTH_RULES = {"R1", "R3", "R4", "R5", "R6", "R7", "R8", "R11", "R12", "R14", "R15", "R18", "R19", "R20", "R21",
-              "KILL"}
+              "R35", "R38", "R39", "R40", "KILL"}
 
 
 @dataclass
@@ -56,6 +56,7 @@ class GatewayConfig:
     use_consequence: bool = True             # ablation switch
     use_risk: bool = True                    # ablation switch: rules only
     use_windows: bool = True                 # ablation switch: False => payments, email, SAP go out at once
+    model_scores: bool = True                # ablation switch: False => p(harm) forced to 0; rules + intent gate decide
     use_rules: bool = True                   # ablation switch: False => only R6/R7 (unknown tool, schema); the model
                                              # decides everything else (measures what the model alone catches)
     use_injection_probe: bool = False        # C3: scan untrusted content with a CPU classifier (needs torch)
@@ -134,6 +135,7 @@ class Kavach:
         self.max_event_tasks = 500
         self.on_recall: list = []                       # callbacks(receipt, ref) when an undo window is armed (E6)
         self.store = None                               # E5: kavach/store.py when KAVACH_DB_URL is set
+        self.counted: dict[str, tuple[TaskContext, ToolCall, Effect | None]] = {}   # receipt -> what it added (R36)
 
     # ------------------------------------------------------------------ task lifecycle
     def start_task(self, user_id: str, role: str, request: str, env: str = "prod",
@@ -194,7 +196,8 @@ class Kavach:
     def output_label(self, call: ToolCall) -> tuple[str, object]:
         """(trust, confidentiality) of a tool's output: the manifest's, except files take their own sensitivity."""
         spec = self.registry.get(call.tool)
-        trust, conf = (spec.output_trust, spec.output_conf) if spec else ("untrusted", Conf.INTERNAL)
+        # a tool with no manifest entry could return anything: untrusted, and confidential until shown otherwise
+        trust, conf = (spec.output_trust, spec.output_conf) if spec else ("untrusted", Conf.CONFIDENTIAL)
         if model_of(spec) == "file_read":
             conf = self.policy.file_conf(arg(spec, call.args, "path", "")) or conf
         return trust, conf
@@ -297,6 +300,10 @@ class Kavach:
             t = self.tasks[t].parent
         return out
 
+    def _totals(self, task_id: str) -> TaskContext:
+        """Whose totals an action adds to (R36): the root task's, so work split across delegated agents adds up."""
+        return self.tasks[self.lineage(task_id)[-1]].ctx
+
     def _matches(self, k: dict, task_id: str) -> bool:
         ctx = self.tasks[task_id].ctx if task_id in self.tasks else None
         return (k["scope"] == "global" or (k["scope"] == "task" and k["target"] in self.lineage(task_id))
@@ -389,6 +396,7 @@ class Kavach:
                     spec.reversibility, 0.1)
 
         # [4] deterministic gates
+        tot = self._totals(task_id)            # R36 totals belong to the root of a delegation chain
         staged = {"rows_affected": effect.magnitude.get("rows_affected", 0) if effect else 0,
                   "payees": self.env.payees, "freeze": self.env.change_freeze,
                   "sql": {k: effect.magnitude.get(k) for k in ("writes", "ddl", "sql_ops")} if effect else {},
@@ -401,7 +409,19 @@ class Kavach:
                   "stray_recipients": [r for r in (effect.magnitude.get("not_invoice_customer") or [] if effect else [])
                                        if not task.prov.given(r)],
                   "given": task.prov.given, "hostile": sorted(task.prov.hostile),
-                  "detected_pii": self._outbound_pii(spec, call)}
+                  "detected_pii": self._outbound_pii(spec, call),
+                  "destination_given": self._destination_given(task, call),
+                  "repeat": self._action_key(call) in tot.actions_run,
+                  "task_rows": tot.rows_changed + self._rows_of(call, effect),
+                  "task_money": self._money_after(tot, call, effect),
+                  "task_outbound_chars": tot.outbound_chars + self._outbound_chars(call, effect),
+                  # what earlier actions already added: R36 is about a total split across actions, so it stays quiet
+                  # when this action alone is over the limit (its own rule, R10 rows or R5 money, says so)
+                  "task_prior": {"rows": tot.rows_changed, "money": dict(tot.money_moved), "chars": tot.outbound_chars},
+                  "outputs_seen": task.prov.n_outputs,
+                  "untrusted_details": task.prov.untrusted_details(
+                      f"{arg(spec, call.args, 'subject', '')} {arg(spec, call.args, 'body', '')}")
+                  if model_of(spec) == "email" else []}
         policy = task.policy or self.policy
         gates = policy.evaluate(ctx, call, spec, self.registry, labels, staged)
         if task.allowed_tools is not None and call.tool not in task.allowed_tools:     # F2: authority only narrows
@@ -436,6 +456,8 @@ class Kavach:
             intent = self.judge.score(ctx.user_request, call.tool, call.args, labels, ambiguous and inline, spec)
             feats = featurize(spec, call.args, labels, effect, intent, ctx.env, ctx.user_request)
             risk = self.risk.assess(feats, effect, self.cfg.c_block, intent)
+            if not self.cfg.model_scores:
+                risk.p_harm = risk.p_lo = risk.p_hi = risk.euh = 0.0
             if not self.cfg.reversibility_conditioned:
                 risk.tau = self.cfg.fixed_tau
 
@@ -454,6 +476,8 @@ class Kavach:
         if risk and verdict in (Verdict.ALLOW, Verdict.ALLOW_WITH_SAFEGUARD):
             for t in self.lineage(task_id):                  # F2: delegated work spends the root's harm budget
                 self.tasks[t].ctx.harm_spent += risk.euh
+        if verdict in (Verdict.ALLOW, Verdict.ALLOW_WITH_SAFEGUARD):
+            self._count_action(tot, call, effect)
 
         d = Decision(verdict, reason, call, {k: l.to_dict() for k, l in labels.items()}, gates, effect, risk,
                      self._scorecard(spec, gates, effect, risk, labels), replan_hint=hint)
@@ -489,6 +513,8 @@ class Kavach:
                                     "authenticated": ctx.principal.authenticated, "request": ctx.user_request,
                                     "decision": self._for_receipt(dd, task.prov)})
         d.receipt_id = rec["id"]
+        if verdict in (Verdict.ALLOW, Verdict.ALLOW_WITH_SAFEGUARD):
+            self.counted[d.receipt_id] = (tot, call, effect)
         self.events[task_id][-1]["receipt"] = rec["id"]
         if later and self.cfg.judge_mode == "async":
             threading.Thread(target=self._judge_async, daemon=True,
@@ -527,6 +553,69 @@ class Kavach:
         if self.pii is None or spec is None or spec.sink != "external":
             return 0
         return self.pii.count(" ".join(str(call.args.get(a, "")) for a in spec.data_args))
+
+    # ------------------------------------------------------------------ one task's totals (R36)
+    @staticmethod
+    def _action_key(call: ToolCall) -> str:
+        return hashlib.sha256(json.dumps([call.tool, call.args], sort_keys=True, default=str).encode()).hexdigest()
+
+    def _money_of(self, call: ToolCall, effect: Effect | None) -> tuple[str, float] | None:
+        spec = self.registry.get(call.tool)
+        m = model_of(spec)
+        if m in ("transfer", "refund"):
+            return "INR", float(arg(spec, call.args, "amount", 0) or 0)
+        if m == "ap_release" and effect is not None:
+            return "EUR", float(effect.magnitude.get("amount", 0) or 0)
+        return None
+
+    def _money_after(self, ctx: TaskContext, call: ToolCall, effect: Effect | None) -> dict[str, float]:
+        totals = dict(ctx.money_moved)
+        money = self._money_of(call, effect)
+        if money:
+            totals[money[0]] = totals.get(money[0], 0.0) + money[1]
+        return totals
+
+    def _outbound_chars(self, call: ToolCall, effect: Effect | None) -> int:
+        """Characters an email carries to outside addresses (0 for internal mail and other tools)."""
+        spec = self.registry.get(call.tool)
+        if model_of(spec) != "email" or effect is None or not effect.magnitude.get("external_recipients"):
+            return 0
+        return len(f"{arg(spec, call.args, 'subject', '')} {arg(spec, call.args, 'body', '')}")
+
+    def _rows_of(self, call: ToolCall, effect: Effect | None) -> int:
+        if model_of(self.registry.get(call.tool)) != "sql_write" or effect is None:
+            return 0
+        return effect.magnitude.get("rows_affected", 0) or 0
+
+    def _count_action(self, ctx: TaskContext, call: ToolCall, effect: Effect | None) -> None:
+        ctx.actions_run.add(self._action_key(call))
+        ctx.money_moved = self._money_after(ctx, call, effect)
+        ctx.outbound_chars += self._outbound_chars(call, effect)
+        ctx.rows_changed += self._rows_of(call, effect)
+
+    def _uncount_action(self, receipt_id: str) -> None:
+        """An action that was taken back no longer counts toward its task's totals."""
+        entry = self.counted.pop(receipt_id, None)
+        if entry is None:
+            return
+        ctx, call, effect = entry
+        ctx.actions_run.discard(self._action_key(call))
+        ctx.outbound_chars = max(0, ctx.outbound_chars - self._outbound_chars(call, effect))
+        money = self._money_of(call, effect)
+        if money:
+            ctx.money_moved[money[0]] = max(0.0, ctx.money_moved.get(money[0], 0.0) - money[1])
+        ctx.rows_changed = max(0, ctx.rows_changed - self._rows_of(call, effect))
+
+    def _destination_given(self, task: Task, call: ToolCall) -> bool:
+        """R38/R40: every destination of an email or transfer was typed by the user (or is the sender they reply to)."""
+        spec = self.registry.get(call.tool)
+        m = model_of(spec)
+        dest = {"email": "to", "transfer": "to_account"}.get(m)
+        if dest is None:
+            return True
+        value = str(arg(spec, call.args, dest, "") or "")
+        values = parse_recipients(value) if m == "email" else [value.strip()]
+        return all(task.prov.given(v) for v in values if v)
 
     @staticmethod
     def _for_receipt(dd: dict, prov: ProvenanceTracker) -> dict:
@@ -601,6 +690,7 @@ class Kavach:
             "R21": "Don't pay this vendor. Escalate to compliance.",
             "R22": "Don't delete accounting records; mark them instead (e.g. status = 'void').",
             "R24": "Look up the customer on that invoice (invoices.customer_id) and email that address instead.",
+            "R35": "Use the finance tools (vendor.update_bank, payment.propose, sap.post); they go through approval.",
         }.get(rule_id)
 
     @staticmethod
@@ -686,6 +776,7 @@ class Kavach:
         problem = self._outcome_mismatch(call, self.registry.get(call.tool), effect, result)
         if problem and self.env.cancel(ref):
             del self.recall[receipt_id]
+            self._uncount_action(receipt_id)
             self.receipts.append({"type": "outcome-mismatch", "receipt": receipt_id, "cancelled": ref,
                                   "reason": problem})
             return {"cancelled": ref, "reason": f"Outcome check: {problem}. Cancelled before it went out."}
@@ -712,6 +803,8 @@ class Kavach:
         task_id, call, effect = self.pending_calls.pop(hid)
         out = {"hitl": item, "executed": False}
         if not self.cfg.local_execution:             # the caller (MCP proxy, hook) runs the approved call itself
+            if approve:
+                self._count_action(self._totals(task_id), call, effect)   # it still counts toward the totals
             self.receipts.append({"type": "human-approved" if approve else "human-denied", "task_id": task_id,
                                   "hitl": hid, "approver": approver, "external_execution": True,
                                   "approvals": [dict(a) for a in item.get("approvals") or [{"approver": approver}]]})
@@ -724,6 +817,7 @@ class Kavach:
             self.receipts.append({"type": "human-approved-draft", "task_id": task_id, "hitl": hid,
                                   "approver": approver})
             return out
+        self._count_action(self._totals(task_id), call, effect)   # an approved action still counts toward totals
         windowed = self._windowed(effect)                          # an approved payment still waits out its hold
         actor = {"user": approver, "task": task_id}
         if windowed:
@@ -734,6 +828,7 @@ class Kavach:
         rec = self.receipts.append({"type": "human-approved-execution", "task_id": task_id, "hitl": hid,
                                     "approver": approver, "mode": mode,
                                     "approvals": [dict(a) for a in item.get("approvals") or [{"approver": approver}]]})
+        self.counted[rec["id"]] = (self._totals(task_id), call, effect)
         if windowed:
             result = self._arm_window(rec["id"], call, effect, result)
         else:
@@ -768,6 +863,8 @@ class Kavach:
         if ref is not None:          # a held payment, queued email or parked SAP document: take back just that one
             ok = self.env.cancel(ref)
             self.receipts.append({"type": "undo", "receipt": receipt_id, "cancelled": ref, "ok": ok})
+            if ok:
+                self._uncount_action(receipt_id)
             return {"undone": True, "cancelled": ref} if ok else {
                 "undone": False, "reason": f"{ref} can no longer be taken back (its window closed, or it was cancelled)"}
         if log is None:
@@ -775,6 +872,8 @@ class Kavach:
         out = self.env.undo_logged(log)
         if not out["undone"]:
             self.undo[receipt_id] = log            # nothing changed; it can be retried once the conflict is resolved
+        else:
+            self._uncount_action(receipt_id)
         self.receipts.append({"type": "undo", "receipt": receipt_id, **{k: v for k, v in out.items()
                                                                          if k in ("undone", "reason", "rows", "files")}})
         return out
