@@ -35,7 +35,7 @@ from pydantic import BaseModel
 from . import auth
 from .environment import Environment
 from .gateway import Kavach
-from .models import ToolCall
+from .models import Conf, ToolCall
 from .scenarios import SCENARIOS, materialize, prepare
 
 ROOT = Path(__file__).resolve().parent
@@ -120,15 +120,21 @@ def check(body: CheckIn, who: dict | None = Depends(caller)):
     for c in body.context:
         h = hashlib.sha256(json.dumps(c, sort_keys=True, default=str).encode()).hexdigest()
         spec = gw.registry.get(c.get("tool", ""))
-        if spec and h not in seen:                   # a session resends its history; count each output once
+        if h not in seen:                            # a session resends its history; count each output once
             seen.add(h)
-            gw.tasks[tid].prov.register_output(c["tool"], c.get("output"), spec.output_trust, spec.output_conf)
+            # the output of a tool KAVACH has no manifest for could be anything: untrusted and private until shown not
+            trust, conf = (spec.output_trust, spec.output_conf) if spec else ("untrusted", Conf.CONFIDENTIAL)
+            gw.tasks[tid].prov.register_output(c.get("tool", "unknown"), c.get("output"), trust, conf)
     if gw.registry.get(body.tool) is None and body.tool_annotations is not None:
         gw.registry.add_draft(body.tool, body.tool_description, body.tool_schema, body.tool_annotations, body.args)
     d = gw.check(tid, ToolCall(body.tool, body.args, tool_def_hash=body.tool_def_hash))
     if body.execute:
         gw.execute(tid, d)
-    return {"task_id": tid, **d.to_dict(), "explanation": d.explanation}
+    # A hold, recall window or snapshot exists only if KAVACH ran the call. outputs_seen = 0 means provenance had
+    # nothing to trace: no context was sent, so "not from an email" only means no email was shown.
+    return {"task_id": tid, **d.to_dict(), "explanation": d.explanation,
+            "safeguard_armed": d.receipt_id in gw.undo or d.receipt_id in gw.recall,
+            "outputs_seen": gw.tasks[tid].prov.n_outputs}
 
 
 @app.post("/api/v1/plan")
