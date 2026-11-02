@@ -10,6 +10,7 @@ one feature (and can only raise scrutiny) and writes the explanation.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -537,7 +538,10 @@ class Kavach:
             quorum = next((g.evidence["quorum"] for g in gates if g.outcome == "REQUIRE_APPROVAL"
                            and g.evidence.get("quorum")), None)
             d.hitl_id = self.hitl.submit(task_id, ctx.principal.user_id, dd, four_eyes, quorum)
-            self.pending_calls[d.hitl_id] = (task_id, call, effect)
+            # bound to this exact action; a copy of the call, so nothing the caller still holds can change it later
+            self.pending_calls[d.hitl_id] = (task_id, ToolCall(call.tool, copy.deepcopy(call.args), call.call_id,
+                                                               call.tool_def_hash), effect)
+            self.hitl.items[d.hitl_id]["digest"] = dd["action_digest"] = self.action_digest(task_id, call)
             dd["hitl_id"] = d.hitl_id
         # corr: the call's id, carried by every later receipt about it (approval, hold, release, delivery, undo), the
         # hold itself and the email's X-Kavach-Correlation header, so one id finds the whole story (GET /api/trace)
@@ -853,6 +857,13 @@ class Kavach:
                         f"approved {m.get('iban')} for {m.get('amount')}")
         return None
 
+    @staticmethod
+    def action_digest(task_id: str, call: ToolCall) -> str:
+        """What an approval is bound to: this task (so its user, role, tenant and session), this tool and these exact
+        arguments (destination, payload, amount). Any change is a different action and needs its own approval."""
+        return hashlib.sha256(json.dumps([task_id, call.tool, call.args], sort_keys=True, default=str)
+                              .encode()).hexdigest()
+
     def resolve_hitl(self, hid: str, approver: str, approve: bool, mode: str = "execute",
                      approver_role: str | None = None) -> dict:
         item = self.hitl.resolve(hid, approver, approve, mode, approver_role=approver_role)
@@ -864,12 +875,18 @@ class Kavach:
         task_id, call, effect = self.pending_calls.pop(hid)
         approvals = [dict(a) for a in item.get("approvals") or [{"approver": approver}]]
         out = {"hitl": item, "executed": False}
+        if approve and item.get("digest") and item["digest"] != self.action_digest(task_id, call):
+            # never expected: the call that would run is not the one the person saw. Refuse rather than run it.
+            item["status"] = "denied-changed"
+            self.receipts.append({"type": "human-denied", "task_id": task_id, "hitl": hid, "approver": approver,
+                                  "corr": corr, "reason": "the action changed after it was put up for approval"})
+            return {**out, "reason": "the action changed after it was put up for approval; nothing ran"}
         if not self.cfg.local_execution:             # the caller (MCP proxy, hook) runs the approved call itself
             if approve:
                 self._count_action(self._totals(task_id), call, effect)   # it still counts toward the totals
             self.receipts.append({"type": "human-approved" if approve else "human-denied", "task_id": task_id,
                                   "hitl": hid, "approver": approver, "external_execution": True, "corr": corr,
-                                  "approvals": approvals})
+                                  "digest": item.get("digest"), "approvals": approvals})
             return {**out, "approved": approve, "external": True}
         if not approve:
             self.receipts.append({"type": "human-denied", "task_id": task_id, "hitl": hid, "approver": approver,
@@ -889,7 +906,7 @@ class Kavach:
             result, log = self._dispatch_undoable(call, effect, actor)
         self.register_output(task_id, call, result)
         rec = self.receipts.append({"type": "human-approved-execution", "task_id": task_id, "hitl": hid,
-                                    "approver": approver, "mode": mode, "corr": corr,
+                                    "approver": approver, "mode": mode, "corr": corr, "digest": item.get("digest"),
                                     "approvals": approvals})
         self.counted[rec["id"]] = (self._totals(task_id), call, effect)
         if windowed:
