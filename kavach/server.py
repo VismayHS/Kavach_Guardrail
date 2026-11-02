@@ -38,10 +38,27 @@ from .environment import Environment
 from .gateway import Kavach
 from .models import Conf, ToolCall
 from .scenarios import SCENARIOS, materialize, prepare
+from .store import Store
 
 ROOT = Path(__file__).resolve().parent
-env = Environment(tempfile.mkdtemp(prefix="kavach-"))
-gw = Kavach(env)
+
+
+def make_gateway() -> tuple[Kavach, Environment]:
+    """In memory by default. KAVACH_STATE=<file> keeps receipts and approvals across restarts (kavach.store); then a
+    real KAVACH_RECEIPT_KEY is required, since with the public default key anyone could rewrite the stored log.
+    A stored log that fails verification raises TamperedLog here, so the server doesn't start on top of it."""
+    environment = Environment(tempfile.mkdtemp(prefix="kavach-"))
+    path = os.environ.get("KAVACH_STATE")
+    if not path:
+        return Kavach(environment), environment
+    key = os.environ.get("KAVACH_RECEIPT_KEY", "")
+    if len(key) < 32:
+        raise SystemExit("KAVACH_STATE needs KAVACH_RECEIPT_KEY (32+ characters): with the default key anyone could "
+                         "rewrite the stored receipt log")
+    return Kavach(environment, store=Store(path), receipt_key=key.encode()), environment
+
+
+gw, env = make_gateway()
 app = FastAPI(title="KAVACH guardrail", version="0.1")
 _mcp_task: dict[tuple[str, str], str] = {}
 _sessions: dict[tuple[str, str], tuple[str, set[str]]] = {}     # (user, session id) -> (task id, context seen)

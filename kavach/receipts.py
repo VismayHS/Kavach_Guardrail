@@ -5,9 +5,10 @@ stores the SHA-256 of the previous one and an HMAC over its own canonical JSON.
 Editing a receipt, or deleting any but the newest, breaks the chain from that point on.
 
 A chain can't tell that it was cut short, so after every receipt a signed checkpoint
-(count + head hash) is kept apart from the log (U10); verify() checks the log still
-reaches that checkpoint. Anyone holding the signing key can rewrite everything, so set
-KAVACH_RECEIPT_KEY (production: a KMS-held key, checkpoints on WORM storage).
+(count + head hash) is kept apart from the log (U10): in memory, and with a Store in
+a separate anchor file. verify() checks the log still reaches that checkpoint.
+Anyone holding the signing key can rewrite everything, so persistent deployments must
+set KAVACH_RECEIPT_KEY (production: a KMS-held key, checkpoints on WORM storage).
 """
 from __future__ import annotations
 
@@ -21,16 +22,28 @@ import time
 DEFAULT_KEY = "demo-receipt-key"
 
 
+class TamperedLog(RuntimeError):
+    """The stored receipt log fails verification; a server must not serve on top of it."""
+
+
 def _canon(d: dict) -> bytes:
     return json.dumps(d, sort_keys=True, separators=(",", ":"), default=str).encode()
 
 
 class ReceiptLog:
-    def __init__(self, key: bytes | None = None):
+    def __init__(self, key: bytes | None = None, store=None):
         self.key = key or os.environ.get("KAVACH_RECEIPT_KEY", DEFAULT_KEY).encode()
-        self.items: list[dict] = []
-        self.anchor: dict | None = None      # signed (count, head) after the last append, kept apart from items
+        self.store = store
+        self.items: list[dict] = store.receipts() if store else []
+        self.anchor: dict | None = store.read_anchor() if store else None
         self.lock = threading.Lock()
+        if store:
+            if self.items and self.anchor is None:
+                raise TamperedLog(f"{len(self.items)} stored receipts but no anchor checkpoint: the anchor file "
+                                  f"{store.anchor_path} was removed")
+            v = self.verify()
+            if not v["valid"]:
+                raise TamperedLog(f"receipt log fails verification ({v['reason']}); refusing to start on it")
 
     def _sign(self, msg: str) -> str:
         return hmac.new(self.key, msg.encode(), hashlib.sha256).hexdigest()
@@ -41,8 +54,12 @@ class ReceiptLog:
             core = {"seq": len(self.items) + 1, "ts": round(time.time(), 3), "prev_hash": prev, "body": body}
             h = hashlib.sha256(_canon(core)).hexdigest()
             rec = {**core, "id": f"rcpt-{core['seq']:05d}", "hash": h, "sig": self._sign(h)}
+            if self.store:
+                self.store.add_receipt(rec)
             self.items.append(rec)
             self.anchor = {"count": rec["seq"], "head": h, "sig": self._sign(f"{rec['seq']}:{h}")}
+            if self.store:
+                self.store.write_anchor(self.anchor)
             return rec
 
     def get(self, rid: str) -> dict | None:

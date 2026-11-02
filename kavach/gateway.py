@@ -60,7 +60,8 @@ class Task:
 
 class Kavach:
     def __init__(self, env: Environment, config: GatewayConfig | None = None, policy: PolicyEngine | None = None,
-                 registry: ToolRegistry | None = None, risk: RiskModel | None = None):
+                 registry: ToolRegistry | None = None, risk: RiskModel | None = None, store=None,
+                 receipt_key: bytes | None = None):
         self.env = env
         self.cfg = config or GatewayConfig()
         self.policy = policy or PolicyEngine()
@@ -72,13 +73,28 @@ class Kavach:
         op = self.risk.meta.get("operating_point") if config is None else None
         if op:   # use the operating point selected on the calibration split
             self.cfg.c_block = op["c_block"]
-        self.receipts = ReceiptLog()
-        self.hitl = ApprovalQueue()
+        self.store = store                    # durable receipts / approvals (kavach.store); None = in memory
+        self.receipts = ReceiptLog(receipt_key, store=store)
+        self.hitl = ApprovalQueue(store=store)
         self.tasks: dict[str, Task] = {}
         self.undo: dict[str, dict] = {}       # receipt id -> snapshot
         self.recall: dict[str, tuple[int, str]] = {}   # receipt -> (world epoch, held payment / email / SAP doc)
         self.pending_calls: dict[str, tuple[str, ToolCall, Effect | None]] = {}
         self.counted: dict[str, tuple[TaskContext, ToolCall, Effect | None]] = {}   # receipt -> what it added (R30)
+        if store:
+            self._restore_pending()
+
+    def _restore_pending(self) -> None:
+        """Calls that were waiting for a person when the server stopped. Their task comes back with the user's request
+        and identity; provenance from before the restart is gone, and the effect is staged again on approval."""
+        for hid, p in self.store.all("pending_calls").items():
+            if p["task_id"] not in self.tasks:
+                ctx = TaskContext(p["task_id"], Principal(p["user"], p["role"], authenticated=p["authenticated"]),
+                                  p["request"], p["env"])
+                task = Task(ctx)
+                task.prov.register_user(p["request"])
+                self.tasks[p["task_id"]] = task
+            self.pending_calls[hid] = (p["task_id"], ToolCall(p["tool"], p["args"]), None)
 
     # ------------------------------------------------------------------ task lifecycle
     def start_task(self, user_id: str, role: str, request: str, env: str = "prod",
@@ -189,6 +205,11 @@ class Kavach:
             four_eyes = bool(effect and spec and spec.reversibility == Reversibility.IRREVERSIBLE and effect.harm > 0.5)
             d.hitl_id = self.hitl.submit(task_id, ctx.principal.user_id, dd, four_eyes)
             self.pending_calls[d.hitl_id] = (task_id, call, effect)
+            if self.store:
+                self.store.put("pending_calls", d.hitl_id, {
+                    "task_id": task_id, "tool": call.tool, "args": call.args, "user": ctx.principal.user_id,
+                    "role": ctx.principal.role, "authenticated": ctx.principal.authenticated,
+                    "request": ctx.user_request, "env": ctx.env})
             dd["hitl_id"] = d.hitl_id
         rec = self.receipts.append({"type": "decision", "task_id": task_id, "principal": ctx.principal.user_id,
                                     "authenticated": ctx.principal.authenticated, "request": ctx.user_request,
@@ -408,6 +429,8 @@ class Kavach:
     def resolve_hitl(self, hid: str, approver: str, approve: bool, mode: str = "execute") -> dict:
         item = self.hitl.resolve(hid, approver, approve, mode)
         task_id, call, effect = self.pending_calls.pop(hid)
+        if self.store:
+            self.store.delete("pending_calls", hid)
         out = {"hitl": item, "executed": False}
         if not approve:
             self.receipts.append({"type": "human-denied", "task_id": task_id, "hitl": hid, "approver": approver})
@@ -418,6 +441,8 @@ class Kavach:
                                   "approver": approver})
             return out
         spec = self.registry.get(call.tool)
+        if effect is None and spec is not None:     # restored after a restart: stage it again on today's records
+            effect = self.consequence.analyze(self.tasks[task_id].ctx, call, spec, {})
         self._count_action(self.tasks[task_id].ctx, call, effect)   # an approved action still counts toward totals
         windowed = self._windowed(effect)                          # an approved payment still waits out its hold
         snap = None if windowed else self.env.snapshot()
