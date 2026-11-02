@@ -38,7 +38,7 @@ All tests: `.venv/bin/python -m pytest -q` (520+ pass). Live stack: `scripts/dem
 | 23 | Qualcomm judge on escalations (note on the approval card) | `intent.py` two-stage | Verified live | live: R18 escalation carried the judge's note | approval card | - |
 | 24 | Payments bank | `scripts/sandbox_bank.py` | Simulated | `tests/test_bank_e2e.py` | bank page | A real bank API is out of scope |
 | 25 | Shell actions | `kavach/shell.py` | Simulated (dry-run in Docker) | `tests/test_shell.py` | - | No general containment claim |
-| 26 | Planner mode (E9) live on Qualcomm | `kavach/planner.py` | Partial | `tests/test_planner.py` (offline) | - | Live call returned "no JSON" even with the forced answer tool; unresolved |
+| 26 | Planner mode (E9) live on Qualcomm | `kavach/planner.py` | Partial | `tests/test_planner.py` (offline) | - | Live, on Qualcomm the plan never arrives: the model writes each step as its own tool call, and the endpoint's tool-call parser turns them into nameless calls with empty arguments (3 Nov, both Llamas, also with a typed `answer` tool). Likely fix: a plain-text plan format. Not part of the demo |
 | 27 | CI, load test (10 sessions × 15 min), backup restore drill | - | Missing | - | - | Out of this release by decision |
 
 ## Verdict
