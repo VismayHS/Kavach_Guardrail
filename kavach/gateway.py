@@ -429,7 +429,7 @@ class Kavach:
                   "outputs_seen": task.prov.n_outputs,
                   "untrusted_details": task.prov.untrusted_details(
                       f"{arg(spec, call.args, 'subject', '')} {arg(spec, call.args, 'body', '')}")
-                  if model_of(spec) == "email" else []}
+                  if model_of(spec) in ("email", "message") else []}
         policy = task.policy or self.policy
         gates = policy.evaluate(ctx, call, spec, self.registry, labels, staged)
         if task.allowed_tools is not None and call.tool not in task.allowed_tools:     # F2: authority only narrows

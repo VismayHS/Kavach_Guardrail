@@ -67,7 +67,7 @@ tools:
     arg_map: {to: recipients}      # if the tool names its arguments differently
 ```
 
-Effect models: `email`, `sql_write`, `sql_read`, `file_write`, `file_delete`, `file_read`, `web_fetch`, `transfer`,
+Effect models: `email`, `message` (chat, DM, SMS), `sql_write`, `sql_read`, `file_write`, `file_delete`, `file_read`, `web_fetch`, `transfer`,
 `refund`, `ledger_post`, `bank_change`, `ap_propose`, `ap_release`, `invoice_read`. A tool with no description is
 judged from its MCP annotations with MCP's cautious defaults: not read-only, destructive, open world. That means its
 calls go to a person until you describe it.

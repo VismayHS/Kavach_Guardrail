@@ -225,9 +225,9 @@ class PolicyEngine:
             add("R40", "REQUIRE_APPROVAL", f"No tool output was shown for this task, so where {call.args.get(dest)!r} "
                 "came from can't be checked, and the user didn't give it.", arg=dest)
 
-        # R39 bank details or links from untrusted content, passed on by email (inside the company too)
-        if m == "email" and st.get("untrusted_details"):
-            add("R39", "REQUIRE_APPROVAL", f"The email repeats {', '.join(st['untrusted_details'])} from untrusted "
+        # R39 bank details or links from untrusted content, passed on by email or chat (inside the company too)
+        if m in ("email", "message") and st.get("untrusted_details"):
+            add("R39", "REQUIRE_APPROVAL", f"The {m} repeats {', '.join(st['untrusted_details'])} from untrusted "
                 "content; payment details and links from outside need a person to check them before staff act on them.",
                 values=st["untrusted_details"])
 

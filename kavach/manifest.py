@@ -56,6 +56,7 @@ EFFECT_MODELS = {
     "sql_write": ("sql",), "sql_read": ("sql",),
     "file_write": ("path", "content"), "file_delete": ("path",), "file_read": ("path",),
     "email": ("to", "cc", "bcc", "subject", "body"),
+    "message": ("to", "body"),          # a chat message, DM or SMS to people: R39 reads it as it reads email
     "transfer": ("to_account", "amount", "memo"), "refund": ("invoice_id", "amount"),
     "web_fetch": ("url",),
     "ap_propose": ("invoice_id",), "ap_release": ("invoice_id",), "invoice_read": ("invoice_id",),
