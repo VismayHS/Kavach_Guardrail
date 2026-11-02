@@ -115,8 +115,10 @@ def facts(gw, task_id: str, call, spec, labels: dict, staged: dict, effect) -> d
     if external_send:
         given = staged.get("given") or (lambda _v: False)
         look = look or any(gw.policy.lookalike.check(domain_of(r)) and not given(r) for r in parse_recipients(to))
-    dest_role = {"email": "to", "transfer": "to_account", "refund": "invoice_id", "ap_release": "invoice_id"}.get(m)
-    dest_lab = labels.get(argname(spec, dest_role)) if dest_role else None
+    dest = gw.policy.destination_arg(spec) if spec else None
+    dest_lab = labels.get(dest) if dest else None
+    # no new destination in this call (an update that keeps the payee) counts as trusted; no declared one never does
+    dest_trusted = dest is not None and (dest not in call.args or bool(dest_lab and dest_lab.trust == Trust.TRUSTED))
     canaries = [str(v).lower() for v in (cfg.get("canaries") or {}).get("values", [])]
     blob = " ".join(str(v) for v in call.args.values()).lower()
     allowed = cfg["roles"].get(ctx.principal.role, [])
@@ -152,7 +154,7 @@ def facts(gw, task_id: str, call, spec, labels: dict, staged: dict, effect) -> d
         "external_send": external_send, "all_internal": bool(to) and gw.policy._all_internal(to),
         "draft_tool": call.tool in reg.drafts,
         "private_seen": bool(staged.get("private_seen")), "untrusted_seen": bool(staged.get("untrusted_seen")),
-        "destination_trusted": bool(dest_lab and dest_lab.trust == Trust.TRUSTED),
+        "destination_trusted": dest_trusted,
         "internal_destination": bool(spec) and gw.policy._internal_destination(call, spec, staged),
         "lookalike": look,
         "pii_out": max(sum(l.pii_entities for k, l in labels.items() if spec and k in spec.data_args),

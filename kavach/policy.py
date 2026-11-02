@@ -260,9 +260,14 @@ class PolicyEngine:
         if m == "web_fetch":
             self._url_rule(ctx, call, spec, labels, st, add)
         if spec.sink == "external" and st.get("private_seen") and st.get("untrusted_seen"):
-            dest = argname(spec, DESTINATION[m]) if m in DESTINATION else None
+            dest = self.destination_arg(spec)
             lab = labels.get(dest) if dest else None
-            if not (lab and lab.trust == Trust.TRUSTED) and not self._internal_destination(call, spec, st):
+            if dest is None:        # fail closed: nothing says where this tool sends, so nothing can be checked
+                add("R14", "REQUIRE_APPROVAL", "This task has read private data and untrusted content, and "
+                    f"{call.tool} sends outside the company without a declared destination argument to check.",
+                    arg=None)
+            elif dest in call.args and not (lab and lab.trust == Trust.TRUSTED) \
+                    and not self._internal_destination(call, spec, st):
                 add("R14", "REQUIRE_APPROVAL", "This task has read private data and untrusted content, and "
                     f"'{dest}' = {call.args.get(dest)!r} was not given by the user.", arg=dest)
 
@@ -524,6 +529,15 @@ class PolicyEngine:
     def _all_internal(self, to: str) -> bool:
         recipients = parse_recipients(to)
         return bool(recipients) and all(self._internal_host(domain_of(r)) for r in recipients)
+
+    @staticmethod
+    def destination_arg(spec: ToolSpec) -> str | None:
+        """The argument that says where an outbound action goes: its effect model's, or for a tool KAVACH has no
+        model of, the one its manifest maps to the 'to' role (send_money: {"to": "recipient"})."""
+        m = model_of(spec)
+        if m in DESTINATION:
+            return argname(spec, DESTINATION[m])
+        return spec.arg_map.get("to")
 
     def _internal_destination(self, call: ToolCall, spec: ToolSpec, staged: dict) -> bool:
         m = model_of(spec)
