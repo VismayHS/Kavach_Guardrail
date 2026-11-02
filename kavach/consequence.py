@@ -16,7 +16,7 @@ import time
 from .environment import INTERNAL_DOMAIN, MAIL_RECALL_S, PAYMENT_HOLD_S, Environment
 from .manifest import ToolSpec
 from .models import Effect, Label, Reversibility, TaskContext, ToolCall
-from .sql import classify
+from .sql import READ_STATEMENTS, WRITE_STATEMENTS, classify, guard, statement_kind
 
 # Safeguards that run an action through a window the gateway can still cancel: the effect is reversible until it
 # closes (Phase 3). The text says what happens to the action.
@@ -153,7 +153,10 @@ class ConsequenceEngine:
         before = self.env.table_counts(clone)
         sq = classify(clone, sql)
         ddl = sq["ddl"]
+        guard(clone)
         try:
+            if statement_kind(sql) not in WRITE_STATEMENTS:
+                raise ValueError(f"{statement_kind(sql).upper() or 'this'} statements are not allowed on this tool")
             cur = clone.execute(sql)
             rows = max(cur.rowcount, 0)
             after = self.env.table_counts(clone)
@@ -183,7 +186,10 @@ class ConsequenceEngine:
         clone = self.env.db_copy()
         sq = classify(clone, sql)
         clone.execute("PRAGMA query_only = ON")      # a "read" that writes fails here, not in production
+        guard(clone)
         try:
+            if statement_kind(sql) not in READ_STATEMENTS:
+                raise ValueError(f"{statement_kind(sql).upper() or 'this'} statements are not allowed on this tool")
             n = len(clone.execute(sql).fetchmany(10000))
             err = None
         except Exception as e:

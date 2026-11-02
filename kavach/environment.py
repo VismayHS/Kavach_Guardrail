@@ -14,6 +14,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .sql import guard, unguard
+
 INTERNAL_DOMAIN = "infycorp.com"
 
 FIRST = ["Asha", "Ravi", "Meera", "John", "Priya", "Arjun", "Sara", "Vikram", "Neha", "Kiran",
@@ -178,15 +180,21 @@ class Environment:
     def crm_query(self, sql: str) -> list[dict]:
         with self.lock:
             self.db.execute("PRAGMA query_only = ON")   # SQLite itself refuses writes on the read tool
+            guard(self.db)                                # and nothing reaches past the database (sql.guard)
             try:
                 rows = self.db.execute(sql).fetchmany(200)
             finally:
+                unguard(self.db)
                 self.db.execute("PRAGMA query_only = OFF")
             return [dict(r) for r in rows]
 
     def crm_execute(self, sql: str) -> dict:
         with self.lock:
-            cur = self.db.execute(sql)
+            guard(self.db)
+            try:
+                cur = self.db.execute(sql)
+            finally:
+                unguard(self.db)
             self.db.commit()
             return {"rowcount": cur.rowcount}
 
