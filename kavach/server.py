@@ -13,6 +13,7 @@ Endpoints
   GET  /api/receipts            receipt chain;      GET /api/receipts/verify
   GET  /api/metrics             latest benchmark results
   GET  /api/autonomy            changes that ran without a human this session, priced at AgentOS's $35-75 per exception
+  GET  /api/policy              the rulebook: rules, roles, limits, tools
   POST /api/agent/run           plain-English request -> a real LLM agent runs it twice, without and with KAVACH
   GET  /api/agent/run/{id}      steps so far for both runs (poll until both are done)
 """
@@ -30,6 +31,7 @@ from pathlib import Path
 import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import auth
@@ -97,9 +99,19 @@ class HitlIn(BaseModel):
     mode: str = "execute"
 
 
+class _Static(StaticFiles):
+    async def get_response(self, path, scope):
+        r = await super().get_response(path, scope)
+        r.headers["Cache-Control"] = "no-cache"        # a pulled update shows on the next reload
+        return r
+
+
+app.mount("/static", _Static(directory=ROOT / "static"))
+
+
 @app.get("/")
 def index():
-    return FileResponse(ROOT / "static" / "index.html")
+    return FileResponse(ROOT / "static" / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.post("/api/v1/check")
@@ -215,11 +227,23 @@ def approve_tool(name: str, who: dict | None = Depends(caller)):
     return {"approved": name, "definitionHash": gw.registry.pins[name]}
 
 
+@app.get("/api/policy")
+def policy():
+    """The rulebook as the console shows it: rules, who may use which tool, limits, and the tools."""
+    cfg = gw.policy.cfg
+    return {"version": gw.policy.version, "rules": gw.policy.rules, "roles": cfg["roles"], "limits": cfg["limits"],
+            "finance": cfg["finance"],
+            "tools": [{"name": n, "description": t.description} for n, t in gw.registry.specs.items()]}
+
+
 @app.get("/api/state", dependencies=[Depends(caller)])
 def state():
-    parked = [dict(r) for r in env.db.execute("SELECT * FROM sap_documents WHERE status = 'parked'")]
+    receipt_of = {ref: rid for rid, (epoch, ref) in gw.recall.items() if epoch == env.epoch}    # what Undo needs
+    parked = [{**r, "receipt": receipt_of.get(f"SAP-{r['id']}")} for r in map(dict, env.db.execute(
+        "SELECT * FROM sap_documents WHERE status = 'parked'"))]
     return {"tables": env.table_counts(), "outbox": env.outbox[-5:], "ledger": env.ledger[-5:],
-            "waiting": [h for h in env.holds if h["status"] == "held"], "parked": parked, "drafts": env.drafts[-5:],
+            "waiting": [{**h, "receipt": receipt_of.get(h["id"])} for h in env.holds if h["status"] == "held"],
+            "parked": parked, "drafts": env.drafts[-5:],
             "risk_model": gw.risk.source, "c_block": gw.cfg.c_block, "policy": gw.policy.version,
             "qualcomm_llm": gw.judge.llm.enabled, "judge_models": list(gw.judge.llm.picked or [gw.judge.llm.model])}
 
