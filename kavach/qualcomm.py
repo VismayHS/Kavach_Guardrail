@@ -65,6 +65,12 @@ def sequential_tool_calls(messages: list[dict]) -> list[dict]:
     return out
 
 
+ANSWER_TOOL = {"type": "function", "function": {
+    "name": "answer", "description": "Give your answer: the JSON object you were asked for, as this function's arguments.",
+    "parameters": {"type": "object", "properties": {}, "additionalProperties": True}}}
+ANSWER_CHOICE = {"type": "function", "function": {"name": "answer"}}
+
+
 class QualcommCloudAI:
     def __init__(self, endpoint: str | None = None, api_key: str | None = None,
                  model: str | None = None, timeout: float = 8.0, max_wait_s: float = 4.0):
@@ -127,11 +133,13 @@ class QualcommCloudAI:
             time.sleep(wait)
 
     def chat(self, messages: list[dict], max_tokens: int = 256, temperature: float = 0.0,
-             tools: list[dict] | None = None, model: str | None = None) -> dict:
+             tools: list[dict] | None = None, model: str | None = None, tool_choice=None) -> dict:
         body = {"model": model or self.model, "messages": sequential_tool_calls(messages), "max_tokens": max_tokens,
                 "temperature": temperature, "stream": False}
         if tools:
             body["tools"] = tools
+        if tool_choice is not None:
+            body["tool_choice"] = tool_choice
         return self._post("chat/completions", body)
 
     def chat_text(self, messages: list[dict], **kw) -> str:
@@ -162,6 +170,22 @@ class QualcommCloudAI:
         return self.picked
 
     def chat_json(self, messages: list[dict], **kw) -> dict:
-        text = self.chat_text(messages, **kw)
+        """A JSON object from the model. Qualcomm's endpoint reads a reply that starts with "{" as a tool call and
+        drops it (Llama-3.3-70B, 3 Nov 2026: content "", one nameless call with arguments "{}"), so the JSON comes
+        back as the arguments of a forced 'answer' tool. A server that answers in text anyway is read from the text;
+        one that rejects tools is asked again without them."""
+        try:
+            msg = self.chat(messages, tools=[ANSWER_TOOL], tool_choice=ANSWER_CHOICE, **kw)["choices"][0]["message"]
+        except httpx.HTTPStatusError:
+            msg = self.chat(messages, **kw)["choices"][0]["message"]
+        for c in msg.get("tool_calls") or []:
+            args = (c.get("function") or {}).get("arguments")
+            if isinstance(args, dict) and args:
+                return args
+            if isinstance(args, str) and args.strip() not in ("", "{}"):
+                return json.loads(args)
+        text = msg.get("content") or ""
         start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end < start:
+            raise ValueError("no JSON in the model's reply (empty, or swallowed by the endpoint's tool-call parser)")
         return json.loads(text[start:end + 1])
