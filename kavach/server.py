@@ -135,6 +135,7 @@ class CheckIn(BaseModel):
     execute: bool = False
     tool_def_hash: str | None = None
     session_id: str | None = None   # same id across calls = one task: provenance, harm budget and denials add up
+    task_id: str | None = None      # F2: an existing task (e.g. a delegated agent's) to check this call in
     tool_description: str = ""      # for a tool KAVACH doesn't know: its MCP description, schema and annotations
     tool_schema: dict | None = None
     tool_annotations: dict | None = None
@@ -178,7 +179,11 @@ def index():
 def check(body: CheckIn, who: dict | None = Depends(caller)):
     user, role, authed = _identity(who, body.user_id, body.role)
     key = (user, body.session_id) if body.session_id else None
-    if key in _sessions:
+    if body.task_id:
+        if body.task_id not in gw.tasks or not _sees(who, _task_tenant(body.task_id)):
+            raise HTTPException(404, f"no task {body.task_id}")
+        tid, seen = body.task_id, set()
+    elif key in _sessions:
         tid, seen = _sessions[key]
         gw.add_request(tid, body.user_request)
     else:
@@ -287,6 +292,22 @@ def policy_replay(body: ReplayIn, who: dict | None = Depends(caller)):
     except Exception as e:
         raise HTTPException(422, f"draft policy doesn't load: {e}")
     return replay(gw, draft, body.task_ids)
+
+
+class DelegateIn(BaseModel):
+    parent_task_id: str
+    agent: str
+    instruction: str
+    tools: list[str] | None = None
+
+
+@app.post("/api/v1/delegate")
+def delegate(body: DelegateIn, who: dict | None = Depends(caller)):
+    """F2: agent A hands work to agent B. Returns B's task id; send B's calls with task_id to /api/v1/check."""
+    if body.parent_task_id not in gw.tasks or not _sees(who, _task_tenant(body.parent_task_id)):
+        raise HTTPException(404, f"no task {body.parent_task_id}")
+    child = gw.delegate(body.parent_task_id, body.agent, body.instruction, body.tools)
+    return {"task_id": child, "tools": gw.tasks[child].allowed_tools}
 
 
 @app.get("/.well-known/jwks.json")
