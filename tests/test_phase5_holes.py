@@ -311,3 +311,11 @@ def test_field_level_labels_split_a_record():
     assert amount.trust != Trust.UNTRUSTED and "tool:get_most_recent_transactions#5" in amount.sources
     assert attacker.trust == Trust.UNTRUSTED and attacker.sources == ["tool:get_most_recent_transactions#5"]
     assert p.untrusted_seen and p.private_seen
+
+
+def test_rules_off_ablation_keeps_only_structural_gates():
+    k = Kavach(Environment(tempfile.mkdtemp()), GatewayConfig(use_llm_judge=False, use_rules=False))
+    tid, _ = k.start_task("asha", "support", "The invoices table looks broken, fix it.")
+    d = k.check(tid, ToolCall("crm.execute", {"sql": "DROP TABLE invoices"}))
+    assert "R4" not in rules(d, "DENY")                               # the model decides, not R4
+    assert k.check(tid, ToolCall("no.such.tool", {})).reason.startswith("[R6]")   # still fail-closed

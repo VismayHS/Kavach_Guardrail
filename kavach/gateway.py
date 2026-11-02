@@ -48,6 +48,8 @@ class GatewayConfig:
     use_consequence: bool = True             # ablation switch
     use_risk: bool = True                    # ablation switch: rules only
     use_windows: bool = True                 # ablation switch: False => payments, email, SAP go out at once
+    use_rules: bool = True                   # ablation switch: False => only R6/R7 (unknown tool, schema); the model
+                                             # decides everything else (measures what the model alone catches)
 
 
 @dataclass
@@ -161,6 +163,8 @@ class Kavach:
             gates.append(GateResult("R12", "DENY", "Path escapes the agent workspace."))
         if effect and effect.magnitude.get("error"):
             gates.append(GateResult("R7", "DENY", f"Fails when staged: {effect.magnitude['error']}"))
+        if not self.cfg.use_rules:                 # ablation: the model alone (structural gates still apply)
+            gates = [g for g in gates if g.rule_id in ("R6", "R7")]
         floor = floor_of(gates)
 
         # [5] intent + [6] risk
