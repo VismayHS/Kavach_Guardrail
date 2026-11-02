@@ -20,7 +20,7 @@ from pathlib import Path
 from .addresses import domain_of, parse_recipients
 from .manifest import arg, argname, model_of
 from .models import Conf, Trust
-from .provenance import URL, web_parts
+from .provenance import urls_in, web_parts
 
 POLICY_FILE = Path(__file__).parent / "policies" / "cedar" / "kavach.cedar"
 # (rule, outcome) pairs the Cedar policies decide; the rest stay in Python (they need data Cedar can't see cheaply)
@@ -106,7 +106,7 @@ def facts(gw, task_id: str, call, spec, labels: dict, staged: dict, effect) -> d
     if m == "web_fetch":
         parts = web_parts(str(arg(spec, call.args, "url", "")))
         host = (parts.hostname or "").lower()
-        user_hosts = {(web_parts(u).hostname or "").lower() for u in URL.findall(ctx.user_request)}
+        user_hosts = {(web_parts(u).hostname or "").lower() for u in urls_in(ctx.user_request)}
         unknown_host = host not in user_hosts and not gw.policy._internal_host(host)
         lab = labels.get(argname(spec, "url"))
         from .lookalike import registered

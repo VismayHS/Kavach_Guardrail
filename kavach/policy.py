@@ -18,7 +18,7 @@ from .intent import BREADTH
 from .lookalike import Lookalike, registered
 from .manifest import ToolRegistry, ToolSpec, arg, argname, model_of
 from .models import Conf, GateResult, Label, TaskContext, ToolCall, Trust
-from .provenance import URL, arg_targets, named_records, named_targets, web_parts
+from .provenance import arg_targets, named_records, named_targets, urls_in, web_parts
 
 RANGE = re.compile(r"\b\d+\s*(?:to|-|–|through|till|until)\s*\d+\b", re.I)
 # "invoice 1042", "customer #17", "vendor V002", "invoice INV-3040": the record kind and its id
@@ -594,7 +594,7 @@ class PolicyEngine:
         """R13: a URL is an outbound channel. Unknown hosts may not receive private values or bulk data."""
         parts = web_parts(str(arg(spec, call.args, "url", "")))
         host = (parts.hostname or "").lower()
-        user_hosts = {(web_parts(u).hostname or "").lower() for u in URL.findall(ctx.user_request)}
+        user_hosts = {(web_parts(u).hostname or "").lower() for u in urls_in(ctx.user_request)}
         if host in user_hosts or self._internal_host(host):
             return
         imitates = self.lookalike.check(host)

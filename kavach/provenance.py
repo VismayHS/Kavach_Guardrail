@@ -39,6 +39,20 @@ def canon_url(u: str) -> str:
     return host.lower() + (sep + rest if rest else "")
 
 
+def urls_in(text: str) -> list[str]:
+    """Web addresses in a text. A bare address glued to the next sentence ("our site www.x.com.They sent...", no
+    space after the period) ends before the capitalised word; a capitalised label inside one (www.Example.com) is
+    part of it."""
+    out = []
+    for u in URL.findall(text):
+        if not _SCHEME.match(u):
+            labels = u.split("/", 1)[0].split(".")
+            if len(labels) >= 4 and labels[-1][:1].isupper() and all(lab == lab.lower() for lab in labels[:-1]):
+                u = ".".join(labels[:-1])
+        out.append(u)
+    return out
+
+
 def web_parts(u: str) -> ParseResult:
     """urlparse that also reads a bare address: urlparse('www.x.io/a') has no host at all."""
     u = str(u).strip()
@@ -197,7 +211,7 @@ def _entities(text: str) -> set[str]:
     out |= {"voter:" + m for m in VOTER.findall(text)}
     out |= {"passport:" + re.sub(r"\s", "", m).upper() for m in PASSPORT.findall(text)}
     out |= {e.lower() for e in EMAIL.findall(text)}
-    out |= {canon_url(u) for u in URL.findall(text)}
+    out |= {canon_url(u) for u in urls_in(text)}
     out |= set(ACCOUNT.findall(text))
     out |= {re.sub(r"\s", "", m).upper() for m in IBAN.findall(text)}
     out |= set(DOCID.findall(text))

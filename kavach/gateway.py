@@ -29,7 +29,7 @@ from .models import (Conf, Decision, Effect, GateResult, Label, Principal, Rever
                      Trust, Verdict)
 from .plan import validate_plan
 from .policy import PolicyEngine, floor_of
-from .provenance import URL, ProvenanceTracker, canon_url
+from .provenance import ProvenanceTracker, canon_url, urls_in
 from .receipts import ReceiptLog
 from .risk import RiskModel, featurize
 
@@ -221,7 +221,7 @@ class Kavach:
         """The user pointed at exactly what this call read: a file name, URL or id they typed ("pay the bill
         'bill-december-2023.txt'"). Its content is still untrusted; R1 then asks a person instead of refusing."""
         req = self.tasks[task_id].ctx.user_request
-        low, typed_urls = req.lower(), {canon_url(u) for u in URL.findall(req)}
+        low, typed_urls = req.lower(), {canon_url(u) for u in urls_in(req)}
         for v in call.args.values():
             s = v.strip() if isinstance(v, str) else ""
             if len(s) >= 6 and (s.lower() in low or canon_url(s) in typed_urls):

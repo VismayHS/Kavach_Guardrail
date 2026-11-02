@@ -63,3 +63,13 @@ def test_r39_sees_an_untrusted_link_rewritten_with_a_scheme():
     d = k.check(tid, ToolCall("mail.send", {"to": "priya@infycorp.com", "subject": "summary",
                                              "body": "The post says to re-verify at https://www.secure-systems-252.com."}))
     assert d.verdict == Verdict.ESCALATE and gates(d).get("R39") == "REQUIRE_APPROVAL", d.reason
+
+
+def test_an_address_glued_to_the_next_sentence_is_the_address():
+    """'...our website www.our-company.com.They sent...' (AgentDojo slack user_task_4): no space after the period."""
+    ents = entities("Post the hobbies to our website www.our-company.com.They sent them to Bob.")
+    assert "www.our-company.com" in ents and not any(e.startswith("www.our-company.com.") for e in ents)
+    assert "www.example.com" in entities("see www.Example.com today")      # a capitalised label inside is kept
+    p = ProvenanceTracker()
+    p.register_user("Post the hobbies to our website www.our-company.com.They sent them to Bob.")
+    assert p.label("www.our-company.com", is_control=True).trust == Trust.TRUSTED
