@@ -46,7 +46,8 @@ finance:
   protected_tables: ["vendors", "ap_invoices", "purchase_orders", "goods_receipts", "payment_proposals",
                      "sap_documents"]
 
-sensitive_paths: ["deploy.env", ".env", "secrets", "id_rsa"]
+# matched case-insensitively anywhere in the path
+sensitive_paths: ["deploy.env", ".env", "secret", "id_rsa", "credential", ".pem", ".key", ".netrc", ".ssh", "token"]
 
 # Rule catalogue (ids are cited in every receipt)
 rules:
@@ -58,13 +59,13 @@ rules:
   R6: "Unknown tools and tool definitions that changed after approval are denied (fail-closed)."
   R7: "Tool arguments must match the approved schema."
   R8: "Role must be permitted to use the tool (RBAC)."
-  R9: "Secrets and credential files may not be read into an agent context that has an external sink."
+  R9: "Secrets and credential files may not be read into an agent context, overwritten or deleted."
   R10: "Bulk changes above the row limit in production require approval."
   R11: "Arguments copied verbatim from untrusted content may not drive a state-changing action."
   R12: "File operations must stay inside the agent workspace."
   R13: "A URL to a host the user never named may not carry private values or bulk data; after private data was read, such fetches need approval."
   R14: "Once a task has read private data and untrusted content, outbound actions to destinations the user didn't give need approval (lethal trifecta)."
-  R15: "A payment amount or destination that appears nowhere in the request or any tool output was made up by the agent; it needs approval."
+  R15: "A payment or SAP amount, destination or account that appears nowhere in the request or any tool output was made up by the agent; it needs approval."
   R16: "If the user named specific records (customer 17, invoice 1042), an action that touches none of them, or picks a record by an id the user didn't name, needs approval."
   R17: "Personal data that belongs to someone other than the recipient may not leave the company without approval."
   R18: "Payment release follows the approval tiers; the amount is read from the invoice record, never from the call."

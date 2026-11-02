@@ -129,7 +129,7 @@ class PolicyEngine:
                 "was not given by the user.", arg=dest)
 
         # R15 values the agent made up: they appear nowhere in the request or in any tool output
-        if call.tool in ("payments.transfer", "payments.refund"):
+        if call.tool in ("payments.transfer", "payments.refund", "sap.post"):
             for a in spec.control_args:
                 lab, v = labels.get(a), call.args.get(a)
                 grounded = lab is not None and (lab.trust == Trust.TRUSTED or lab.sources != ["agent"])
@@ -218,11 +218,12 @@ class PolicyEngine:
             add("R30", "REQUIRE_APPROVAL", f"This task would have released EUR {task_money['EUR']:,.0f} in total; role "
                 f"'{ctx.principal.role}' may release up to EUR {release_limit:,.0f}.", total=task_money["EUR"])
 
-        # R9 secrets
-        if call.tool == "files.read":
+        # R9 secrets: not into the agent's context, and not overwritten or deleted either
+        if call.tool in ("files.read", "files.write", "files.delete"):
             p = str(call.args.get("path", ""))
-            if any(s in p for s in self.cfg["sensitive_paths"]):
-                add("R9", "DENY", f"'{p}' is a credential file; reading it into an agent context is blocked.")
+            if any(s in p.lower() for s in self.cfg["sensitive_paths"]):
+                what = "reading it into an agent context" if call.tool == "files.read" else "changing it"
+                add("R9", "DENY", f"'{p}' is a credential file; {what} is blocked.")
         return out
 
     def _finance_rules(self, ctx: TaskContext, call: ToolCall, labels: dict[str, Label], staged: dict, add) -> None:

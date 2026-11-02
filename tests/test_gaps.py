@@ -210,6 +210,29 @@ def test_a_question_does_not_authorise_a_write(gw, request_text):
     assert d.verdict == Verdict.ESCALATE
 
 
+# ---------------------------------------------------------------- credential files (R9)
+@pytest.mark.parametrize("tool,args", [("files.read", {"path": "credentials.json"}),
+                                       ("files.read", {"path": "keys/server.PEM"}),
+                                       ("files.write", {"path": "deploy.env", "content": "API_KEY=attacker"}),
+                                       ("files.delete", {"path": "deploy.env"})])
+def test_credential_files_cannot_be_read_changed_or_deleted(gw, tool, args):
+    tid, _ = gw.start_task("ravi", "admin", "Tidy the workspace files.")
+    d = gw.check(tid, ToolCall(tool, args))
+    assert d.verdict == Verdict.DENY and "R9" in rules(d, "DENY")
+
+
+# ---------------------------------------------------------------- invented SAP amounts (R15)
+def test_a_made_up_sap_amount_needs_a_person(gw):
+    tid, _ = gw.start_task("meera", "ap_supervisor", "Post a correction of EUR 1200 to GL account 400100 for the "
+                           "June freight accrual.")
+    d = gw.check(tid, ToolCall("sap.post", {"doc_type": "correction", "amount": 120000.0, "gl_account": "400100",
+                                            "text": "June freight accrual correction"}))
+    assert d.verdict == Verdict.ESCALATE and "R15" in rules(d, "REQUIRE_APPROVAL")
+    ok = gw.check(tid, ToolCall("sap.post", {"doc_type": "correction", "amount": 1200.0, "gl_account": "400100",
+                                             "text": "June freight accrual correction"}))
+    assert "R15" not in rules(ok)
+
+
 # ---------------------------------------------------------------- the API says whether a safeguard really exists
 def test_check_alone_reports_no_armed_safeguard(api):
     client, _ = api
