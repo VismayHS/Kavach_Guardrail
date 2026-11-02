@@ -1,4 +1,7 @@
-# Prometheus scrapes KAVACH's /metrics (decisions by verdict, rule hits, check latency, approvals, holds, kills).
+# Prometheus scrapes KAVACH's /metrics: decisions, rule hits, latency, effects and their outcomes, approvals, holds,
+# the sweeper's heartbeat, chain health, dependencies, and model usage and cost.
+# Two targets: KAVACH in this compose stack (kavach:8000) and KAVACH on the host (scripts/demo_up.sh, the live demo),
+# reached as host.docker.internal. Whichever runs answers; the other shows as down, which is expected.
 global:
   scrape_interval: 5s
   evaluation_interval: 15s
@@ -11,3 +14,6 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ["kavach:8000"]
+        labels: {where: compose}
+      - targets: ["host.docker.internal:8000"]
+        labels: {where: host}

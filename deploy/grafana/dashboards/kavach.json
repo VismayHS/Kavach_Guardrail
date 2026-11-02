@@ -847,6 +847,1402 @@
     "justifyMode": "auto",
     "orientation": "auto"
    }
+  },
+  {
+   "id": 13,
+   "type": "stat",
+   "title": "Delivered",
+   "description": "Emails the mail server took and payments the bank booked, after their window.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 29,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum(kavach_effects_total{outcome=~\"sent|settled\"}) or vector(0)",
+     "instant": true,
+     "legendFormat": "Delivered"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#0ca30c",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 14,
+   "type": "stat",
+   "title": "Failed or not sure",
+   "description": "failed: refused, nothing sent. unknown: the line broke mid-send; never re-sent.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 4,
+    "y": 29,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum(kavach_effects_total{outcome=~\"failed|unknown\"}) or vector(0)",
+     "instant": true,
+     "legendFormat": "Failed or not sure"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#6b6b6b",
+        "value": null
+       },
+       {
+        "color": "#d03b3b",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 15,
+   "type": "stat",
+   "title": "Cancelled before it went out",
+   "description": "By a person (Cancel) or by the kill switch.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 29,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum(kavach_cancellations_total) or vector(0)",
+     "instant": true,
+     "legendFormat": "Cancelled before it went out"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#2a78d6",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 16,
+   "type": "stat",
+   "title": "Sent now (manual override)",
+   "description": "A person let a waiting action out before its window ended.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 29,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "kavach_released_early_total",
+     "instant": true,
+     "legendFormat": "Sent now (manual override)"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#2a78d6",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 17,
+   "type": "stat",
+   "title": "Overdue in a window",
+   "description": "Past their time by more than 15 s and still waiting: is the sweeper running?",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 29,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "kavach_holds_overdue",
+     "instant": true,
+     "legendFormat": "Overdue in a window"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#6b6b6b",
+        "value": null
+       },
+       {
+        "color": "#ec835a",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 18,
+   "type": "stat",
+   "title": "Sweeper: seconds since last run",
+   "description": "Heartbeat of the worker that closes windows.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 20,
+    "y": 29,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "max(kavach_sweeper_seconds_since_tick)",
+     "instant": true,
+     "legendFormat": "Sweeper: seconds since last run"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#0ca30c",
+        "value": null
+       },
+       {
+        "color": "#ec835a",
+        "value": 10
+       },
+       {
+        "color": "#d03b3b",
+        "value": 30
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 19,
+   "type": "timeseries",
+   "title": "When windows closed: kind and outcome (per 5 min)",
+   "description": "mail sent / payment settled: it really went out. failed / unknown: see the alert text.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 33,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum by (kind, outcome) (increase(kavach_effects_total[5m]))",
+     "legendFormat": "{{kind}} {{outcome}}"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum by (by) (increase(kavach_cancellations_total[5m]))",
+     "legendFormat": "cancelled by {{by}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "pointSize": 8,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "drawStyle": "line",
+      "axisSoftMin": 0,
+      "gradientMode": "none"
+     },
+     "color": {
+      "mode": "palette-classic"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 20,
+   "type": "timeseries",
+   "title": "Approvals closed, by outcome (per 5 min)",
+   "description": "approved, denied, expired (nobody answered: no), closed (a restart), draft.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 33,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum by (outcome) (increase(kavach_approvals_total[5m]))",
+     "legendFormat": "{{outcome}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "pointSize": 8,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "drawStyle": "line",
+      "axisSoftMin": 0,
+      "gradientMode": "none"
+     },
+     "color": {
+      "mode": "palette-classic"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 21,
+   "type": "stat",
+   "title": "Receipt chain verifies",
+   "description": "1 = every receipt and the signed checkpoint verify. 0 = edited, removed or checkpoint missing.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 41,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "min(kavach_receipt_chain_valid)",
+     "instant": true,
+     "legendFormat": "Receipt chain verifies"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#d03b3b",
+        "value": null
+       },
+       {
+        "color": "#0ca30c",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 22,
+   "type": "stat",
+   "title": "Receipt store failures",
+   "description": "Receipts the database refused; those decisions failed closed (nothing ran).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 4,
+    "y": 41,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum(kavach_receipt_write_failures_total) or vector(0)",
+     "instant": true,
+     "legendFormat": "Receipt store failures"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#6b6b6b",
+        "value": null
+       },
+       {
+        "color": "#d03b3b",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 23,
+   "type": "stat",
+   "title": "Dependencies up",
+   "description": "mail_server (SMTP connect), bank (GET /transfers), model endpoint configured (no tokens spent).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 41,
+    "w": 8,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "kavach_dependency_up",
+     "instant": true,
+     "legendFormat": "{{dep}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#d03b3b",
+        "value": null
+       },
+       {
+        "color": "#0ca30c",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 24,
+   "type": "stat",
+   "title": "Agent request errors (5xx)",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 41,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum(kavach_request_errors_total) or vector(0)",
+     "instant": true,
+     "legendFormat": "Agent request errors (5xx)"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#6b6b6b",
+        "value": null
+       },
+       {
+        "color": "#d03b3b",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 25,
+   "type": "stat",
+   "title": "KAVACH up",
+   "description": "Instances answering /metrics (the compose one or the host one; the other is expected down).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 20,
+    "y": 41,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum(up{job=\"kavach\"})",
+     "instant": true,
+     "legendFormat": "KAVACH up"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#d03b3b",
+        "value": null
+       },
+       {
+        "color": "#0ca30c",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 26,
+   "type": "timeseries",
+   "title": "End-to-end time of an agent's request (ms)",
+   "description": "/mcp tools/call, from request in to answer out: what the agent waits.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 45,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "histogram_quantile(0.5, sum by (le) (rate(kavach_request_latency_ms_bucket{route=\"mcp\"}[5m])))",
+     "legendFormat": "p50"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "histogram_quantile(0.95, sum by (le) (rate(kavach_request_latency_ms_bucket{route=\"mcp\"}[5m])))",
+     "legendFormat": "p95"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le) (rate(kavach_request_latency_ms_bucket{route=\"mcp\"}[5m])))",
+     "legendFormat": "p99"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "pointSize": 8,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "drawStyle": "line",
+      "axisSoftMin": 0,
+      "gradientMode": "none"
+     },
+     "color": {
+      "mode": "palette-classic"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 27,
+   "type": "timeseries",
+   "title": "Model calls per minute, by component",
+   "description": "judge, explainer, planner, agent: each Qualcomm call, and retries (rate limits, 5xx, timeouts).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 45,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum by (component, outcome) (rate(kavach_model_calls_total[5m])) * 60",
+     "legendFormat": "{{component}} {{outcome}}"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum by (component) (rate(kavach_model_retries_total[5m])) * 60",
+     "legendFormat": "{{component}} retries"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "pointSize": 8,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "drawStyle": "line",
+      "axisSoftMin": 0,
+      "gradientMode": "none"
+     },
+     "color": {
+      "mode": "palette-classic"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 28,
+   "type": "timeseries",
+   "title": "Tokens per 5 min, by component (as the API reported them)",
+   "description": "From each reply's usage field. Calls without one are counted apart (Usage unknown).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 53,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum by (component, kind) (increase(kavach_model_tokens_total[5m]))",
+     "legendFormat": "{{component}} {{kind}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "pointSize": 8,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "drawStyle": "line",
+      "axisSoftMin": 0,
+      "gradientMode": "none"
+     },
+     "color": {
+      "mode": "palette-classic"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 29,
+   "type": "stat",
+   "title": "Estimated model cost",
+   "description": "Tokens x the versioned price table (kavach/model_prices.json). Qualcomm publishes no per-token price; the 70B row is a reference rate from other hosts, not Qualcomm's.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 53,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum(kavach_model_cost_usd_total) or vector(0)",
+     "instant": true,
+     "legendFormat": "Estimated model cost"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "currencyUSD",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#2a78d6",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 30,
+   "type": "stat",
+   "title": "Est. cost per decision",
+   "description": "Estimated model cost divided by decisions KAVACH made.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 53,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "(sum(kavach_model_cost_usd_total) or vector(0)) / sum(kavach_decisions_total)",
+     "instant": true,
+     "legendFormat": "Est. cost per decision"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "currencyUSD",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#2a78d6",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 31,
+   "type": "stat",
+   "title": "Unpriced tokens",
+   "description": "Tokens of models with no price in the table: their cost is unknown, not zero.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 20,
+    "y": 53,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum(kavach_model_unpriced_tokens_total) or vector(0)",
+     "instant": true,
+     "legendFormat": "Unpriced tokens"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#2a78d6",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 32,
+   "type": "stat",
+   "title": "Usage unknown (calls)",
+   "description": "Successful calls whose reply had no usage field.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 57,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum(kavach_model_usage_unknown_total) or vector(0)",
+     "instant": true,
+     "legendFormat": "Usage unknown (calls)"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#2a78d6",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 33,
+   "type": "stat",
+   "title": "Model call errors",
+   "description": "The judge and explainer fall back to deterministic text; decisions never loosen.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 57,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum(kavach_model_calls_total{outcome=\"error\"}) or vector(0)",
+     "instant": true,
+     "legendFormat": "Model call errors"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#6b6b6b",
+        "value": null
+       },
+       {
+        "color": "#ec835a",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 34,
+   "type": "stat",
+   "title": "Model calls",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 20,
+    "y": 57,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum(kavach_model_calls_total) or vector(0)",
+     "instant": true,
+     "legendFormat": "Model calls"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#2a78d6",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
   }
  ],
  "templating": {

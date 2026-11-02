@@ -8,6 +8,10 @@
 #   Jaeger traces          http://localhost:16686  (service "kavach": one span per decision, no arguments)
 #   Mailpit                http://localhost:8025   (every email KAVACH let out, after its recall window)
 #
+# The live demo runs KAVACH on the host instead (scripts/demo_up.sh: the sandbox bank, short windows, Claude's /mcp);
+# it stops this stack's kavach container so port 8000 is the demo's, reuses Mailpit, and Prometheus scrapes it as
+# host.docker.internal:8000. Observability only, no compose KAVACH:  docker compose up -d mailpit prometheus grafana
+#
 # State (receipt chain, pauses, undo windows, tool pins) is kept in the kavach-data volume: a restart continues the
 # chain. `docker compose down -v` starts from scratch.
 #
@@ -41,6 +45,7 @@ services:
   otel-collector:
     image: otel/opentelemetry-collector:0.139.0
     command: ["--config=/etc/otelcol/config.yaml"]
+    ports: ["127.0.0.1:4318:4318"]     # KAVACH on the host (scripts/demo_up.sh) sends its spans here too
     volumes:
       - ./deploy/otel-collector.yaml:/etc/otelcol/config.yaml:ro
     depends_on: [jaeger]
@@ -59,7 +64,7 @@ services:
       - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./deploy/alerts.yml:/etc/prometheus/alerts.yml:ro
     ports: ["9090:9090"]
-    depends_on: [kavach]
+    extra_hosts: ["host.docker.internal:host-gateway"]    # also scrape KAVACH on the host (the live demo)
     restart: unless-stopped
 
   grafana:

@@ -1,4 +1,6 @@
-# Alerting rules for a security team (wire Alertmanager to Slack, PagerDuty or email to receive them).
+# Alerting rules for a security team. Prometheus evaluates them (http://localhost:9090/alerts); wire Alertmanager to
+# Slack, PagerDuty or email to receive them (not part of the demo stack: delivery to a person is not verified here).
+# Each says what to do. Exercised by failure injection: docs/DEMO.md, "Alerts".
 groups:
   - name: kavach
     rules:
@@ -21,6 +23,12 @@ groups:
         annotations:
           summary: "More than 20 approvals waiting for 10 minutes"
           description: "Approvers are behind; check the SLA chain and the fatigue stats (GET /api/hitl/stats)."
+      - alert: KavachApprovalsExpiring
+        expr: increase(kavach_approvals_total{outcome="expired"}[30m]) > 0
+        labels: {severity: info}
+        annotations:
+          summary: "An approval expired unanswered (the answer was no)"
+          description: "Nobody decided in time, so the action did not run. If it was wanted, the agent must ask again; check who is on the approval chain."
       - alert: KavachSlowDecisions
         expr: histogram_quantile(0.95, sum by (le) (rate(kavach_check_latency_ms_bucket[5m]))) > 1000
         for: 5m
@@ -35,3 +43,54 @@ groups:
         annotations:
           summary: "An agent pause has been active for 30 minutes"
           description: "Someone pressed the kill switch. Resume with DELETE /api/kill/{id} when the incident is handled."
+      - alert: KavachDown
+        expr: sum(up{job="kavach"}) == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: "No KAVACH instance answers /metrics"
+          description: "Agents that act only through KAVACH can do nothing (fail closed). Check the process or container and /readyz."
+      - alert: KavachReceiptChainBroken
+        expr: kavach_receipt_chain_valid == 0
+        labels: {severity: critical}
+        annotations:
+          summary: "The receipt chain no longer verifies"
+          description: "A receipt was edited or removed, or the checkpoint is missing. GET /readyz says which (chain_reason). Preserve the database and the checkpoint file before anything else."
+      - alert: KavachReceiptStoreFailing
+        expr: increase(kavach_receipt_write_failures_total[5m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "The database refused receipts: decisions are failing closed"
+          description: "Agents get errors and nothing runs. Check the database (disk, locks, connection); /readyz shows the last error."
+      - alert: KavachDeliveryFailedOrUnknown
+        expr: sum(increase(kavach_effects_total{outcome=~"failed|unknown"}[10m])) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "An email or payment KAVACH let go failed, or may not have arrived"
+          description: "failed: the mail server or bank refused it (nothing was sent). unknown: the line broke mid-send; KAVACH never re-sends it. Look it up at the mail server or bank by its hold id (Undo windows page)."
+      - alert: KavachHoldsOverdue
+        expr: kavach_holds_overdue > 0
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: "Emails or payments are past their window and still waiting"
+          description: "The windows sweeper may have stopped (see KavachSweeperStalled). Nothing goes out early; it goes out late."
+      - alert: KavachSweeperStalled
+        expr: kavach_sweeper_seconds_since_tick > 30
+        labels: {severity: warning}
+        annotations:
+          summary: "The undo-window sweeper hasn't run for 30 s"
+          description: "Waiting actions won't go out and approvals won't move up their SLA chain until it runs. Restart KAVACH; holds are durable."
+      - alert: KavachDependencyDown
+        expr: kavach_dependency_up{dep=~"mail_server|bank"} == 0
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: "KAVACH can't reach {{ $labels.dep }}"
+          description: "Actions that reach it after their window will end as failed (never as sent). Fix the connector before the next window closes."
+      - alert: KavachModelErrors
+        expr: sum(increase(kavach_model_calls_total{outcome="error"}[10m])) > 3
+        labels: {severity: info}
+        annotations:
+          summary: "Qualcomm model calls are failing"
+          description: "The judge and explainer fall back to deterministic text (decisions don't loosen). The agent demo needs the model; check the key and rate limits (kavach_model_retries_total)."
