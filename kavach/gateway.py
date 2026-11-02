@@ -120,16 +120,20 @@ class Kavach:
         self.kills: dict[str, dict] = {}                # kill switch (F3): id -> {scope, target, by, reason, at}
         self.candidate: PolicyEngine | None = None      # F9: a policy being rolled out to candidate_percent of tasks
         self.events: dict[str, list] = {}               # F9: what each task saw and asked, for replay (in memory)
+        self.tenant_policies: dict = {}                 # F10: tenant -> its own PolicyEngine (or None: the default)
         self.max_event_tasks = 500
 
     # ------------------------------------------------------------------ task lifecycle
     def start_task(self, user_id: str, role: str, request: str, env: str = "prod",
-                   plan: list[dict] | None = None, authenticated: bool = False) -> tuple[str, dict | None]:
+                   plan: list[dict] | None = None, authenticated: bool = False,
+                   tenant: str = "default") -> tuple[str, dict | None]:
         tid = "task-" + uuid.uuid4().hex[:6]
-        ctx = TaskContext(tid, Principal(user_id, role, authenticated=authenticated), request, env, plan=plan)
+        ctx = TaskContext(tid, Principal(user_id, role, authenticated=authenticated, tenant=tenant), request, env,
+                          plan=plan)
         task = Task(ctx)
         task.prov.lookalike = self.policy.lookalike
         task.prov.register_user(request)
+        task.policy = self.tenant_policy(tenant)
         if self.candidate is not None and int(hashlib.sha256(tid.encode()).hexdigest(), 16) % 100 < \
                 self.cfg.candidate_percent:
             task.policy = self.candidate
@@ -220,6 +224,16 @@ class Kavach:
                 prov.hostile.add(src)
                 self.receipts.append({"type": "injection-detected", "task_id": task_id, "source": src,
                                       "score": hit["score"], "model": hit["model"]})
+
+    def tenant_policy(self, tenant: str):
+        """F10: kavach/policies/tenants/<tenant>.yaml when it exists (loaded once), else the default policy."""
+        if tenant in ("", "default"):
+            return None
+        if tenant not in self.tenant_policies:
+            from pathlib import Path
+            p = Path(__file__).parent / "policies" / "tenants" / f"{tenant}.yaml"
+            self.tenant_policies[tenant] = PolicyEngine(p) if p.exists() else None
+        return self.tenant_policies[tenant]
 
     def _event(self, task_id: str, ev: dict) -> None:
         if task_id not in self.events and len(self.events) >= self.max_event_tasks:
@@ -401,6 +415,7 @@ class Kavach:
             self.pending_calls[d.hitl_id] = (task_id, call, effect)
             dd["hitl_id"] = d.hitl_id
         rec = self.receipts.append({"type": "decision", "task_id": task_id, "principal": ctx.principal.user_id,
+                                    "tenant": ctx.principal.tenant,
                                     "authenticated": ctx.principal.authenticated, "request": ctx.user_request,
                                     "decision": self._for_receipt(dd, task.prov)})
         d.receipt_id = rec["id"]

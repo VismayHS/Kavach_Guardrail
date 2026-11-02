@@ -75,6 +75,7 @@ class Principal:
     role: str                     # e.g. analyst, support, admin
     department: str = "ops"
     authenticated: bool = False   # True only when user and role came from a verified token
+    tenant: str = "default"       # F10: which organisation the principal acts for
 
 
 @dataclass

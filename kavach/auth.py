@@ -17,17 +17,21 @@ import jwt
 SECRET_ENV = "KAVACH_AUTH_SECRET"
 
 
-def mint(user: str, role: str, hours: float = 8, secret: str | None = None) -> str:
+def mint(user: str, role: str, hours: float = 8, secret: str | None = None, tenant: str = "default") -> str:
     secret = secret or os.environ[SECRET_ENV]
-    return jwt.encode({"sub": user, "role": role, "exp": int(time.time() + hours * 3600)}, secret, algorithm="HS256")
+    return jwt.encode({"sub": user, "role": role, "tenant": tenant, "exp": int(time.time() + hours * 3600)}, secret,
+                      algorithm="HS256")
 
 
 def verify(token: str, secret: str) -> dict:
     """Return the token's claims; raises jwt.PyJWTError if it is forged, expired or incomplete."""
-    return jwt.decode(token, secret, algorithms=["HS256"], options={"require": ["sub", "role", "exp"]})
+    claims = jwt.decode(token, secret, algorithms=["HS256"], options={"require": ["sub", "role", "exp"]})
+    claims.setdefault("tenant", "default")          # F10: tokens from before tenants belong to the default tenant
+    return claims
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 4 or sys.argv[1] != "mint":
-        sys.exit("usage: python -m kavach.auth mint <user> <role> [hours]")
-    print(mint(sys.argv[2], sys.argv[3], float(sys.argv[4]) if len(sys.argv) > 4 else 8))
+        sys.exit("usage: python -m kavach.auth mint <user> <role> [hours] [tenant]")
+    print(mint(sys.argv[2], sys.argv[3], float(sys.argv[4]) if len(sys.argv) > 4 else 8,
+               tenant=sys.argv[5] if len(sys.argv) > 5 else "default"))
