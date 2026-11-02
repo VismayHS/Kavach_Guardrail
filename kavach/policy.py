@@ -219,7 +219,9 @@ class PolicyEngine:
                 values=st["untrusted_details"])
 
         # R36 one task's characters to outside addresses: a list split into short emails adds up
-        if m == "email" and st.get("task_outbound_chars", 0) > self.cfg["limits"]["task_outbound_chars_max"]:
+        prior = st.get("task_prior") or {}
+        if m == "email" and prior.get("chars", 0) > 0 \
+                and st.get("task_outbound_chars", 0) > self.cfg["limits"]["task_outbound_chars_max"]:
             add("R36", "REQUIRE_APPROVAL", f"This task would have emailed {st['task_outbound_chars']:,} characters to "
                 f"outside addresses in total (limit {self.cfg['limits']['task_outbound_chars_max']:,}); data may be "
                 "leaving in parts.", chars=st["task_outbound_chars"])
@@ -293,7 +295,8 @@ class PolicyEngine:
             if guarded:
                 add("R35", "DENY", f"Raw SQL may not change {', '.join(guarded)}: the finance rules rely on these "
                     "records. Use the finance tools, which go through approval.", tables=guarded)
-            if ctx.env == "prod" and st.get("task_rows", 0) > self.cfg["limits"]["task_rows_approval"]:
+            if ctx.env == "prod" and (st.get("task_prior") or {}).get("rows", 0) > 0 \
+                    and st.get("task_rows", 0) > self.cfg["limits"]["task_rows_approval"]:
                 add("R36", "REQUIRE_APPROVAL", f"This task would have changed {st['task_rows']} rows in total "
                     f"(limit {self.cfg['limits']['task_rows_approval']}); a big change may be split into small ones.",
                     rows=st["task_rows"])
@@ -330,11 +333,12 @@ class PolicyEngine:
         if spec.effect in ("payment", "external_send") and st.get("repeat"):
             add("R36", "REQUIRE_APPROVAL", f"This task already ran the same {call.tool} call; a repeat needs a person.")
         task_money = st.get("task_money") or {}
-        if task_money.get("INR", 0) > self.cfg["limits"]["task_money_approval"]:
+        before = (st.get("task_prior") or {}).get("money") or {}
+        if before.get("INR", 0) > 0 and task_money.get("INR", 0) > self.cfg["limits"]["task_money_approval"]:
             add("R36", "REQUIRE_APPROVAL", f"This task would have moved INR {task_money['INR']:,.0f} in total "
                 f"(limit {self.cfg['limits']['task_money_approval']:,}).", total=task_money["INR"])
         release_limit = self.cfg["finance"]["role_release_limit"].get(ctx.principal.role, 0)
-        if m == "ap_release" and task_money.get("EUR", 0) > release_limit:
+        if m == "ap_release" and before.get("EUR", 0) > 0 and task_money.get("EUR", 0) > release_limit:
             add("R36", "REQUIRE_APPROVAL", f"This task would have released EUR {task_money['EUR']:,.0f} in total; role "
                 f"'{ctx.principal.role}' may release up to EUR {release_limit:,.0f}.", total=task_money["EUR"])
 

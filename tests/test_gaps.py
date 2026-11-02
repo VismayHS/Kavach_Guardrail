@@ -159,6 +159,18 @@ def test_delegated_agents_share_the_tasks_totals(gw):
     assert third.verdict == Verdict.ESCALATE and "R36" in rules(third, "REQUIRE_APPROVAL")
 
 
+@pytest.mark.parametrize("request_text,tool,args,own_rule", [
+    ("The invoices table looks broken, fix it.", "crm.execute", {"sql": "DELETE FROM invoices"}, "R10"),
+    ("Refund 12000 on invoice 1042, the customer was double charged.", "payments.refund",
+     {"invoice_id": 1042, "amount": 12000}, "R5"),
+])
+def test_a_single_action_over_its_own_limit_is_not_called_a_split(gw, request_text, tool, args, own_rule):
+    """R36 is about totals across actions; one big action is its own rule's business (R10 rows, R5 money)."""
+    tid, _ = gw.start_task("asha", "support", request_text)
+    d = gw.check(tid, ToolCall(tool, args))
+    assert own_rule in rules(d, "REQUIRE_APPROVAL") and "R36" not in rules(d)
+
+
 def test_an_undone_payment_no_longer_counts(gw):
     tid, _ = gw.start_task("meera", "finance", "Pay Northwind Supplies its invoices to account ACC-11-2001: "
                            "6000 for INV-1 and 6000 for INV-2.")

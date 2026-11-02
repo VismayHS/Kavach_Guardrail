@@ -415,6 +415,9 @@ class Kavach:
                   "task_rows": tot.rows_changed + self._rows_of(call, effect),
                   "task_money": self._money_after(tot, call, effect),
                   "task_outbound_chars": tot.outbound_chars + self._outbound_chars(call, effect),
+                  # what earlier actions already added: R36 is about a total split across actions, so it stays quiet
+                  # when this action alone is over the limit (its own rule, R10 rows or R5 money, says so)
+                  "task_prior": {"rows": tot.rows_changed, "money": dict(tot.money_moved), "chars": tot.outbound_chars},
                   "outputs_seen": task.prov.n_outputs,
                   "untrusted_details": task.prov.untrusted_details(
                       f"{arg(spec, call.args, 'subject', '')} {arg(spec, call.args, 'body', '')}")
