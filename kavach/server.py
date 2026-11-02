@@ -43,6 +43,10 @@ env = Environment(tempfile.mkdtemp(prefix="kavach-"))
 gw = Kavach(env)
 if PROFILE.require_tool_hash:
     gw.policy.cfg["require_tool_hash"] = True
+if os.environ.get("KAVACH_PROBE") == "1":          # C3: scan untrusted content with the CPU classifier
+    from .injection_probe import InjectionProbe
+    _probe = InjectionProbe()
+    gw.probe = _probe if _probe.enabled else None
 app = FastAPI(title="KAVACH guardrail", version="0.1")
 # A separate UI (another port or host) may call the API. Dev profile: any localhost port. Prod: only the origins in
 # KAVACH_CORS_ORIGINS (comma-separated). Tokens travel in the Authorization header, so no cookies are allowed.
