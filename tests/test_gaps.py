@@ -262,3 +262,40 @@ def test_check_alone_reports_no_armed_safeguard(api):
     assert r["verdict"] == "ALLOW_WITH_SAFEGUARD" and r["safeguard_armed"] is False and r["outputs_seen"] == 0
     r = client.post("/api/v1/check", json={**body, "execute": True}).json()
     assert r["safeguard_armed"] is True
+
+
+# ---------------------------------------------------------------- U8 the SQL guard holds without the keyword filter
+@pytest.mark.parametrize("tool,sql", [("crm.execute", "VACUUM INTO '{out}'"), ("crm.query", "VACUUM INTO '{out}'"),
+                                      ("crm.execute", "ATTACH DATABASE '{out}' AS x")])
+def test_the_authorizer_alone_stops_disk_access(gw, monkeypatch, tool, sql):
+    import kavach.consequence as consequence
+    monkeypatch.setattr(consequence, "WRITE_STATEMENTS", {"vacuum", "attach", "insert", "update", "delete"})
+    monkeypatch.setattr(consequence, "READ_STATEMENTS", {"vacuum", "select"})
+    out = Path(tempfile.mkdtemp()) / "leak.db"
+    tid, _ = gw.start_task("asha", "support", "Back up the CRM.")
+    d = gw.check(tid, ToolCall(tool, {"sql": sql.format(out=out)}))
+    assert not out.exists() and d.verdict == Verdict.DENY and "authoriz" in str(d.effect.magnitude.get("error"))
+
+
+def test_the_crm_tools_refuse_disk_access_even_when_called_directly(gw):
+    import sqlite3
+    out = Path(tempfile.mkdtemp()) / "leak.db"
+    for fn in (gw.env.crm_execute, gw.env.crm_query):
+        with pytest.raises(sqlite3.DatabaseError):
+            fn(f"VACUUM INTO '{out}'")
+    assert not out.exists()
+    assert gw.env.crm_query("SELECT count(*) AS n FROM customers")[0]["n"] == 480   # the guard is lifted afterwards
+
+
+@pytest.mark.parametrize("sql", ["CREATE TRIGGER t AFTER INSERT ON invoices BEGIN DELETE FROM customers; END",
+                                 "SELECT load_extension('/tmp/evil')"])
+def test_persistent_code_and_extensions_are_refused(gw, sql):
+    tid, _ = gw.start_task("asha", "support", "Tidy the CRM.")
+    tool = "crm.query" if sql.startswith("SELECT") else "crm.execute"
+    assert gw.check(tid, ToolCall(tool, {"sql": sql})).verdict == Verdict.DENY
+
+
+def test_oversized_statements_are_refused(gw):
+    tid, _ = gw.start_task("asha", "support", "Look up customer 42.")
+    sql = "SELECT * FROM customers WHERE id = 42" + " OR id = 42" * 3000
+    assert gw.check(tid, ToolCall("crm.query", {"sql": sql})).verdict == Verdict.DENY
