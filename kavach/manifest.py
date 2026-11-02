@@ -30,6 +30,10 @@ class ToolSpec:
     staging: str = "none"                        # sqlite | fs | none
     safeguard: str | None = None                 # safe transform the gateway applies (hold/recall-window/park:
                                                  # a window it can still cancel; reversibility is the tool's own)
+    # What KAVACH knows how to stage and which rules apply (E3): one of EFFECT_MODELS. Any tool can declare one, and
+    # arg_map maps the model's argument roles to the tool's own names (a Gmail MCP send_email: {"to": "recipients"}).
+    effect_model: str | None = None
+    arg_map: dict[str, str] = field(default_factory=dict)
     amount_arg: str | None = None                # for tools KAVACH has no custom model of: the argument that is money
     # Field-level labels: output fields that are free text written by someone else (a transaction's subject, an
     # email body). Only those are untrusted; the rest of each record keeps output_trust. Empty = whole output.
@@ -45,6 +49,40 @@ class ToolSpec:
         blob = json.dumps({"n": self.name, "d": self.description, "p": self.params, "r": self.required},
                           sort_keys=True).encode()
         return hashlib.sha256(blob).hexdigest()[:16]
+
+
+# Effect models (E3): how KAVACH stages a kind of action and which rules read it, with the argument roles each uses.
+EFFECT_MODELS = {
+    "sql_write": ("sql",), "sql_read": ("sql",),
+    "file_write": ("path", "content"), "file_delete": ("path",), "file_read": ("path",),
+    "email": ("to", "cc", "bcc", "subject", "body"),
+    "transfer": ("to_account", "amount", "memo"), "refund": ("invoice_id", "amount"),
+    "web_fetch": ("url",),
+    "ap_propose": ("invoice_id",), "ap_release": ("invoice_id",), "invoice_read": ("invoice_id",),
+    "bank_change": ("vendor_id", "iban"),
+    "ledger_post": ("doc_type", "amount", "gl_account", "text"),
+}
+# KAVACH's own tools (and anything registered under these names) keep their model without declaring it
+LEGACY_MODELS = {"crm.execute": "sql_write", "crm.query": "sql_read", "files.write": "file_write",
+                 "files.delete": "file_delete", "files.read": "file_read", "mail.send": "email",
+                 "payments.transfer": "transfer", "payments.refund": "refund", "web.fetch": "web_fetch",
+                 "payment.propose": "ap_propose", "payment.release": "ap_release", "invoice.read": "invoice_read",
+                 "vendor.update_bank": "bank_change", "sap.post": "ledger_post"}
+
+
+def model_of(spec: ToolSpec | None) -> str | None:
+    if spec is None:
+        return None
+    return spec.effect_model or LEGACY_MODELS.get(spec.name)
+
+
+def argname(spec: ToolSpec | None, role: str) -> str:
+    """The tool's own name for one of its effect model's argument roles."""
+    return spec.arg_map.get(role, role) if spec is not None else role
+
+
+def arg(spec: ToolSpec | None, args: dict, role: str, default=None):
+    return args.get(argname(spec, role), default)
 
 
 def default_manifest() -> dict[str, ToolSpec]:
