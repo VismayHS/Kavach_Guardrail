@@ -12,14 +12,14 @@ full suite passes at every commit. Attacks are in `tests/test_gaps.py`; each fai
 
 | Item | What landed | Rule / file |
 |---|---|---|
-| Part 1 | Raw SQL can't change finance records; SQL sandbox authorizer (no VACUUM INTO / ATTACH / PRAGMA / triggers); env set by the server; per-task totals; bulk/encoded outbound mail; untrusted destinations; unknown-tool output untrusted; `safeguard_armed` / `outputs_seen`; whole-word intent, questions don't authorise writes; credential files on write/delete; SAP amounts; explainer can't contradict a block; `.env` ignored; fair Infosys config | R29–R32, R9, R15, `kavach/sql.py` |
+| Part 1 | Raw SQL can't change finance records; SQL sandbox authorizer (no VACUUM INTO / ATTACH / PRAGMA / triggers); env set by the server; per-task totals; bulk/encoded outbound mail; untrusted destinations; unknown-tool output untrusted; `safeguard_armed` / `outputs_seen`; whole-word intent, questions don't authorise writes; credential files on write/delete; SAP amounts; explainer can't contradict a block; `.env` ignored; fair Infosys config | R35–R38, R9, R15, `kavach/sql.py` |
 | U1 | 24 cases only meaning can decide; offline, rules + keywords catch 0 of 12 misreadings | `bench/semantic_eval.py` |
 | U2 | Live agent runs saved with full transcripts | `agent/llm_agent.py --both --save-log` |
 | U3 | What each layer decides: the risk model changes no verdict (supporting signal) | `bench/layers.py`, `LAYERS.md` |
 | U4 | Evaluation of LLM-written explanations | `bench/explain_eval.py` |
-| U5 | Payment details from untrusted content need a person, even internally | R33 |
-| U6 | No context + outside destination the user didn't give needs a person; orchestrator vs agent tokens, `POST /api/v1/session` | R34, `kavach/auth.py` |
-| U7 | Characters emailed outside count per task | R30 |
+| U5 | Payment details from untrusted content need a person, even internally | R39 |
+| U6 | No context + outside destination the user didn't give needs a person; orchestrator vs agent tokens, `POST /api/v1/session` | R40, `kavach/auth.py` |
+| U7 | Characters emailed outside count per task | R36 |
 | U8 | SQL guard proven without the keyword filter | `tests/test_gaps.py` |
 | U9 | Receipts, approvals, labels survive restarts; tampered store stops startup | `kavach/store.py`, `KAVACH_STATE` |
 | U10 | Signed checkpoint detects a cut-short receipt log | `kavach/receipts.py` |

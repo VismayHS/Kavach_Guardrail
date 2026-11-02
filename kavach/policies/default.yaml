@@ -43,7 +43,7 @@ finance:
     - {max: null,   approvers: "CFO + Finance Director (dual control)"}
   retention_years: 7             # "Invoices (AP and AR): 7 years. Block deletion"
   retained_tables: ["ap_invoices", "payment_proposals", "sap_documents"]
-  # The finance rules read these tables, so raw SQL may not change them (R29); only the finance tools may.
+  # The finance rules read these tables, so raw SQL may not change them (R35); only the finance tools may.
   protected_tables: ["vendors", "ap_invoices", "purchase_orders", "goods_receipts", "payment_proposals",
                      "sap_documents"]
 
@@ -76,10 +76,10 @@ rules:
   R22: "Invoices, payment records and posted documents may not be deleted (retention)."
   R23: "Invoices must pass the 3-way match (PO, goods receipt, invoice within 2% or EUR 100) before release."
   R24: "An email about an invoice the user named goes to that invoice's customer, an internal address, or an address the user gave; anyone else needs approval."
-  # R25-R28 are reserved by the Phase 5 roadmap.
-  R29: "Raw SQL may not change the tables the finance rules read (vendors, invoices, POs, receipts, proposals, SAP documents); only the finance tools may."
-  R30: "One task's totals count: rows changed across statements, money moved across payments, characters emailed outside, and repeats of the same payment or email need approval."
-  R31: "An email to an outside address that is very long or carries a long encoded run needs approval, whatever its content appears to be."
-  R32: "Once a task has read untrusted content, an email or transfer to an outside destination the user didn't give needs approval."
-  R33: "Bank accounts, IBANs and links that came from untrusted content may not be passed on by email, even internally, without approval."
-  R34: "When a task has shown no tool output, an email or transfer to an outside destination the user didn't give needs approval: there is nothing to trace it to."
+  # R25-R34 belong to the Phase 5 roadmap; R35-R40 are the vismay-dev gap rules.
+  R35: "Raw SQL may not change the tables the finance rules read (vendors, invoices, POs, receipts, proposals, SAP documents); only the finance tools may."
+  R36: "One task's totals count: rows changed across statements, money moved across payments, characters emailed outside, and repeats of the same payment or email need approval."
+  R37: "An email to an outside address that is very long or carries a long encoded run needs approval, whatever its content appears to be."
+  R38: "Once a task has read untrusted content, an email or transfer to an outside destination the user didn't give needs approval."
+  R39: "Bank accounts, IBANs and links that came from untrusted content may not be passed on by email, even internally, without approval."
+  R40: "When a task has shown no tool output, an email or transfer to an outside destination the user didn't give needs approval: there is nothing to trace it to."

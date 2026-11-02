@@ -111,40 +111,40 @@ class PolicyEngine:
                 inv = ", ".join(st.get("effect", {}).get("named_invoices", []))
                 add("R24", "REQUIRE_APPROVAL", f"The user named invoice {inv}, but {', '.join(st['stray_recipients'])}"
                     " is not that invoice's customer in the CRM.", recipients=st["stray_recipients"])
-            # R31 bulk or encoded data needs no recognisable PII to be a leak (base64, reformatted phone numbers...)
+            # R37 bulk or encoded data needs no recognisable PII to be a leak (base64, reformatted phone numbers...)
             lim = self.cfg["limits"]
             text = f"{call.args.get('subject', '')} {call.args.get('body', '')}"
             longest = max((len(w) for w in text.split()), default=0)
             if not internal and (len(text) > lim["outbound_chars_max"] or longest >= lim["encoded_token_min"]):
-                add("R31", "REQUIRE_APPROVAL", f"This email to {to} carries {len(text):,} characters"
+                add("R37", "REQUIRE_APPROVAL", f"This email to {to} carries {len(text):,} characters"
                     + (f", including an unbroken run of {longest:,}" if longest >= lim["encoded_token_min"] else "")
                     + "; a person should see what is leaving.", chars=len(text), longest=longest)
 
-        # R34 nothing was shown, so lineage has nothing to trace: an outside destination must then be the user's
+        # R40 nothing was shown, so lineage has nothing to trace: an outside destination must then be the user's
         if call.tool in ("mail.send", "payments.transfer") and st.get("outputs_seen") == 0 \
                 and not st.get("destination_given") and not self._internal_destination(call, st):
             dest = DESTINATION[call.tool]
-            add("R34", "REQUIRE_APPROVAL", f"No tool output was shown for this task, so where {call.args.get(dest)!r} "
+            add("R40", "REQUIRE_APPROVAL", f"No tool output was shown for this task, so where {call.args.get(dest)!r} "
                 "came from can't be checked, and the user didn't give it.", arg=dest)
 
-        # R33 bank details or links from untrusted content, passed on by email (inside the company too)
+        # R39 bank details or links from untrusted content, passed on by email (inside the company too)
         if call.tool == "mail.send" and st.get("untrusted_details"):
-            add("R33", "REQUIRE_APPROVAL", f"The email repeats {', '.join(st['untrusted_details'])} from untrusted "
+            add("R39", "REQUIRE_APPROVAL", f"The email repeats {', '.join(st['untrusted_details'])} from untrusted "
                 "content; payment details and links from outside need a person to check them before staff act on them.",
                 values=st["untrusted_details"])
 
-        # R30 one task's characters to outside addresses: a list split into short emails adds up
+        # R36 one task's characters to outside addresses: a list split into short emails adds up
         if call.tool == "mail.send" and st.get("task_outbound_chars", 0) > self.cfg["limits"]["task_outbound_chars_max"]:
-            add("R30", "REQUIRE_APPROVAL", f"This task would have emailed {st['task_outbound_chars']:,} characters to "
+            add("R36", "REQUIRE_APPROVAL", f"This task would have emailed {st['task_outbound_chars']:,} characters to "
                 f"outside addresses in total (limit {self.cfg['limits']['task_outbound_chars_max']:,}); data may be "
                 "leaving in parts.", chars=st["task_outbound_chars"])
 
-        # R32 instructions in untrusted content can name a destination in a form value matching can't trace
+        # R38 instructions in untrusted content can name a destination in a form value matching can't trace
         # ("payouts [at] fin-desk [dot] io"): after untrusted content, an outside destination must come from the user
         if call.tool in ("mail.send", "payments.transfer") and st.get("untrusted_seen") \
                 and not st.get("destination_given") and not self._internal_destination(call, st):
             dest = DESTINATION[call.tool]
-            add("R32", "REQUIRE_APPROVAL", f"This task read untrusted content, and '{dest}' = {call.args.get(dest)!r} "
+            add("R38", "REQUIRE_APPROVAL", f"This task read untrusted content, and '{dest}' = {call.args.get(dest)!r} "
                 "was not given by the user.", arg=dest)
 
         # R15 values the agent made up: they appear nowhere in the request or in any tool output
@@ -189,14 +189,14 @@ class PolicyEngine:
             if ctx.env == "prod" and rows > self.cfg["limits"]["bulk_rows_approval"]:
                 add("R10", "REQUIRE_APPROVAL", f"Statement would change {rows} rows "
                     f"(limit {self.cfg['limits']['bulk_rows_approval']}).", rows=rows)
-            # R29 the finance rules trust these records, so changing them with SQL would switch the rules off
+            # R35 the finance rules trust these records, so changing them with SQL would switch the rules off
             e = st.get("effect") or {}
             guarded = sorted(set(e.get("tables_written") or []) & set(self.cfg["finance"]["protected_tables"]))
             if guarded:
-                add("R29", "DENY", f"Raw SQL may not change {', '.join(guarded)}: the finance rules rely on these "
+                add("R35", "DENY", f"Raw SQL may not change {', '.join(guarded)}: the finance rules rely on these "
                     "records. Use the finance tools, which go through approval.", tables=guarded)
             if ctx.env == "prod" and st.get("task_rows", 0) > self.cfg["limits"]["task_rows_approval"]:
-                add("R30", "REQUIRE_APPROVAL", f"This task would have changed {st['task_rows']} rows in total "
+                add("R36", "REQUIRE_APPROVAL", f"This task would have changed {st['task_rows']} rows in total "
                     f"(limit {self.cfg['limits']['task_rows_approval']}); a big change may be split into small ones.",
                     rows=st["task_rows"])
         if call.tool == "crm.query" and (sql_info.get("writes") or sql_info.get("ddl")):
@@ -225,16 +225,16 @@ class PolicyEngine:
                     add("R5", "REQUIRE_APPROVAL",
                         f"Transfer of {amt:,.0f} to {'unknown' if not payee_known else 'known'} payee needs approval.")
 
-        # R30 one task's totals: repeats of an outbound action, and money across several small payments
+        # R36 one task's totals: repeats of an outbound action, and money across several small payments
         if spec.effect in ("payment", "external_send") and st.get("repeat"):
-            add("R30", "REQUIRE_APPROVAL", f"This task already ran the same {call.tool} call; a repeat needs a person.")
+            add("R36", "REQUIRE_APPROVAL", f"This task already ran the same {call.tool} call; a repeat needs a person.")
         task_money = st.get("task_money") or {}
         if task_money.get("INR", 0) > self.cfg["limits"]["task_money_approval"]:
-            add("R30", "REQUIRE_APPROVAL", f"This task would have moved INR {task_money['INR']:,.0f} in total "
+            add("R36", "REQUIRE_APPROVAL", f"This task would have moved INR {task_money['INR']:,.0f} in total "
                 f"(limit {self.cfg['limits']['task_money_approval']:,}).", total=task_money["INR"])
         release_limit = self.cfg["finance"]["role_release_limit"].get(ctx.principal.role, 0)
         if call.tool == "payment.release" and task_money.get("EUR", 0) > release_limit:
-            add("R30", "REQUIRE_APPROVAL", f"This task would have released EUR {task_money['EUR']:,.0f} in total; role "
+            add("R36", "REQUIRE_APPROVAL", f"This task would have released EUR {task_money['EUR']:,.0f} in total; role "
                 f"'{ctx.principal.role}' may release up to EUR {release_limit:,.0f}.", total=task_money["EUR"])
 
         # R9 secrets: not into the agent's context, and not overwritten or deleted either

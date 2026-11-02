@@ -186,7 +186,7 @@ class ProvenanceTracker:
                    if e in self.pii_values and e not in rcpt and not (self.pii_owner.get(e, set()) & mine))
 
     def untrusted_details(self, text: str) -> list[str]:
-        """R33: bank accounts, IBANs and links in `text` that came from untrusted content and that the user didn't type.
+        """R39: bank accounts, IBANs and links in `text` that came from untrusted content and that the user didn't type.
         A fraud email's new bank details pass on just as well inside an internal summary."""
         out = set()
         for e in entities(text):

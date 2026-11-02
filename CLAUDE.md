@@ -5,7 +5,7 @@ KAVACH is our entry for **ET-03 "Agentic AI Guardrail Validator"** in the Infosy
 ## Branches (check first)
 - `main`: original prototype (740 scenarios, 12 rules, 68.4% safe auto). Deck, blueprint and Infosys comparison on `main` still describe this version.
 - `build/phase-0` … `build/phase-4` (`4c42d4e`): stacked work by dhanush-sr (1–2 Nov 2026): 940 scenarios, 47 families, rules R1–R24, undo windows, Qualcomm judge, AgentOS hook.
-- **`vismay-dev`**: `build/phase-4` + `main`'s handoff docs + Vismay's gap work (2 Nov), one commit per fix, every commit tested. Rules R29–R34 (R25–R28 are reserved for the Phase 5 roadmap; new rules start at R35), SQL sandbox authorizer, server-side env, orchestrator/agent tokens, persistent state (`KAVACH_STATE`), signed receipt checkpoints, recalibration, and the eval scripts (`bench/layers.py`, `semantic_eval.py`, `explain_eval.py`). What's done and what's blocked: `docs/HANDOFF.md` §0.
+- **`vismay-dev`**: `build/phase-4` + `main`'s handoff docs + Vismay's gap work (2 Nov), one commit per fix, every commit tested. Rules R35–R40 (R25–R34 belong to the Phase 5 roadmap; new rules start at R41), SQL sandbox authorizer, server-side env, orchestrator/agent tokens, persistent state (`KAVACH_STATE`), signed receipt checkpoints, recalibration, and the eval scripts (`bench/layers.py`, `semantic_eval.py`, `explain_eval.py`). What's done and what's blocked: `docs/HANDOFF.md` §0.
 - Merging into `main` is a team decision; ask before pushing anything but `vismay-dev`.
 
 ## Commands
