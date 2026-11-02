@@ -39,7 +39,7 @@ roles:
                   "mail.read_inbox", "mail.send"]
   # an AI assistant in accounts payable: reads invoices and vendors, asks for payments (no release limit of its own,
   # so every payment goes to a person under R18), emails; it has no way to change the vendor master
-  ap_agent: ["invoice.read", "vendor.read", "payment.release", "mail.read_inbox", "mail.send"]
+  ap_agent: ["invoice.read", "vendor.read", "payment.release", "mail.read_inbox", "mail.send", "crm.query"]
 
 limits:
   refund_auto_max: 5000          # INR; above this a human must approve

