@@ -67,6 +67,8 @@ if os.environ.get("KAVACH_SHELL") == "1":          # E10: shell.run for agents, 
     from .shell import DockerSandbox
     _reg(gw.registry, gw.policy.cfg["roles"], [ROOT / "manifests" / "shell.yaml"])
     env.shell = DockerSandbox()       # without Docker, commands are still judged but never run on this host
+if os.environ.get("KAVACH_CONFORMAL_ALPHA"):     # E11: cap auto-allows with a conformal guarantee (e.g. 0.05)
+    gw.cfg.conformal_alpha = float(os.environ["KAVACH_CONFORMAL_ALPHA"])
 STORE_STATUS = None
 if os.environ.get("KAVACH_DB_URL"):              # E5: receipts, pauses, undo windows and tool pins outlive a restart
     from .store import Store, attach
@@ -679,6 +681,43 @@ def autonomy():
             "reviews_avoided_usd": [35 * alone, 75 * alone],
             "basis": "compared with a person approving every change; AgentOS prices a human exception at $35-75 "
                      "(cost_per_exception)"}
+
+
+@app.get("/api/learning")
+def learning_status(who: dict | None = Depends(caller)):
+    """E11: the risk model in use, the human feedback collected so far, and the conformal cutoff in force."""
+    labels = gw.store.load_labels() if gw.store is not None else list(gw.hitl.labels)
+    a = gw.cfg.conformal_alpha
+    lam = gw.risk.conformal_lambda(a) if a else None
+    return {"risk_model": {"sha": gw.risk.sha, "source": gw.risk.source, "parent": gw.risk.meta.get("parent"),
+                           "feedback_labels": gw.risk.meta.get("feedback_labels", 0)},
+            "feedback": {"total": len(labels), "unsafe": sum(int(l.get("label_unsafe", 0)) for l in labels)},
+            "conformal": {"alpha": a, "lambda": None if lam is None or lam == float("inf") else lam,
+                          "binds": lam is not None and lam != float("inf")}}
+
+
+class RetrainIn(BaseModel):
+    weight: float = 3.0
+    max_drop: float = 0.02
+    exclude_approvers: list[str] = []
+    dry_run: bool = False
+
+
+@app.post("/api/learning/retrain")
+def learning_retrain(body: RetrainIn, who: dict | None = Depends(caller)):
+    """E11: refit the risk model with human feedback; promoted only if it passes the no-regression gate on the frozen
+    test split (admin only when auth is on). dry_run: report without promoting."""
+    if who is not None and who["role"] != "admin":
+        raise HTTPException(403, "only an admin can retrain the risk model")
+    from .learning import apply, retrain
+    labels = gw.store.load_labels() if gw.store is not None else list(gw.hitl.labels)
+    try:
+        rep = retrain(gw.risk, labels, body.weight, body.max_drop, exclude_approvers=set(body.exclude_approvers))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    if body.dry_run:
+        return {k: v for k, v in rep.items() if k != "model"}
+    return apply(gw, rep, who["sub"] if who else "operator")
 
 
 @app.get("/metrics")

@@ -101,3 +101,14 @@ def test_poisoned_feedback_is_refused():
         assert not rep["promote"] and "would auto-allow more unsafe test actions" in rep["reasons"]
     assert system_rates(rm, rm.data["test_system"])["UAR"] == rep["current"]["UAR"]
     assert retrain(rm, bad, exclude_approvers={"asha"})["feedback_labels"] == 0
+
+
+def test_learning_api():
+    from fastapi.testclient import TestClient
+
+    from kavach import server
+    c = TestClient(server.app)
+    st = c.get("/api/learning").json()
+    assert st["risk_model"]["sha"] == server.gw.risk.sha and st["conformal"]["alpha"] is None
+    rep = c.post("/api/learning/retrain", json={"dry_run": True}).json()
+    assert rep["promote"] is False and "model" not in rep and rep["current"]["sha"] == server.gw.risk.sha
