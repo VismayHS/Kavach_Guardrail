@@ -62,6 +62,8 @@ class GatewayConfig:
     # E4: the Cedar policies alongside the Python rules. "shadow": both decide, disagreements are receipted.
     # "enforce": Cedar can add a denial or an approval floor the Python rules missed (it never lifts one).
     cedar: str = "off"
+    enforce: bool = True                     # F9: False = shadow mode: decide and receipt, never block
+    candidate_percent: int = 0               # F9: share of tasks a candidate policy decides (canary rollout)
     # False when KAVACH only decides and something else executes (MCP proxy, AgentOS hook): it can't snapshot or hold
     # what it doesn't run, so it never claims undo is armed, and an approval doesn't run the call in its own world
     local_execution: bool = True
@@ -73,6 +75,7 @@ class Task:
     prov: ProvenanceTracker = field(default_factory=ProvenanceTracker)
     timeline: list[dict] = field(default_factory=list)
     outbound_attempted: bool = False
+    policy: object | None = None          # F9 canary rollout: the candidate policy decides this task
 
 
 class Kavach:
@@ -115,6 +118,9 @@ class Kavach:
         self.recall: dict[str, tuple[int, str]] = {}   # receipt -> (world epoch, held payment / email / SAP doc)
         self.pending_calls: dict[str, tuple[str, ToolCall, Effect | None]] = {}
         self.kills: dict[str, dict] = {}                # kill switch (F3): id -> {scope, target, by, reason, at}
+        self.candidate: PolicyEngine | None = None      # F9: a policy being rolled out to candidate_percent of tasks
+        self.events: dict[str, list] = {}               # F9: what each task saw and asked, for replay (in memory)
+        self.max_event_tasks = 500
 
     # ------------------------------------------------------------------ task lifecycle
     def start_task(self, user_id: str, role: str, request: str, env: str = "prod",
@@ -124,7 +130,12 @@ class Kavach:
         task = Task(ctx)
         task.prov.lookalike = self.policy.lookalike
         task.prov.register_user(request)
+        if self.candidate is not None and int(hashlib.sha256(tid.encode()).hexdigest(), 16) % 100 < \
+                self.cfg.candidate_percent:
+            task.policy = self.candidate
         self.tasks[tid] = task
+        self._event(tid, {"e": "start", "user": user_id, "role": role, "request": request, "env": env,
+                          "authenticated": authenticated})
         plan_report = None
         if plan:
             plan_report = validate_plan(plan, request, self.policy.cfg["roles"].get(role, []), self.registry)
@@ -173,6 +184,7 @@ class Kavach:
     def register_output(self, task_id: str, call: ToolCall, output) -> None:
         """Everything a task reads goes through here, so its provenance labels are the same on every path
         (gateway execution, human-approved execution, API context, benchmark setup)."""
+        self._event(task_id, {"e": "output", "tool": call.tool, "args": dict(call.args), "output": output})
         trust, conf = self.output_label(call)
         spec = self.registry.get(call.tool)
         fields = spec.untrusted_fields if spec is not None else ()
@@ -208,6 +220,11 @@ class Kavach:
                 prov.hostile.add(src)
                 self.receipts.append({"type": "injection-detected", "task_id": task_id, "source": src,
                                       "score": hit["score"], "model": hit["model"]})
+
+    def _event(self, task_id: str, ev: dict) -> None:
+        if task_id not in self.events and len(self.events) >= self.max_event_tasks:
+            self.events.pop(next(iter(self.events)))
+        self.events.setdefault(task_id, []).append(ev)
 
     def add_request(self, task_id: str, request: str) -> None:
         """A later user turn in the same session: its values count as typed by the user, and intent follows it."""
@@ -316,7 +333,8 @@ class Kavach:
                                        if not task.prov.given(r)],
                   "given": task.prov.given, "hostile": sorted(task.prov.hostile),
                   "detected_pii": self._outbound_pii(spec, call)}
-        gates = self.policy.evaluate(ctx, call, spec, self.registry, labels, staged)
+        policy = task.policy or self.policy
+        gates = policy.evaluate(ctx, call, spec, self.registry, labels, staged)
         if effect and effect.magnitude.get("inside_workspace") is False:
             gates.append(GateResult("R12", "DENY", "Path escapes the agent workspace."))
         if effect and effect.magnitude.get("error"):
@@ -340,6 +358,10 @@ class Kavach:
 
         # [7] decision
         verdict, reason, hint = self._decide(ctx, spec, gates, floor, effect, risk)
+        would_have = None
+        if not self.cfg.enforce and verdict in (Verdict.DENY, Verdict.ESCALATE):   # F9 shadow: record, don't block
+            would_have, verdict = verdict, Verdict.ALLOW
+            reason = f"[shadow] would have been {would_have.value}: {reason}"
         later = (verdict == Verdict.ESCALATE and ambiguous and risk is not None and self.cfg.judge_mode != "inline"
                  and self.judge.use_llm and self.judge.llm.enabled)
         if later and self.cfg.judge_mode == "escalations-only":   # a human decides anyway: the note is for them
@@ -358,7 +380,15 @@ class Kavach:
         dd = d.to_dict()
         d.explanation, explain_src = self.explainer.explain(dd)
         dd["explanation"], dd["explanation_source"] = d.explanation, explain_src
-        dd["policy_version"], dd["risk_model"] = self.policy.version, self.risk.source
+        dd["policy_version"], dd["risk_model"] = policy.version, self.risk.source
+        dd["policy_sha256"] = getattr(policy, "sha256", None)
+        if policy is not self.policy:
+            dd["policy_candidate"] = True
+        if would_have is not None:
+            dd["shadow"] = {"would_have": would_have.value}
+        self._event(task_id, {"e": "check", "tool": call.tool, "args": dict(call.args),
+                              "tool_def_hash": call.tool_def_hash, "verdict": verdict.value,
+                              "would_have": would_have.value if would_have else None, "receipt": None})
         if cedar_note is not None:
             dd["cedar"] = cedar_note
 
@@ -374,6 +404,7 @@ class Kavach:
                                     "authenticated": ctx.principal.authenticated, "request": ctx.user_request,
                                     "decision": self._for_receipt(dd, task.prov)})
         d.receipt_id = rec["id"]
+        self.events[task_id][-1]["receipt"] = rec["id"]
         if later and self.cfg.judge_mode == "async":
             threading.Thread(target=self._judge_async, daemon=True,
                              args=(ctx.user_request, call, labels, spec, rec["id"], d.hitl_id)).start()
