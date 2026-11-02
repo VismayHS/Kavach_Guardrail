@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 from .addresses import domain_of, parse_recipients
 from .manifest import arg, argname, model_of
 from .models import Conf, Trust
+from .policy import credential_path
 from .provenance import URL
 
 POLICY_FILE = Path(__file__).parent / "policies" / "cedar" / "kavach.cedar"
@@ -137,7 +138,7 @@ def facts(gw, task_id: str, call, spec, labels: dict, staged: dict, effect) -> d
         "sql_write": m == "sql_write", "ddl": bool(sql.get("ddl")),
         "over_hard_cap": hard, "over_auto_limit": auto_over,
         "file_read": m == "file_read",
-        "sensitive_path": m == "file_read" and any(s in str(arg(spec, call.args, "path", "")) for s in cfg["sensitive_paths"]),
+        "sensitive_path": m == "file_read" and credential_path(cfg, arg(spec, call.args, "path", "")),
         "outside_workspace": e.get("inside_workspace") is False,
         "web_fetch": m == "web_fetch", "unknown_host": unknown_host, "url_carries_private": url_private,
         "ap_release": m == "ap_release" and "amount" in e,

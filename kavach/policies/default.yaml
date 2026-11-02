@@ -82,7 +82,10 @@ finance:
                      "sap_documents"]
 
 # matched case-insensitively anywhere in the path
-sensitive_paths: ["deploy.env", ".env", "secret", "id_rsa", "credential", ".pem", ".key", ".netrc", ".ssh", "token"]
+# Credential files (R9), matched case-insensitively anywhere in the path. Token files by name, not the word "token",
+# so a code file like src/tokenizer.py stays readable (Claude Code's Read goes through R9 too).
+sensitive_paths: ["deploy.env", ".env", "secret", "id_rsa", "id_ed25519", "credential", ".pem", ".key", ".netrc",
+                  ".ssh", "token.json", "tokens.json", ".token"]
 
 # Canary records (R28): planted where an attacker would look, needed by no legitimate task. Any external action
 # carrying one of these values is blocked; moving them internally is allowed and recorded. Seeded by the server

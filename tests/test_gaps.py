@@ -241,6 +241,21 @@ def test_credential_files_cannot_be_read_changed_or_deleted(gw, tool, args):
     assert d.verdict == Verdict.DENY and "R9" in rules(d, "DENY")
 
 
+@pytest.mark.parametrize("path,credential", [("src/tokenizer.py", False), ("docs/keyboard.md", False),
+                                             ("src/keys.py", False), ("~/.ssh/id_ed25519", True),
+                                             ("config/api.token", True), ("certs/server.key", True), (".env", True)])
+def test_credential_patterns_dont_catch_ordinary_code_files(gw, path, credential):
+    """Claude Code's Read goes through R9 too (Phase 5 manifest): a code file named after tokens isn't a secret."""
+    from kavach.manifest import register_manifests
+    register_manifests(gw.registry, gw.policy.cfg["roles"], [str(Path(__file__).resolve().parents[1] / "kavach" /
+                                                               "manifests" / "claude_code.yaml")])
+    tid, _ = gw.start_task("dev", "admin", "Explain how this project works.")
+    for tool in ("files.read", "Read"):
+        key = gw.registry.get(tool).arg_map.get("path", "path")
+        d = gw.check(tid, ToolCall(tool, {key: path}))
+        assert ("R9" in rules(d, "DENY")) is credential, (tool, path)
+
+
 # ---------------------------------------------------------------- invented SAP amounts (R15)
 def test_a_made_up_sap_amount_needs_a_person(gw):
     tid, _ = gw.start_task("meera", "ap_supervisor", "Post a correction of EUR 1200 to GL account 400100 for the "

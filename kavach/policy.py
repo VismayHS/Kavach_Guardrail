@@ -37,6 +37,12 @@ TARGETED = {"sql_write": None, "ap_release": "invoice_id", "ap_propose": "invoic
 DESTINATION = {"email": "to", "transfer": "to_account", "refund": "invoice_id", "ap_release": "invoice_id"}
 
 
+def credential_path(cfg: dict, path) -> bool:
+    """R9: a credential file (one matcher for the Python rules and the Cedar facts)."""
+    p = str(path or "").lower()
+    return any(s in p for s in cfg["sensitive_paths"])
+
+
 class PolicyEngine:
     def __init__(self, path: str | Path | None = None):
         path = path or Path(__file__).parent / "policies" / "default.yaml"
@@ -335,7 +341,7 @@ class PolicyEngine:
         # R9 secrets: not into the agent's context, and not overwritten or deleted either
         if m in ("file_read", "file_write", "file_delete"):
             p = str(arg(spec, call.args, "path", ""))
-            if any(s in p.lower() for s in self.cfg["sensitive_paths"]):
+            if credential_path(self.cfg, p):
                 what = "reading it into an agent context" if m == "file_read" else "changing it"
                 add("R9", "DENY", f"'{p}' is a credential file; {what} is blocked.")
 
