@@ -39,6 +39,7 @@ class ToolSpec:
     # email body). Only those are untrusted; the rest of each record keeps output_trust. Empty = whole output.
     untrusted_fields: list[str] = field(default_factory=list)
     intent_verbs: list[str] = field(default_factory=list)   # words in a request that ask for this kind of action
+    user_args: list[str] = field(default_factory=list)      # arguments only the user may choose (a new password): R41
     # MCP-style hints (readOnlyHint/destructiveHint/openWorldHint) are derived, never trusted from servers
     def mcp_annotations(self) -> dict:
         return {"readOnlyHint": self.effect in ("read", "ingress"),
@@ -151,14 +152,14 @@ def spec_to_dict(s: ToolSpec) -> dict:
          "data_args": list(s.data_args), "output_trust": s.output_trust, "output_conf": s.output_conf.value,
          "staging": s.staging, "safeguard": s.safeguard, "effect_model": s.effect_model or LEGACY_MODELS.get(s.name),
          "arg_map": dict(s.arg_map), "amount_arg": s.amount_arg, "intent_verbs": list(s.intent_verbs),
-         "untrusted_fields": list(s.untrusted_fields)}
+         "untrusted_fields": list(s.untrusted_fields), "user_args": list(s.user_args)}
     return {k: v for k, v in d.items() if v not in (None, [], {})}
 
 
 def spec_from_dict(name: str, d: dict) -> ToolSpec:
     known = {"description", "params", "required", "effect", "sink", "reversibility", "control_args", "data_args",
              "output_trust", "output_conf", "staging", "safeguard", "effect_model", "arg_map", "amount_arg",
-             "intent_verbs", "untrusted_fields"}
+             "intent_verbs", "untrusted_fields", "user_args"}
     unknown = set(d) - known
     if unknown:
         raise ValueError(f"tool {name!r}: unknown manifest keys {sorted(unknown)}")
@@ -172,7 +173,8 @@ def spec_from_dict(name: str, d: dict) -> ToolSpec:
                     output_trust=d.get("output_trust", "derived"), output_conf=Conf(d.get("output_conf", "internal")),
                     staging=d.get("staging", "none"), safeguard=d.get("safeguard"), effect_model=model,
                     arg_map=dict(d.get("arg_map") or {}), amount_arg=d.get("amount_arg"),
-                    intent_verbs=list(d.get("intent_verbs") or []), untrusted_fields=list(d.get("untrusted_fields") or []))
+                    intent_verbs=list(d.get("intent_verbs") or []), untrusted_fields=list(d.get("untrusted_fields") or []),
+                    user_args=list(d.get("user_args") or []))
 
 
 def load_manifest(path) -> dict[str, ToolSpec]:

@@ -138,3 +138,5 @@ rules:
   R38: "Once a task has read untrusted content, an email, transfer or other outbound action to a destination the user didn't give needs approval."
   R39: "Bank accounts, IBANs and links that came from untrusted content may not be passed on by email or chat message, even internally, without approval."
   R40: "When a task has shown no tool output, an email or transfer to an outside destination the user didn't give needs approval: there is nothing to trace it to."
+  # R41 onwards: Phase 5 gap rules found by the AgentDojo ground-truth replay.
+  R41: "Arguments only the user may choose (a new password; a tool's manifest lists them as user_args) must come from the user's own words; any other value needs approval."

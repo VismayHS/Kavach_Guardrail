@@ -249,6 +249,17 @@ class PolicyEngine:
             add("R38", "REQUIRE_APPROVAL", f"This task read untrusted content, and '{dest}' = {call.args.get(dest)!r} "
                 "was not given by the user.", arg=dest)
 
+        # R41 arguments only the user may choose (a new password): a value the user didn't type goes to a person.
+        # Lineage can't always see where a short token came from, so this asks for the user's own words.
+        for a in spec.user_args:
+            v = call.args.get(a)
+            if v is None or str(v) == "":
+                continue
+            lab = labels.get(a)
+            if not (lab and lab.trust == Trust.TRUSTED) and str(v) not in ctx.user_request:
+                add("R41", "REQUIRE_APPROVAL", f"'{a}' is for the user to choose, and this value isn't in their "
+                    "request.", arg=a)
+
         # R15 values the agent made up: they appear nowhere in the request or in any tool output
         if m in ("transfer", "refund", "ledger_post"):
             for a in spec.control_args:
