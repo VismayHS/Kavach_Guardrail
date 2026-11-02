@@ -19,6 +19,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
+import re
 import sys
 import tempfile
 import time
@@ -84,7 +86,7 @@ class QualcommLLM(BasePipelineElement):
     """AgentDojo LLM element for Qualcomm Cloud AI. Tool calls Llama writes as text are recovered (as the live agent
     does); every reply is counted as structured / text / plain answer, which is what the smoke test checks."""
 
-    def __init__(self, model: str | None = None, max_tokens: int = 1024, retries: int = 4):
+    def __init__(self, model: str | None = None, max_tokens: int = 1024, retries: int = 8):
         self.client = QualcommCloudAI(model=model or os.environ.get("KAVACH_AGENT_MODEL", "Llama-3.3-70B"), timeout=120)
         self.model, self.max_tokens, self.retries = self.client.model, max_tokens, retries
         self.name = f"qualcomm-{self.model}"
@@ -92,20 +94,33 @@ class QualcommLLM(BasePipelineElement):
         self.replies: Counter = Counter()
         self.latency_ms: list[float] = []
         self.errors: list[str] = []
+        self.rate_limited = 0
 
     def _chat(self, messages, tools):
+        """Rate limits (429) and server errors are waited out: as long as the service asks ("Please wait 19.00
+        seconds", or Retry-After), else exponential backoff up to a minute, with jitter so parallel runs don't retry
+        in step. A run that still fails after `retries` is recorded as a service error, never silently dropped."""
         for attempt in range(self.retries):
+            wait = min(60.0, 2.0 ** (attempt + 1))
             try:
                 r = self.client.chat(messages, tools=tools or None, max_tokens=self.max_tokens)
                 self.latency_ms.append(self.client.last_latency_ms or 0.0)
                 return r
             except httpx.HTTPStatusError as e:
-                if e.response.status_code < 500 and e.response.status_code != 429 or attempt == self.retries - 1:
+                code = e.response.status_code
+                if code < 500 and code != 429 or attempt == self.retries - 1:
                     raise
+                if code == 429:
+                    self.rate_limited += 1
+                    asked = re.search(r"wait ([\d.]+) seconds", e.response.text or "")
+                    hdr = e.response.headers.get("retry-after")
+                    asked_s = float(asked.group(1)) if asked else float(hdr) if hdr and hdr.replace(".", "").isdigit() \
+                        else 0.0
+                    wait = max(wait, asked_s + 1.0)
             except (httpx.TimeoutException, httpx.TransportError):
                 if attempt == self.retries - 1:
                     raise
-            time.sleep(2 ** attempt)
+            time.sleep(wait + random.uniform(0, 2.0))
 
     def query(self, query: str, runtime: FunctionsRuntime, env: Env = EmptyEnv(), messages: Sequence[ChatMessage] = (),
               extra_args: dict = {}):  # noqa: B006 (AgentDojo's signature)
@@ -417,7 +432,7 @@ def run(defense: str, suite_name: str = "banking", attack: str = "important_inst
            "agentdojo": BENCHMARK_VERSION, "seconds": round(time.time() - t0, 1),
            "utility": b["utility"], "n_benign": b["n"],
            "utility_under_attack": a["utility"], "attack_success": a["attack_success"], "n_attacked": a["n_attacked"],
-           "replies": dict(llm.replies), "service_errors": llm.errors[:20],
+           "replies": dict(llm.replies), "service_errors": llm.errors[:20], "rate_limited_retries": llm.rate_limited,
            "benign": b["per_task"], "attacked": a["per_task"]}
     if kav is not None:
         v = Counter(d["verdict"] for d in kav.decisions)
