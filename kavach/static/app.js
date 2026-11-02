@@ -790,7 +790,7 @@ const REPORTS = [
   ['LIVE_AGENT.md', 'A real agent attacked through its inbox', 'Llama on Qualcomm Cloud AI, with and without KAVACH'],
   ['AGENTOS_LIVE.md', 'Inside Infosys Topaz AgentOS', "KAVACH wired in through AgentOS's own hooks"],
   ['AGENTDOJO.md', "ETH Zurich's AgentDojo", 'A benchmark nobody on the team wrote: attacks, utility, defenses'],
-  ['CEDAR.md', 'Rules as Cedar policies, with proofs', 'Ten safety properties proved; Cedar and Python agree on every decision'],
+  ['CEDAR.md', 'Rules as Cedar policies, with proofs', 'Eleven safety properties proved; Cedar and Python agree on every decision'],
   ['PROBE.md', 'The injection classifier', 'How often a CPU model spots injected instructions, and its false alarms'],
   ['REDTEAM.md', 'We attacked it ourselves', '1,178 automated attacks; the 80 that got through the first time, and how they were fixed'],
   ['CONFORMAL.md', 'A guarantee on unsafe auto-allows', 'Conformal risk control: an upper bound that holds on traffic like the calibration data'],

@@ -17,8 +17,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 PROPERTIES = [   # (claim, fixed facts, action that must be denied)
-    ("Untrusted content can never choose where an external action goes (R1)",
-     {"external": True, "ingress": False, "untrusted_control": True}, "execute"),
+    ("Untrusted content the user didn't point at can never choose where an external action goes (R1)",
+     {"external": True, "ingress": False, "refused_control": True}, "execute"),
+    ("A destination read from a source the user pointed at never runs without a person (R1)",
+     {"external": True, "ingress": False, "delegated_control": True}, "auto_execute"),
     ("No schema-destructive SQL in production, whatever else is true (R4)",
      {"prod": True, "sql_write": True, "ddl": True}, "execute"),
     ("A planted canary record never leaves the company (R28)",

@@ -31,7 +31,8 @@ COVERED = {("KILL", "DENY"), ("R6", "DENY"), ("R7", "DENY"), ("R8", "DENY"), ("R
            ("R6", "REQUIRE_APPROVAL"), ("R10", "REQUIRE_APPROVAL"), ("R14", "REQUIRE_APPROVAL"),
            ("R18", "REQUIRE_APPROVAL"), ("R25", "REQUIRE_APPROVAL")}
 BOOL_FACTS = ("killed", "known_tool", "pin_mismatch", "schema_error", "read_tool_writes", "stage_error", "role_allowed",
-              "external", "ingress", "untrusted_control", "state_changing", "copied_control", "prod", "freeze",
+              "external", "ingress", "untrusted_control", "refused_control", "delegated_control", "state_changing",
+              "copied_control", "prod", "freeze",
               "writes_data", "sql_write", "ddl", "over_hard_cap", "over_auto_limit", "file_read", "sensitive_path",
               "outside_workspace", "web_fetch", "unknown_host", "url_carries_private", "ap_release", "self_proposed",
               "sanctioned", "bank_change", "iban_untrusted", "deletes_retained", "outbound", "carries_canary",
@@ -88,6 +89,9 @@ def facts(gw, task_id: str, call, spec, labels: dict, staged: dict, effect) -> d
     ingress = bool(spec and spec.effect == "ingress")
     state = bool(spec and spec.effect in ("write", "payment", "external_send"))
     untrusted = {a for a, lab in ctrl.items() if lab.trust == Trust.UNTRUSTED}
+    # R1: a value read whole from a source the user pointed at, for an action the user asked for, goes to a person
+    asked = bool(spec) and gw.policy._asked_for(ctx, call.tool, spec)
+    delegated = {a for a in untrusted if ctrl[a].delegated and asked}
     copied = {a for a in untrusted if any(s.startswith("tool:") for s in ctrl[a].sources)}
     lim, fin = cfg["limits"], cfg["finance"]
     amt = float(arg(spec, call.args, "amount", 0) or 0) if m in ("transfer", "refund") else 0.0
@@ -132,6 +136,7 @@ def facts(gw, task_id: str, call, spec, labels: dict, staged: dict, effect) -> d
         "stage_error": bool(e.get("error")),
         "role_allowed": "*" in allowed or call.tool in allowed,
         "external": external, "ingress": ingress, "untrusted_control": bool(untrusted),
+        "refused_control": bool(untrusted - delegated), "delegated_control": bool(delegated),
         "state_changing": state, "copied_control": bool(copied - (untrusted if external and not ingress else set())),
         "prod": ctx.env == "prod", "freeze": bool(cfg.get("change_freeze") or staged.get("freeze")),
         "writes_data": m == "sql_write" or (m in ("file_write", "file_delete") and bool(spec) and spec.effect == "write"),

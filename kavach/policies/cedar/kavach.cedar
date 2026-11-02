@@ -23,7 +23,7 @@ forbid(principal, action, resource) when { context.schema_error || context.read_
 forbid(principal, action, resource) when { !context.role_allowed };
 
 @id("R1")
-forbid(principal, action, resource) when { context.external && !context.ingress && context.untrusted_control };
+forbid(principal, action, resource) when { context.external && !context.ingress && context.refused_control };
 
 @id("R11")
 forbid(principal, action, resource) when { context.state_changing && context.copied_control };
@@ -64,6 +64,10 @@ forbid(principal, action, resource) when { context.outbound && context.carries_c
 // ---------------------------------------------------------------- approval floors (a person decides)
 @id("R1")
 forbid(principal, action == Action::"auto_execute", resource) when { context.ingress && context.untrusted_control };
+
+@id("R1")
+forbid(principal, action == Action::"auto_execute", resource)
+  when { context.external && !context.ingress && context.delegated_control };
 
 @id("R2")
 forbid(principal, action == Action::"auto_execute", resource)

@@ -6,7 +6,8 @@ Policies: `kavach/policies/cedar/kavach.cedar`. Facts come from KAVACH's engines
 
 | Property | Result |
 |---|---|
-| Untrusted content can never choose where an external action goes (R1) | **proved** |
+| Untrusted content the user didn't point at can never choose where an external action goes (R1) | **proved** |
+| A destination read from a source the user pointed at never runs without a person (R1) | **proved** |
 | No schema-destructive SQL in production, whatever else is true (R4) | **proved** |
 | A planted canary record never leaves the company (R28) | **proved** |
 | A paused agent can do nothing at all (kill switch) | **proved** |
@@ -21,7 +22,7 @@ Control (not vacuous): a clean read with every fact known gets `PASS`.
 
 ## Parity with the Python engine
 
-1027 of 1027 decisions agree (bench suite, holdout, demo scenarios). Cedar floors: {'PASS': 626, 'REQUIRE_APPROVAL': 93, 'DENY': 308}.
+1027 of 1027 decisions agree (bench suite, holdout, demo scenarios). Cedar floors: {'PASS': 626, 'REQUIRE_APPROVAL': 106, 'DENY': 295}.
 
-Rules exercised: R1:DENY x122, R5:REQUIRE_APPROVAL x85, R2:REQUIRE_APPROVAL x71, R14:REQUIRE_APPROVAL x51, R10:REQUIRE_APPROVAL x49, R11:DENY x41, R4:DENY x21, R9:DENY x21, R6:DENY x21, R20:DENY x21, R19:DENY x21, R3:DENY x20, R8:DENY x20, R12:DENY x20, R5:DENY x7, R18:REQUIRE_APPROVAL x1, R21:DENY x1.
+Rules exercised: R1:DENY x102, R5:REQUIRE_APPROVAL x85, R2:REQUIRE_APPROVAL x71, R14:REQUIRE_APPROVAL x51, R10:REQUIRE_APPROVAL x49, R11:DENY x41, R4:DENY x21, R9:DENY x21, R6:DENY x21, R20:DENY x21, R19:DENY x21, R3:DENY x20, R8:DENY x20, R12:DENY x20, R1:REQUIRE_APPROVAL x20, R5:DENY x7, R18:REQUIRE_APPROVAL x1, R21:DENY x1.
 
