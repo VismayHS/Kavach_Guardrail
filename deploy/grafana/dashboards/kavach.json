@@ -218,7 +218,7 @@
       "type": "prometheus",
       "uid": "kavach-prom"
      },
-     "expr": "kavach_approvals_pending",
+     "expr": "sum(kavach_approvals_pending)",
      "instant": true,
      "legendFormat": "Approvals waiting"
     }
@@ -282,7 +282,7 @@
       "type": "prometheus",
       "uid": "kavach-prom"
      },
-     "expr": "kavach_holds_waiting",
+     "expr": "sum(kavach_holds_waiting)",
      "instant": true,
      "legendFormat": "In undo window"
     }
@@ -346,7 +346,7 @@
       "type": "prometheus",
       "uid": "kavach-prom"
      },
-     "expr": "kavach_kills_active",
+     "expr": "sum(kavach_kills_active)",
      "instant": true,
      "legendFormat": "Agents paused"
     }
@@ -513,7 +513,7 @@
    "id": 8,
    "type": "timeseries",
    "title": "Decision latency (ms)",
-   "description": "Time to decide one tool call (rules, staging, risk; the judge when inline).",
+   "description": "Time to decide one tool call (rules, staging, risk). Escalated calls also include the Qualcomm judge's note (escalations-only): seconds, on calls that already wait for a person; allowed calls never wait for it.",
    "datasource": {
     "type": "prometheus",
     "uid": "kavach-prom"
@@ -741,7 +741,7 @@
       "type": "prometheus",
       "uid": "kavach-prom"
      },
-     "expr": "kavach_approvals_pending",
+     "expr": "sum(kavach_approvals_pending)",
      "legendFormat": "approvals waiting"
     },
     {
@@ -750,7 +750,7 @@
       "type": "prometheus",
       "uid": "kavach-prom"
      },
-     "expr": "kavach_holds_waiting",
+     "expr": "sum(kavach_holds_waiting)",
      "legendFormat": "in undo window"
     }
    ],
@@ -810,7 +810,7 @@
       "type": "prometheus",
       "uid": "kavach-prom"
      },
-     "expr": "kavach_receipts_total",
+     "expr": "max(kavach_receipts_total)",
      "instant": true,
      "legendFormat": "Receipts in the chain"
     }
@@ -1054,7 +1054,7 @@
       "type": "prometheus",
       "uid": "kavach-prom"
      },
-     "expr": "kavach_released_early_total",
+     "expr": "sum(kavach_released_early_total)",
      "instant": true,
      "legendFormat": "Sent now (manual override)"
     }
@@ -1114,7 +1114,7 @@
       "type": "prometheus",
       "uid": "kavach-prom"
      },
-     "expr": "kavach_holds_overdue",
+     "expr": "sum(kavach_holds_overdue)",
      "instant": true,
      "legendFormat": "Overdue in a window"
     }
@@ -1503,7 +1503,7 @@
       "type": "prometheus",
       "uid": "kavach-prom"
      },
-     "expr": "kavach_dependency_up",
+     "expr": "max by (dep) (kavach_dependency_up)",
      "instant": true,
      "legendFormat": "{{dep}}"
     }
@@ -1540,7 +1540,7 @@
     },
     "colorMode": "value",
     "graphMode": "none",
-    "textMode": "value",
+    "textMode": "value_and_name",
     "justifyMode": "auto",
     "orientation": "auto"
    }
@@ -1677,7 +1677,7 @@
    "id": 26,
    "type": "timeseries",
    "title": "End-to-end time of an agent's request (ms)",
-   "description": "/mcp tools/call, from request in to answer out: what the agent waits.",
+   "description": "/mcp tools/call, from request in to answer out: what the agent waits. Spikes of seconds are escalated calls carrying the live Qualcomm judge's note.",
    "datasource": {
     "type": "prometheus",
     "uid": "kavach-prom"

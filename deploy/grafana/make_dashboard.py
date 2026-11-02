@@ -15,7 +15,8 @@ def verdict_overrides():
              "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": c}}]} for v, c in STATUS.items()]
 
 
-def stat(title, expr, x, y, w=4, h=4, color="#2a78d6", desc="", unit="none", alarm=None, steps=None, legend=None):
+def stat(title, expr, x, y, w=4, h=4, color="#2a78d6", desc="", unit="none", alarm=None, steps=None, legend=None,
+         names=False):
     steps = steps or ([{"color": color, "value": None}] if alarm is None else [{"color": "#6b6b6b", "value": None},
                                                                                {"color": alarm, "value": 1}])
     return {"id": next(NID), "type": "stat", "title": title, "description": desc, "datasource": DS,
@@ -25,7 +26,7 @@ def stat(title, expr, x, y, w=4, h=4, color="#2a78d6", desc="", unit="none", ala
                                          "thresholds": {"mode": "absolute", "steps": steps}},
                             "overrides": []},
             "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
-                        "colorMode": "value", "graphMode": "none", "textMode": "value",
+                        "colorMode": "value", "graphMode": "none", "textMode": "value_and_name" if names else "value",
                         "justifyMode": "auto", "orientation": "auto"}}
 
 
@@ -74,10 +75,10 @@ P.append(stat("Blocked", 'sum(kavach_decisions_total{verdict="DENY"}) or vector(
               desc="DENY: a deterministic rule refused the action."))
 P.append(stat("Sent to a person", 'sum(kavach_decisions_total{verdict="ESCALATE"}) or vector(0)', 8, y,
               color=STATUS["ESCALATE"], desc="ESCALATE: a human approves or refuses."))
-P.append(stat("Approvals waiting", "kavach_approvals_pending", 12, y, alarm=STATUS["ESCALATE"]))
-P.append(stat("In undo window", "kavach_holds_waiting", 16, y, alarm=STATUS["ALLOW_WITH_SAFEGUARD"],
+P.append(stat("Approvals waiting", "sum(kavach_approvals_pending)", 12, y, alarm=STATUS["ESCALATE"]))
+P.append(stat("In undo window", "sum(kavach_holds_waiting)", 16, y, alarm=STATUS["ALLOW_WITH_SAFEGUARD"],
               desc="Held payments and queued emails that can still be taken back."))
-P.append(stat("Agents paused", "kavach_kills_active", 20, y, alarm=STATUS["DENY"], desc="Active kill-switch pauses."))
+P.append(stat("Agents paused", "sum(kavach_kills_active)", 20, y, alarm=STATUS["DENY"], desc="Active kill-switch pauses."))
 y += 4
 P.append(ts("Decisions per minute, by verdict",
             [('sum by (verdict) (rate(kavach_decisions_total[1m])) * 60', "{{verdict}}")], 0, y,
@@ -87,16 +88,16 @@ P.append(ts("Decision latency (ms)",
             [("histogram_quantile(0.5, sum by (le) (rate(kavach_check_latency_ms_bucket[5m])))", "p50"),
              ("histogram_quantile(0.95, sum by (le) (rate(kavach_check_latency_ms_bucket[5m])))", "p95"),
              ("histogram_quantile(0.99, sum by (le) (rate(kavach_check_latency_ms_bucket[5m])))", "p99")],
-            12, y, unit="ms", desc="Time to decide one tool call (rules, staging, risk; the judge when inline)."))
+            12, y, unit="ms", desc="Time to decide one tool call (rules, staging, risk). Escalated calls also include the Qualcomm judge's note (escalations-only): seconds, on calls that already wait for a person; allowed calls never wait for it."))
 y += 8
 P.append(bars("Rules that fired (deny or approval)", "sort_desc(sum by (rule) (kavach_rule_hits_total) > 0)", "{{rule}}", 0, y,
               desc="Which rules are doing the work. R28 = canary tripped (a breach in progress)."))
 P.append(table("Decisions by tool and verdict", "sum by (tool, verdict) (kavach_decisions_total)", 12, y))
 y += 9
 P.append(ts("Approvals waiting and undo windows open",
-            [("kavach_approvals_pending", "approvals waiting"), ("kavach_holds_waiting", "in undo window")],
+            [("sum(kavach_approvals_pending)", "approvals waiting"), ("sum(kavach_holds_waiting)", "in undo window")],
             0, y, w=12))
-P.append(stat("Receipts in the chain", "kavach_receipts_total", 12, y, w=12, h=8,
+P.append(stat("Receipts in the chain", "max(kavach_receipts_total)", 12, y, w=12, h=8,
               desc="Hash-chained, signed receipts (verify with GET /api/receipts/verify)."))
 y += 8
 
@@ -108,9 +109,9 @@ P.append(stat("Failed or not sure", 'sum(kavach_effects_total{outcome=~"failed|u
               alarm=STATUS["DENY"], desc="failed: refused, nothing sent. unknown: the line broke mid-send; never re-sent."))
 P.append(stat("Cancelled before it went out", "sum(kavach_cancellations_total) or vector(0)", 8, y,
               desc="By a person (Cancel) or by the kill switch."))
-P.append(stat("Sent now (manual override)", "kavach_released_early_total", 12, y,
+P.append(stat("Sent now (manual override)", "sum(kavach_released_early_total)", 12, y,
               desc="A person let a waiting action out before its window ended."))
-P.append(stat("Overdue in a window", "kavach_holds_overdue", 16, y, alarm=STATUS["ESCALATE"],
+P.append(stat("Overdue in a window", "sum(kavach_holds_overdue)", 16, y, alarm=STATUS["ESCALATE"],
               desc="Past their time by more than 15 s and still waiting: is the sweeper running?"))
 P.append(stat("Sweeper: seconds since last run", "max(kavach_sweeper_seconds_since_tick)", 20, y, unit="s",
               steps=[{"color": "#0ca30c", "value": None}, {"color": STATUS["ESCALATE"], "value": 10},
@@ -130,7 +131,7 @@ P.append(stat("Receipt chain verifies", "min(kavach_receipt_chain_valid)", 0, y,
               desc="1 = every receipt and the signed checkpoint verify. 0 = edited, removed or checkpoint missing."))
 P.append(stat("Receipt store failures", "sum(kavach_receipt_write_failures_total) or vector(0)", 4, y,
               alarm=STATUS["DENY"], desc="Receipts the database refused; those decisions failed closed (nothing ran)."))
-P.append(stat("Dependencies up", "kavach_dependency_up", 8, y, w=8, steps=GOOD, legend="{{dep}}",
+P.append(stat("Dependencies up", "max by (dep) (kavach_dependency_up)", 8, y, w=8, steps=GOOD, legend="{{dep}}", names=True,
               desc="mail_server (SMTP connect), bank (GET /transfers), model endpoint configured (no tokens spent)."))
 P.append(stat("Agent request errors (5xx)", "sum(kavach_request_errors_total) or vector(0)", 16, y, w=4,
               alarm=STATUS["DENY"]))
@@ -140,7 +141,7 @@ y += 4
 P.append(ts("End-to-end time of an agent's request (ms)",
             [(f'histogram_quantile({q}, sum by (le) (rate(kavach_request_latency_ms_bucket{{route="mcp"}}[5m])))', f"p{int(q * 100)}")
              for q in (0.5, 0.95, 0.99)], 0, y, unit="ms",
-            desc="/mcp tools/call, from request in to answer out: what the agent waits."))
+            desc="/mcp tools/call, from request in to answer out: what the agent waits. Spikes of seconds are escalated calls carrying the live Qualcomm judge's note."))
 P.append(ts("Model calls per minute, by component",
             [('sum by (component, outcome) (rate(kavach_model_calls_total[5m])) * 60', "{{component}} {{outcome}}"),
              ("sum by (component) (rate(kavach_model_retries_total[5m])) * 60", "{{component}} retries")], 12, y,
