@@ -116,3 +116,11 @@ def test_tool_pins_and_human_feedback_are_kept():
     assert gw2.registry.pins["calendar.create"] == pin                    # the approved definition, not the new one
     assert not gw2.registry.verify_pin("calendar.create", gw2.registry.specs["calendar.create"].definition_hash())
     assert Store(url).load_labels()[-1]["label_unsafe"] == 1
+
+
+def test_a_world_reset_discards_its_holds_for_good():
+    url = db()
+    gw, _ = boot(url)
+    held_payment(gw)
+    gw.env.reset()                                                        # a demo reset: that world is gone
+    assert boot(url)[1]["holds_waiting"] == 0                             # so its payment never comes back

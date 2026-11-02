@@ -54,6 +54,10 @@ class Environment:
 
     def reset(self) -> None:
         with self.lock:
+            for h in getattr(self, "holds", []):      # the world they belonged to is gone: they never go out
+                if h["status"] == "held":
+                    h["status"] = "discarded-reset"
+                    self._held_changed(h)
             self.epoch += 1
             self.db = sqlite3.connect(":memory:", check_same_thread=False)
             self.db.row_factory = sqlite3.Row
