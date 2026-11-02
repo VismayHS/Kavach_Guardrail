@@ -196,6 +196,7 @@ class ToolRegistry:
         self.specs = specs or default_manifest()
         self.pins = {n: s.definition_hash() for n, s in self.specs.items()}
         self.drafts: set[str] = set()        # onboarded from MCP annotations, not yet approved by a human
+        self.on_approve: list = []           # callbacks(name, pin) when a human approves a draft (e.g. persist pins)
 
     def get(self, name: str) -> ToolSpec | None:
         return self.specs.get(name)
@@ -223,7 +224,10 @@ class ToolRegistry:
         if name not in self.drafts:
             return False
         self.drafts.discard(name)
-        self.pins[name] = self.specs[name].definition_hash()
+        # keep the pin of the definition the human looked at (an MCP proxy pins the upstream's own definition)
+        self.pins[name] = self.pins.get(name) or self.specs[name].definition_hash()
+        for cb in self.on_approve:
+            cb(name, self.pins[name])
         return True
 
     def verify_pin(self, name: str, presented_hash: str | None) -> bool:

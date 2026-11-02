@@ -58,6 +58,9 @@ class GatewayConfig:
     use_rules: bool = True                   # ablation switch: False => only R6/R7 (unknown tool, schema); the model
                                              # decides everything else (measures what the model alone catches)
     use_injection_probe: bool = False        # C3: scan untrusted content with a CPU classifier (needs torch)
+    # False when KAVACH only decides and something else executes (MCP proxy, AgentOS hook): it can't snapshot or hold
+    # what it doesn't run, so it never claims undo is armed, and an approval doesn't run the call in its own world
+    local_execution: bool = True
 
 
 @dataclass
@@ -393,9 +396,10 @@ class Kavach:
         return Verdict.ESCALATE, (f"Uncertain: interval [{risk.p_lo:.2f}, {risk.p_hi:.2f}] straddles "
                                   f"tau {risk.tau:.3f}; asking a human instead of guessing."), None
 
-    @staticmethod
-    def _allow(spec, effect, reason):
+    def _allow(self, spec, effect, reason):
         """A state change that can still be taken back runs with its safeguard: snapshot, or hold/recall/park."""
+        if not self.cfg.local_execution:          # someone else executes: no snapshot or window of KAVACH's
+            return Verdict.ALLOW, reason, None
         if spec.effect not in ("read", "ingress") and effect is not None \
                 and effect.reversibility == Reversibility.REVERSIBLE:
             window = WINDOW_TEXT.get(effect.safeguard)
@@ -523,6 +527,11 @@ class Kavach:
             return {"hitl": item, "executed": False, "pending_quorum": dict(item["remaining"])}
         task_id, call, effect = self.pending_calls.pop(hid)
         out = {"hitl": item, "executed": False}
+        if not self.cfg.local_execution:             # the caller (MCP proxy, hook) runs the approved call itself
+            self.receipts.append({"type": "human-approved" if approve else "human-denied", "task_id": task_id,
+                                  "hitl": hid, "approver": approver, "external_execution": True,
+                                  "approvals": [dict(a) for a in item.get("approvals") or [{"approver": approver}]]})
+            return {**out, "approved": approve, "external": True}
         if not approve:
             self.receipts.append({"type": "human-denied", "task_id": task_id, "hitl": hid, "approver": approver})
             return out
