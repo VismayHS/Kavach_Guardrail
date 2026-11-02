@@ -61,10 +61,18 @@ def test_siem_forwarding(kind):
     run_two(k)
     fwd.flush()
     assert fwd.sent == len(k.receipts.items) == 3 and fwd.failed == 0      # decisions and the execution receipt
-    body = b"\n".join(c for _, c in got).decode()
-    assert '"verdict": "DENY"' in body and '"rules": ["R1"]' in body
-    if kind == "splunk":
-        assert '"sourcetype": "kavach:receipt"' in body
+    events = []
+    for _, content in got:                     # each format wraps the same event differently
+        if kind == "splunk":
+            lines = [json.loads(x) for x in content.decode().splitlines()]
+            assert all(x["sourcetype"] == "kavach:receipt" for x in lines)
+            events += [x["event"] for x in lines]
+        elif kind == "sentinel":
+            events += json.loads(content)
+        else:
+            events.append(json.loads(content))
+    send = [e for e in events if e.get("tool") == "mail.send"]
+    assert send and send[0]["verdict"] == "DENY" and send[0]["rules"] == ["R1"]
     auth = got[0][0]
     assert auth == {"splunk": "Splunk T0K", "sentinel": "Bearer T0K", "webhook": "Bearer T0K"}[kind]
     if kind == "sentinel":
