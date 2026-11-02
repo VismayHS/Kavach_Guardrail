@@ -212,6 +212,7 @@ select.input { appearance: auto; }
 .callout-title { font-size: 17px; font-weight: 600; color: var(--vx-stamp-deep); }
 .callout p { margin-top: 2px; font-size: 14.5px; line-height: 1.45; color: var(--vx-ink-2); }
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.stats.stats-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .stats-sheet { padding: 24px; border: 1px solid var(--vx-rule); border-radius: 10px; background: var(--vx-sheet); }
 .stat-n { display: block; font-size: 36px; font-weight: 700; line-height: 1; letter-spacing: -.02em; }
 .stat-n.good { color: var(--vx-strong); }
@@ -436,6 +437,7 @@ dialog::backdrop { background: rgba(28, 36, 51, .35); }
   .panel, .outcome, .stats-sheet, .plot-sheet { padding: 20px 16px; }
   .outcome h2 { font-size: 24px; }
   .stats { gap: 12px; }
+  .stats.stats-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stat-n { font-size: 28px; }
   .stat-l { font-size: 11px; letter-spacing: .06em; }
   .col-head, .col-body, .fold > summary { padding-left: 16px; padding-right: 16px; }

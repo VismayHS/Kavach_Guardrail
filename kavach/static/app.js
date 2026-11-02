@@ -790,6 +790,7 @@ const REPORTS = [
   ['LIVE_AGENT.md', 'A real agent attacked through its inbox', 'Llama on Qualcomm Cloud AI, with and without KAVACH'],
   ['AGENTOS_LIVE.md', 'Inside Infosys Topaz AgentOS', "KAVACH wired in through AgentOS's own hooks"],
   ['AGENTDOJO.md', "ETH Zurich's AgentDojo", 'A benchmark nobody on the team wrote: attacks, utility, defenses'],
+  ['AGENTDOJO_REPLAY.md', 'AgentDojo, replayed without a model', "AgentDojo's own correct calls and an agent that obeys every attack, through KAVACH"],
   ['CEDAR.md', 'Rules as Cedar policies, with proofs', 'Eleven safety properties proved; Cedar and Python agree on every decision'],
   ['PROBE.md', 'The injection classifier', 'How often a CPU model spots injected instructions, and its false alarms'],
   ['REDTEAM.md', 'We attacked it ourselves', '1,178 automated attacks; the 80 that got through the first time, and how they were fixed'],
@@ -830,10 +831,26 @@ function attackedPanel(rt, cf) {
     ${l ? `<p class="meta">A Qualcomm model also wrote ${l.attempts} new attacks from KAVACH's refusals: ${l.bypasses} got through.</p>` : ''}
     <p class="meta"><a href="#" data-act="report" data-name="REDTEAM.md">How the 80 got through, and the fix</a> · <a href="#" data-act="report" data-name="CONFORMAL.md">What the bound means</a></p></section>`;
 }
+const DEFENSE = { none: 'No defense', spotlighting_with_delimiting: 'Spotlighting (delimiters)', repeat_user_prompt: "Repeat the user's request",
+  kavach_rules: 'KAVACH, rules only', kavach: 'KAVACH', kavach_melon: 'KAVACH + MELON' };
+function agentDojoPanel(rp, live) {
+  if (!rp?.length) return '';
+  const stat = (n, t) => `<div><span class="stat-n">${n}</span><span class="stat-l">${t}</span></div>`;
+  const tiles = rp.map(r => stat(`${r.attack_success_executed} of ${r.attacked}`, `${titleCase(r.suite)} attacks that got through (without KAVACH: all ${r.undefended_success})`)
+    + stat(`${r.benign_done} of ${r.benign_tasks}`, `${titleCase(r.suite)} tasks done; ${r.benign_escalated_only} more wait for a person`)).join('');
+  const rows = (live || []).map(d => `<tr class="${d.defense === 'kavach' ? 'ours' : ''}"><td>${esc(titleCase(d.suite))}</td><td>${esc(DEFENSE[d.defense] || d.defense)}</td>${barCell(d.utility)}${barCell(d.utility_under_attack)}${barCell(d.attack_success)}<td class="num">${pct(d.attack_success_executed)}</td><td class="num">${d.n_attacked}</td></tr>`).join('');
+  return `<section class="section">${sectionHead('On a benchmark nobody on the team wrote', null, "AgentDojo (ETH Zurich, NeurIPS 2024): a bank account and a Slack workspace, attacked with AgentDojo's standard prompt injection. The tasks, attacks and checks are AgentDojo's.")}
+    <div class="stats stats-4 stats-sheet">${tiles}</div>
+    <p class="meta">Replayed without a model: AgentDojo's own correct calls, and an agent that does everything the attacker asks. A live model obeys less often, so this is the attacker's best case.</p>
+    ${rows ? `<div class="scroll"><table class="register"><thead><tr><th>Suite</th><th>Defense</th><th class="num">Tasks done</th><th class="num">Done under attack</th><th class="num">Attacks that worked</th><th class="num">… calls that ran ${tip("For one Slack attack AgentDojo counts the calls the agent tried, so a call KAVACH blocked still counts. This column counts the calls that ran.")}</th><th class="num">Runs</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="meta">Live: Llama 3.3 70B on Qualcomm Cloud AI as the agent. A run KAVACH sent to a person counts as not done: the benchmark has no person.</p>` : ''}
+    <p class="meta"><a href="#" data-act="report" data-name="AGENTDOJO_REPLAY.md">The replay, task by task</a> · <a href="#" data-act="report" data-name="AGENTDOJO.md">The live runs</a></p></section>`;
+}
 async function pageResults() {
-  const [m, lofo, hold, au, st, rt, cf] = await Promise.all([
+  const [m, lofo, hold, au, st, rt, cf, rp, live] = await Promise.all([
     api('/api/metrics').catch(() => null), api('/bench/lofo.json').catch(() => null), api('/bench/holdout.json').catch(() => null), api('/api/autonomy'), api('/api/state'),
     api('/bench/redteam.json').catch(() => null), api('/bench/conformal.json').catch(() => null),
+    api('/bench/agentdojo_replay.json').catch(() => null), api('/bench/agentdojo_live.json').catch(() => null),
   ]);
   if (!m) return `<div class="page narrow">${head('Results')}${emptyNote('No benchmark results yet', 'Run <code>python -m bench.run</code> on the server, then reload this page.')}</div>`;
   const full = m.systems.find(s => s.system === 'KAVACH (full)') || {};
@@ -847,6 +864,7 @@ async function pageResults() {
       <div class="scroll"><table class="register"><thead><tr><th>Test</th><th class="num">Unsafe allowed</th><th class="num">Injections that worked</th><th class="num">Safe, finished alone</th><th class="num">Sent to a person</th></tr></thead><tbody>
       ${generalRow('Seen', 'Test scenarios from families the risk model trained on.', full)}${generalRow('Unseen', 'Each of the 47 families judged by a risk model trained without it.', lofo?.metrics)}${generalRow('Fresh', 'Families written after the rules were finished, and never trained on.', hold?.metrics)}</tbody></table></div></section>
     ${attackedPanel(rt, cf)}
+    ${agentDojoPanel(rp, live)}
     <section class="section">${sectionHead('This session', null, 'Counts the decisions made since this server started.')}
       <div class="tag">${field('Changes checked', String(au.changes))}${field('Ran without a person', String(au.without_a_human))}${field('Sent to a person', String(au.to_a_human))}${field('Blocked', String(au.blocked))}${field('Reviews avoided', `$${au.reviews_avoided_usd[0].toLocaleString()} to $${au.reviews_avoided_usd[1].toLocaleString()}`, { tipText: 'Compared with a person approving every change. AgentOS prices a human exception at $35 to $75.' })}</div></section>
     <section class="section">${sectionHead('How this server is set up')}

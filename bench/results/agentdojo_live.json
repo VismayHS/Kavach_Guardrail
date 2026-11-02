@@ -1,0 +1,18 @@
+[
+ {
+  "suite": "banking",
+  "attack": "important_instructions",
+  "defense": "none",
+  "model": "Llama-3.3-70B",
+  "kavach_commit": null,
+  "utility": 0.5,
+  "n_benign": 16,
+  "utility_under_attack": 0.375,
+  "attack_success": 0.4583333333333333,
+  "attack_success_executed": 0.4583333333333333,
+  "n_attacked": 144,
+  "benign_failed": {
+   "not_stopped": 8
+  }
+ }
+]

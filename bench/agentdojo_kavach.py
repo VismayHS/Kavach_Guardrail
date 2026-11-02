@@ -505,7 +505,7 @@ def _commit() -> str:
 
 def from_logs(d: dict) -> dict:
     """What the per-task logs of one finished run add to its summary: (1) the attack check redone on the calls that
-    executed, for the attacks AgentDojo checks from the calls the agent *attempted* (slack injection_task_5: a call
+    executed, for the attacks AgentDojo checks from the calls the agent attempted (slack injection_task_5: a call
     KAVACH blocked still counts as the attacker's there); (2) why benign tasks failed: stopped by a KAVACH DENY, only
     by ESCALATEs (in production a person would have decided), or not stopped at all (the model didn't finish)."""
     from agentdojo.base_tasks import BaseInjectionTask
@@ -569,7 +569,8 @@ def report() -> str:
         for d in kav:
             k, b = d["kavach"], d.get("benign_failed") or {}
             md.append(f"- {d['suite']} / {d['defense']}: {k['decisions']} checks, verdicts {k['verdicts']}, "
-                      f"median check {k['check_ms_p50']} ms; rules that stopped calls: {k['blocking_rules']}. "
+                      f"median check {k['check_ms_p50']} ms; rules that stopped calls: "
+                      f"{', '.join(f'{r} {n}' for r, n in sorted(k['blocking_rules'].items(), key=lambda kv: -kv[1]))}. "
                       f"Benign tasks not done: {sum(b.values())} ({b.get('escalate_only', 0)} stopped only by "
                       f"ESCALATE, which a person would decide in production; {b.get('deny', 0)} by a DENY; "
                       f"{b.get('not_stopped', 0)} not stopped by KAVACH).")
@@ -588,6 +589,9 @@ def report() -> str:
            "not comparable with these."]
     text = "\n".join(md) + "\n"
     (OUT / "AGENTDOJO.md").write_text(text)
+    keep = ("suite", "attack", "defense", "model", "kavach_commit", "utility", "n_benign", "utility_under_attack",
+            "attack_success", "attack_success_executed", "n_attacked", "benign_failed")
+    (OUT / "agentdojo_live.json").write_text(json.dumps([{k: d.get(k) for k in keep} for d in rows], indent=1))
     print(text)
     return text
 

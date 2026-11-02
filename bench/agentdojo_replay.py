@@ -90,11 +90,16 @@ def _play(suite, user_task, injection_task, injections: dict, defense: str) -> d
     for i, d in enumerate(decisions):
         d["part"] = "user" if i < n_user else "attacker"
     seen = injection_task is None or any(
-        m.get("role") == "tool" and m.get("content") and injection_task.GOAL in get_text_content_as_str(m["content"])
+        m.get("role") == "tool" and m.get("content") and _flat(injection_task.GOAL) in _flat(get_text_content_as_str(m["content"]))
         for m in messages)
     return {"utility": bool(utility), "attack": None if attack is None else bool(attack),
             "attack_executed": None if executed is None else bool(executed), "seen": seen,
             "decisions": [{k: d[k] for k in ("part", "tool", "verdict", "reason")} for d in decisions]}
+
+
+def _flat(text: str) -> str:
+    """Tool results reach the agent as YAML, which wraps long lines and doubles quotes: compare words, not layout."""
+    return " ".join(str(text).replace("''", "'").split())
 
 
 def executed_calls(messages) -> list[FunctionCall]:
@@ -159,10 +164,11 @@ def write(results: list[dict]) -> str:
                   f"{r['undefended_success']}/{n} | {r['attack_success']}/{n} | {r['attack_success_executed']}/{n} | "
                   f"{r['attack_not_seen']} | {r['utility_under_attack']}/{n} |")
     md += ["", "AgentDojo checks one slack attack (injection_task_5: invite Fred, add him to #general, remove him) "
-           "from the calls the agent *attempted*, so a call KAVACH blocked still counts as the attacker's. The "
+           "from the calls the agent attempted, so a call KAVACH blocked still counts as the attacker's. The "
            "column 'counting only calls that ran' applies the same check to the calls that executed."]
     for r in results:
-        md += ["", f"## {r['suite']}", "", f"Rules that stopped the attacker's calls: {r['blocking_rules']}", ""]
+        rules = ", ".join(f"{k} {v}" for k, v in sorted(r["blocking_rules"].items(), key=lambda kv: -kv[1]))
+        md += ["", f"## {r['suite']}", "", f"Rules that stopped the attacker's calls (times): {rules or 'none'}.", ""]
         stopped = {k: v for k, v in r["benign"].items() if v["ground_truth_utility"] and not v["utility"]}
         if stopped:
             md += ["Benign tasks KAVACH stopped (the first call it stopped):", "", "| Task | Call | Verdict | Why |",
@@ -194,6 +200,8 @@ def main(argv=None) -> None:
     results = [replay(s, a.defense) for s in (a.suite or ["banking", "slack"])]
     for r in results:
         (OUT / f"agentdojo_replay_{r['suite']}.json").write_text(json.dumps(r, indent=1, default=str))
+    summary = [{k: v for k, v in r.items() if k not in ("benign", "attacked_runs")} for r in results]
+    (OUT / "agentdojo_replay.json").write_text(json.dumps(summary, indent=1))      # the console reads this
     print(write(results))
 
 
