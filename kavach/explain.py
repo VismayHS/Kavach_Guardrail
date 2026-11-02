@@ -2,7 +2,8 @@
 
 The template explanation is always produced. If Qualcomm Cloud AI is configured,
 an LLM rewrites it in plain English, and the rewrite is accepted only if every
-number it contains also appears in the evidence (a cheap faithfulness check);
+number it contains also appears in the evidence (a cheap faithfulness check) and,
+for a blocked or escalated action, it doesn't call the action safe or approved;
 otherwise the template is used. The explanation can never change the verdict.
 """
 from __future__ import annotations
@@ -13,6 +14,8 @@ import re
 from .qualcomm import QualcommCloudAI
 
 NUM = re.compile(r"\d[\d,]*(?:\.\d+)?")
+# Words a rewrite of a blocked or escalated action may not use unless negated: "safe and approved" on a DENY.
+CONTRADICTS = re.compile(r"(?<!not )(?<!n't )(?<!never )\b(safe|approved|allowed|harmless|no risk|go ahead)\b", re.I)
 
 
 def template(d: dict) -> str:
@@ -51,6 +54,8 @@ class Explainer:
                  "most 3 sentences. Use only facts present in the evidence. Do not add numbers."},
                 {"role": "user", "content": base + "\n\nEVIDENCE:\n" + evidence[:6000]}], max_tokens=160)
             allowed = {n.replace(",", "") for n in NUM.findall(evidence + base)}
+            if d["verdict"] in ("DENY", "ESCALATE") and CONTRADICTS.search(text):
+                return base, "template (llm rewrite rejected: contradicts the verdict)"
             if all(n.replace(",", "") in allowed for n in NUM.findall(text)):
                 return text.strip() + "\n\n" + base, "qualcomm-llm (faithfulness-checked)"
             return base, "template (llm rewrite rejected: unfaithful number)"

@@ -233,6 +233,26 @@ def test_a_made_up_sap_amount_needs_a_person(gw):
     assert "R15" not in rules(ok)
 
 
+# ---------------------------------------------------------------- explanations may not contradict the verdict
+class _FakeLLM:
+    enabled = True
+
+    def __init__(self, text):
+        self.text = text
+
+    def chat_text(self, *_a, **_k):
+        return self.text
+
+
+@pytest.mark.parametrize("text,kept", [("This action is completely safe and approved.", False),
+                                       ("This is not safe: the address came from an email.", True)])
+def test_a_rewrite_that_contradicts_a_block_is_rejected(gw, text, kept):
+    tid, _ = gw.start_task("ravi", "analyst", "Tidy the workspace.")
+    d = gw.check(tid, ToolCall("files.read", {"path": "deploy.env"})).to_dict()
+    out, src = Explainer(llm=_FakeLLM(text), use_llm=True).explain(d)
+    assert (text in out) is kept and ("contradicts" in src) is (not kept)
+
+
 # ---------------------------------------------------------------- the API says whether a safeguard really exists
 def test_check_alone_reports_no_armed_safeguard(api):
     client, _ = api
