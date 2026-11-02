@@ -400,7 +400,7 @@ def run(defense: str, suite_name: str = "banking", attack: str = "important_inst
                                                    injection_tasks=injection_tasks, verbose=False,
                                                    benchmark_version=BENCHMARK_VERSION)
     b, a = _summary(benign), _summary(attacked)
-    out = {"suite": suite_name, "defense": defense, "attack": attack, "model": llm.model,
+    out = {"suite": suite_name, "defense": defense, "attack": attack, "model": llm.model, "kavach_commit": _commit(),
            "agentdojo": BENCHMARK_VERSION, "seconds": round(time.time() - t0, 1),
            "utility": b["utility"], "n_benign": b["n"],
            "utility_under_attack": a["utility"], "attack_success": a["attack_success"], "n_attacked": a["n_attacked"],
@@ -419,6 +419,16 @@ def run(defense: str, suite_name: str = "banking", attack: str = "important_inst
     (dest / f"{suite_name}_{defense}_{attack}.json").write_text(json.dumps(out, indent=1, default=str))
     print(json.dumps({k: v for k, v in out.items() if k not in ("benign", "attacked")}, indent=1, default=str))
     return out
+
+
+def _commit() -> str:
+    """The KAVACH code a run used (runs take hours; the code moves on meanwhile)."""
+    import subprocess
+    try:
+        return subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=ROOT,
+                              timeout=5).stdout.strip()
+    except Exception:
+        return "unknown"
 
 
 def report() -> str:
