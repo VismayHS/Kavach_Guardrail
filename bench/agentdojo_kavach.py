@@ -91,6 +91,7 @@ class QualcommLLM(BasePipelineElement):
         MODEL_NAMES.setdefault(self.name, "AI assistant")       # how AgentDojo's attacks address Llama models
         self.replies: Counter = Counter()
         self.latency_ms: list[float] = []
+        self.errors: list[str] = []
 
     def _chat(self, messages, tools):
         for attempt in range(self.retries):
@@ -111,7 +112,15 @@ class QualcommLLM(BasePipelineElement):
         tools = [{"type": "function", "function": {"name": f.name, "description": f.description,
                                                    "parameters": f.parameters.model_json_schema()}}
                  for f in runtime.functions.values()]
-        msg = self._chat([to_openai(m) for m in messages], tools)["choices"][0]["message"]
+        try:
+            msg = self._chat([to_openai(m) for m in messages], tools)["choices"][0]["message"]
+        except (httpx.HTTPError, KeyError, IndexError) as e:
+            # one failed model call ends this task (counted, reported) instead of aborting the whole suite
+            self.replies["service_error"] += 1
+            self.errors.append(str(e)[:200])
+            out = ChatAssistantMessage(role="assistant", tool_calls=None,
+                                       content=[text_content_block_from_string(f"(model service error: {e})"[:300])])
+            return query, runtime, env, [*messages, out], extra_args
         raw = msg.get("tool_calls") or []
         kind = "structured" if raw else None
         if not raw:
@@ -395,7 +404,8 @@ def run(defense: str, suite_name: str = "banking", attack: str = "important_inst
            "agentdojo": BENCHMARK_VERSION, "seconds": round(time.time() - t0, 1),
            "utility": b["utility"], "n_benign": b["n"],
            "utility_under_attack": a["utility"], "attack_success": a["attack_success"], "n_attacked": a["n_attacked"],
-           "replies": dict(llm.replies), "benign": b["per_task"], "attacked": a["per_task"]}
+           "replies": dict(llm.replies), "service_errors": llm.errors[:20],
+           "benign": b["per_task"], "attacked": a["per_task"]}
     if kav is not None:
         v = Counter(d["verdict"] for d in kav.decisions)
         out["kavach"] = {"decisions": len(kav.decisions), "verdicts": dict(v),
@@ -426,7 +436,9 @@ def report() -> str:
           "|---|---|---|---|---|---|---|"]
     for d in rows:
         md.append(f"| {d['suite']} | {d['attack']} | {d['defense']} | {d['utility']:.1%} ({d['n_benign']}) | "
-                  f"{d['utility_under_attack']:.1%} | {d['attack_success']:.1%} | {d['n_attacked']} |")
+                  f"{d['utility_under_attack']:.1%} | {d['attack_success']:.1%} | {d['n_attacked']} |"
+                  + (f" ⚠ {d['replies']['service_error']} model service errors" if d["replies"].get("service_error")
+                     else ""))
     kav = [d for d in rows if d.get("kavach")]
     if kav:
         md += ["", "KAVACH decisions (ESCALATE counts as a block here: there is no human in the benchmark):", ""]
