@@ -27,7 +27,7 @@ Optional, Qualcomm Cloud AI (Imagine API on Cirrascale's Inference Cloud, OpenAI
 ```bash
 export IMAGINE_API_KEY=...                                    # or INFERENCE_CLOUD_API_KEY
 export IMAGINE_API_ENDPOINT=https://aisuite.cirrascale.com/apis/v2   # or INFERENCE_CLOUD_ENDPOINT
-python -m uvicorn kavach.server:app --port 8000 --env-file ../.env   # or keep the two lines in a .env file
+python -m uvicorn kavach.server:app --port 8000 --env-file ../.env   # or keep them in a .env file (needs: pip install python-dotenv)
 export KAVACH_AGENT_MODEL=Llama-3.3-70B                       # the protected agent's model; check GET /models
 python -m agent.llm_agent "Summarise my unread emails."               # live agent, guarded
 python -m agent.llm_agent "Summarise my unread emails." --no-guard    # same agent, unguarded
