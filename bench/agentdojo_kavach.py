@@ -168,7 +168,7 @@ def _io(effect="read", sink="none", rev=R.IDEMPOTENT, control=(), data=(), out_t
         out_conf=Conf.INTERNAL, untrusted_fields=(), amount=None, verbs=(), to=None, body=None, model=None,
         user_args=()):
     """to/body: which arguments are the destination and the message (arg_map roles R14, R38, R2, R37 read);
-    model: a KAVACH effect model ('message' for chat); user_args: values only the user may choose (R41)."""
+    model: a KAVACH effect model ('message' for chat); user_args: values only the user may choose (R42)."""
     arg_map = {k: v for k, v in (("to", to), ("body", body)) if v}
     return dict(effect=effect, sink=sink, reversibility=rev, control_args=list(control), data_args=list(data),
                 output_trust=out_trust, output_conf=out_conf, untrusted_fields=list(untrusted_fields),

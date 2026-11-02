@@ -1,4 +1,4 @@
-"""R41: some arguments only the user may choose, such as a new password. A manifest lists them (user_args); a value
+"""R42: some arguments only the user may choose, such as a new password. A manifest lists them (user_args); a value
 the user didn't type goes to a person. Lineage can't always see where a short token came from (AgentDojo banking:
 the user asks to set '1j1l-2k3j', an injected transaction subject asks for 'new_password')."""
 import tempfile
@@ -27,7 +27,7 @@ def r41(k, request, password, seen=None):
     if seen:
         k.register_output(tid, ToolCall("mail.read_inbox", {}), [{"id": "m1", "from": "x@y.example", "body": seen}])
     d = k.check(tid, ToolCall("account.set_password", {"password": password}))
-    return d, next((g for g in d.gates if g.rule_id == "R41"), None)
+    return d, next((g for g in d.gates if g.rule_id == "R42"), None)
 
 
 def test_the_password_the_user_typed_passes():

@@ -39,7 +39,7 @@ class ToolSpec:
     # email body). Only those are untrusted; the rest of each record keeps output_trust. Empty = whole output.
     untrusted_fields: list[str] = field(default_factory=list)
     intent_verbs: list[str] = field(default_factory=list)   # words in a request that ask for this kind of action
-    user_args: list[str] = field(default_factory=list)      # arguments only the user may choose (a new password): R41
+    user_args: list[str] = field(default_factory=list)      # arguments only the user may choose (a new password): R42
     # MCP-style hints (readOnlyHint/destructiveHint/openWorldHint) are derived, never trusted from servers
     def mcp_annotations(self) -> dict:
         return {"readOnlyHint": self.effect in ("read", "ingress"),
