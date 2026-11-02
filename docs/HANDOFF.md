@@ -6,9 +6,10 @@ Everything a new session (person or Claude Code) needs to continue the project. 
 
 ## 0. Status of `vismay-dev` (2 Nov 2026)
 
-`vismay-dev` = `build/phase-4` (`4c42d4e`) + this handoff + the gap roadmap below (Parts 1–5; "Part" = Vismay's list,
-"Phase" = dhanush-sr's phases 0–4 and the Phase 5 roadmap). One fix per commit, each with its regression test, and the
-full suite passes at every commit. Attacks are in `tests/test_gaps.py`; each failed on `build/phase-4` before its fix.
+`vismay-dev` = `main` (Phase 5 + console UI, `32c6767`) merged with Vismay's gap work below (Parts 1–5; "Part" =
+Vismay's list, "Phase" = the team's phases 0–5). One fix per commit, each with its regression test, and the full suite
+passes at every commit. Attacks are in `tests/test_gaps.py`; each failed before its fix. What the merge changed in
+teammates' files, and the attack-by-attack comparison with `main`: `docs/MERGE_NOTES.md`.
 
 | Item | What landed | Rule / file |
 |---|---|---|
@@ -19,17 +20,26 @@ full suite passes at every commit. Attacks are in `tests/test_gaps.py`; each fai
 | U4 | Evaluation of LLM-written explanations | `bench/explain_eval.py` |
 | U5 | Payment details from untrusted content need a person, even internally | R39 |
 | U6 | No context + outside destination the user didn't give needs a person; orchestrator vs agent tokens, `POST /api/v1/session` | R40, `kavach/auth.py` |
-| U7 | Characters emailed outside count per task | R36 |
+| U7 | Characters emailed outside count per task; totals shared across a delegation chain | R36 |
 | U8 | SQL guard proven without the keyword filter | `tests/test_gaps.py` |
-| U9 | Receipts, approvals, labels survive restarts; tampered store stops startup | `kavach/store.py`, `KAVACH_STATE` |
-| U10 | Signed checkpoint detects a cut-short receipt log | `kavach/receipts.py` |
-| U11 | Recalibration from reviewers' decisions, reported before install | `bench/recalibrate.py` |
+| U9 | Persistence: Phase 5's store (`KAVACH_DB_URL`) replaces this branch's `KAVACH_STATE` | `kavach/store.py` (Phase 5) |
+| U10 | Signed checkpoint detects a cut-short receipt log, kept beside the Phase 5 store | `kavach/receipts.py`, `kavach/store.py` |
+| U11 | Retraining from reviewers' decisions: Phase 5's learning loop replaces `bench/recalibrate.py` | `kavach/learning.py` (Phase 5) |
 | V2 | Every slide / blueprint claim checked | `docs/CLAIMS_CHECK.md` |
+
+Results after the merge (self-graded suite, 5 seeds): 0% unsafe auto-allowed, 95.2% safe auto-completed, 25.5%
+escalated; leave one family out 92.1%; red-team fuzz 0 of 1,178; Cedar parity 1027/1027.
 
 **Blocked, needs a person:**
 - **Live Qualcomm runs (U1, U2, U4):** no key in the build container and `aisuite.cirrascale.com` isn't reachable from it. On a laptop with the key in `.env`: `python -m bench.semantic_eval`, `python -m bench.explain_eval`, `python -m agent.llm_agent "Go through my unread emails and take care of whatever each one asks for." --both --save-log`. Slide 6's wording follows the semantic result.
 - **U12 AgentOS reproduction:** needs approval to run Infosys's code (AgentOS 1.0.0 at `49fe687`, Redis, their finance API), or the raw logs from the 2 Nov run.
 - **V1 / V3:** someone other than the author re-attacks each milestone; event rules, slide 2, rehearsal, fallback video.
+- **Owned by teammates, in progress:** rate-limit retry in the shared Qualcomm client, R1 for a source the user named,
+  console additions (red team, conformal, shell example), a recorded live-run fallback; AgentDojo suites and the
+  Qualcomm red-team attacker (need network access to Qualcomm).
+- **Commit trailers on `main`:** f887939, 958e38a and 096fc97 carry Claude co-author lines; every branch is built on
+  the first two, so removing them means rewriting `main` and all branches (team decision). `vismay-dev`'s own commits
+  are clean.
 
 ---
 

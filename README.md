@@ -90,11 +90,11 @@ Offline rehearsal of the Qualcomm path: `python -m uvicorn scripts.fake_imagine:
 | `GET /api/autonomy` | Changes that ran without a human this session, priced at AgentOS's own $35–75 per human exception |
 | `GET /api/policy` | Rules, roles, limits, payment tiers and tools shown in the console rulebook |
 
-Auth: set `KAVACH_AUTH_SECRET` (32+ random bytes) and the API requires `Authorization: Bearer <token>`; user and role come from the token (`python -m kavach.auth mint <user> <role> [hours] [orchestrator|agent]`), never from the request body. An orchestrator token (the harness that talks to the user) states the request and supplies tool outputs; an agent token may only check calls inside a session the orchestrator opened. Tokens without a kind count as orchestrator tokens. Without a secret the server runs in dev mode and every receipt records `authenticated: false`.
+Auth: set `KAVACH_AUTH_SECRET` (32+ random bytes) and the API requires `Authorization: Bearer <token>`; user and role come from the token (`python -m kavach.auth mint <user> <role> [hours] [tenant] [orchestrator|agent]`), never from the request body. An orchestrator token (the harness that talks to the user) states the request and supplies tool outputs; an agent token may only check calls inside a session the orchestrator opened. Tokens without a kind count as orchestrator tokens. Without a secret the server runs in dev mode and every receipt records `authenticated: false`.
 
 Environment: the server guards `KAVACH_ENV` (default `prod`); a request's `env` field is ignored.
 
-State: by default everything is in memory. `KAVACH_DB_URL=sqlite:////path/kavach.db` (or a Postgres URL) keeps receipts, kill-switch pauses, undo windows, tool pins and reviewers' decisions across restarts (`kavach/store.py`); the learning loop (`kavach/learning.py`, `POST /api/learning/retrain`) retrains the risk model on reviewers' decisions behind a no-regression gate. `KAVACH_PROFILE=prod` refuses to start without real signing and auth keys.
+State: by default everything is in memory. `KAVACH_DB_URL=sqlite:////path/kavach.db` (or a Postgres URL) keeps receipts, kill-switch pauses, undo windows, tool pins and reviewers' decisions across restarts (`kavach/store.py`), with the receipt chain's signed checkpoint in a separate file (`<db>.checkpoint.json`, or `KAVACH_CHECKPOINT_FILE` for Postgres) so a log cut short fails `/readyz`; the learning loop (`kavach/learning.py`, `POST /api/learning/retrain`) retrains the risk model on reviewers' decisions behind a no-regression gate. `KAVACH_PROFILE=prod` refuses to start without real signing and auth keys.
 
 ## Layout
 
