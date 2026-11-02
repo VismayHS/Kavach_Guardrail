@@ -16,6 +16,7 @@ Endpoints
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -26,7 +27,7 @@ from pathlib import Path
 import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from . import auth
@@ -198,8 +199,30 @@ def settle(advance_s: float = 0.0, who: dict | None = Depends(caller)):
 
 
 @app.get("/api/receipts", dependencies=[Depends(caller)])
-def receipts(limit: int = 50):
+def receipts(limit: int = 50, after: int | None = None):
+    """The last `limit` receipts, or (for polling UIs) every receipt with seq > `after`, oldest first."""
+    if after is not None:
+        return gw.receipts.items[max(0, after):][:max(1, limit)]
     return gw.receipts.items[-limit:]
+
+
+@app.get("/api/events", dependencies=[Depends(caller)])
+async def events(after: int = 0, max_s: float = 300.0):
+    """Server-Sent Events: every receipt as it is written (decisions, executions, approvals, undos, kills).
+    `id` is the receipt seq, so a reconnecting client resumes with ?after=<last id>. Browsers' EventSource can't
+    send an Authorization header: with auth on, read the stream with fetch() (e.g. @microsoft/fetch-event-source)."""
+    async def stream():
+        seq, until = max(0, after), time.time() + max(0.0, min(max_s, 3600.0))
+        yield "retry: 2000\n\n"
+        while True:
+            for r in gw.receipts.items[seq:]:
+                seq = r["seq"]
+                yield f"id: {seq}\nevent: {r['body'].get('type', 'receipt')}\ndata: {json.dumps(r, default=str)}\n\n"
+            if time.time() >= until:
+                break
+            await asyncio.sleep(0.5)
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.get("/api/receipts/verify")
