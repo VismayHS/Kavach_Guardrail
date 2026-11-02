@@ -74,6 +74,16 @@ READ_INTENT = re.compile(r"^\s*(what|which|how|when|who|is|are|does|do|can you (
                          r"list|find|summari[sz]e|tell me|look up|review)\b|\?\s*$", re.I)
 STATE_CHANGING = {"crm.execute", "mail.send", "files.write", "files.delete", "payments.transfer", "payments.refund",
                   "payment.propose", "payment.release", "vendor.update_bank", "sap.post"}
+# A question asks for information even when it contains an action word: "What's the update on invoice 1042?"
+# A dot inside a token (an address, a decimal) doesn't end the sentence.
+QUESTION = re.compile(r"^\s*(what|which|when|who|why|where|how|is|are|was|were|does|did|do|has|have)\b"
+                      r"(?:[^.!?]|\.(?=\S))*\?\s*$", re.I)
+_FORMS = r"(?:s|es|d|ed|ing|ment|ments|ise|ize|ised|ized|ising|izing|y|ies)?"
+
+
+def _mentions(req: str, verb: str) -> bool:
+    """Whole words and their forms: "set" is not in "settlement", and "fix" is not in "fixed-price"."""
+    return bool(re.search(rf"(?<![\w-])\b{re.escape(verb)}{_FORMS}\b(?!-)", req))
 
 
 def heuristic_alignment(user_request: str, tool: str, labels: dict[str, Label], spec=None) -> dict:
@@ -82,7 +92,7 @@ def heuristic_alignment(user_request: str, tool: str, labels: dict[str, Label], 
     req = user_request.lower()
     verbs = (spec.intent_verbs if spec is not None and spec.intent_verbs else None) or TOOL_VERBS.get(tool, [])
     changes_state = spec.effect not in ("read", "ingress") if spec is not None else tool in STATE_CHANGING
-    verb_hit = any(v in req for v in verbs)
+    verb_hit = not QUESTION.search(user_request) and any(_mentions(req, v) for v in verbs)
     trusted_dest = all(l.trust.value != "untrusted" for l in labels.values())
     user_traced = any("user" in l.sources for l in labels.values())
     read_only_ask = bool(READ_INTENT.search(user_request)) and changes_state and not verb_hit

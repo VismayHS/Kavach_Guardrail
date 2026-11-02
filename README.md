@@ -15,10 +15,12 @@ It then **allows** the call, **allows it with undo armed**, **escalates it to a 
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                       # 103 tests
+python -m pytest -q                       # all tests (see the count it prints)
 python -m bench.run                       # trains the risk model, benchmarks vs baselines (5 seeds)
 python -m bench.lofo                      # each family judged by a model trained without it
 python -m bench.holdout                   # families written after the rules, never trained on
+python -m bench.layers                    # what each layer decides (rules, intent gate, risk model), counted by family
+python -m bench.semantic_eval --offline   # 24 cases only meaning can decide; drop --offline to run the Qualcomm judge
 python -m uvicorn kavach.server:app --port 8000   # then open http://localhost:8000
 ```
 
@@ -61,6 +63,9 @@ export KAVACH_AGENT_MODEL=Llama-3.3-70B                       # the protected ag
 python -m agent.llm_agent "Summarise my unread emails."               # live agent, guarded
 python -m agent.llm_agent "Summarise my unread emails." --no-guard    # same agent, unguarded
 python -m bench.judge_eval                                    # judge on vs off: verdict changes and latency
+python -m bench.semantic_eval                                 # does the judge catch what rules and keywords miss?
+python -m bench.explain_eval                                  # LLM-written explanations: kept, rejected, latency
+python -m agent.llm_agent "..." --both --save-log             # both runs, full transcripts in bench/results/live/
 ```
 
 With the key loaded by the server, the console's **Live agent** screen takes plain English: a real agent (Llama-3.3-70B on Qualcomm Cloud AI) works on it twice, without and with KAVACH, each on a fresh copy of the demo company, and both columns fill in live (`POST /api/agent/run`). About a minute per request; models don't behave the same every time.
@@ -73,26 +78,31 @@ Offline rehearsal of the Qualcomm path: `python -m uvicorn scripts.fake_imagine:
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/v1/check` | Raw action input → decision, scorecard, explanation, receipt (the PS's "agent action input → approve/block → explanation") |
+| `POST /api/v1/check` | Raw action input → decision, scorecard, explanation, receipt (the PS's "agent action input → approve/block → explanation"); `safeguard_armed` says whether a hold or snapshot really exists, `outputs_seen` how much context provenance had |
+| `POST /api/v1/session` | The orchestrator opens a session: the user's request and the tool outputs so far (agent tokens can't) |
 | `POST /api/v1/plan` | Validate a whole plan before step one |
 | `POST /mcp` | MCP JSON-RPC (`initialize`, `tools/list`, `tools/call`): put KAVACH between any MCP client and the tools |
 | `POST /api/demo/{scenario}` | Replay a scripted attack or benign scenario |
 | `GET/POST /api/hitl[/{id}]` | Human approvals (approve / approve-as-draft / deny) |
 | `POST /api/undo/{receipt}` | Take back a safeguarded action: restore its snapshot, or cancel its hold, recall window or parked document |
 | `POST /api/settle?advance_s=` | Let held payments and queued emails whose window has passed go out (`advance_s` fast-forwards for the demo) |
-| `GET /api/receipts/verify` | Verify the hash chain |
+| `GET /api/receipts/verify` | Verify the hash chain and its signed checkpoint |
 | `GET /api/autonomy` | Changes that ran without a human this session, priced at AgentOS's own $35–75 per human exception |
 | `GET /api/policy` | Rules, roles, limits, payment tiers and tools shown in the console rulebook |
 
-Auth: set `KAVACH_AUTH_SECRET` (32+ random bytes) and the API requires `Authorization: Bearer <token>`; user and role come from the token (`python -m kavach.auth mint <user> <role>`), never from the request body. Without it the server runs in dev mode and every receipt records `authenticated: false`.
+Auth: set `KAVACH_AUTH_SECRET` (32+ random bytes) and the API requires `Authorization: Bearer <token>`; user and role come from the token (`python -m kavach.auth mint <user> <role> [hours] [orchestrator|agent]`), never from the request body. An orchestrator token (the harness that talks to the user) states the request and supplies tool outputs; an agent token may only check calls inside a session the orchestrator opened. Tokens without a kind count as orchestrator tokens. Without a secret the server runs in dev mode and every receipt records `authenticated: false`.
+
+Environment: the server guards `KAVACH_ENV` (default `prod`); a request's `env` field is ignored.
+
+State: by default everything is in memory. `KAVACH_DB_URL=sqlite:////path/kavach.db` (or a Postgres URL) keeps receipts, kill-switch pauses, undo windows, tool pins and reviewers' decisions across restarts (`kavach/store.py`); the learning loop (`kavach/learning.py`, `POST /api/learning/retrain`) retrains the risk model on reviewers' decisions behind a no-regression gate. `KAVACH_PROFILE=prod` refuses to start without real signing and auth keys.
 
 ## Layout
 
 ```
-kavach/   models · manifest · provenance · consequence · policy (+ policies/default.yaml) · intent · risk
-          gateway · hitl · receipts · explain · plan · qualcomm · environment · scenarios · server · static/
+kavach/   models · manifest · provenance · consequence · policy (+ policies/default.yaml) · intent · risk · sql
+          gateway · hitl · receipts · store · auth · explain · plan · qualcomm · environment · scenarios · server · static/
 bench/    suite.py (labelled scenarios) · run.py (train, calibrate, baselines, Pareto, multi-seed) · lofo.py · holdout.py
-          infosys_compare.py · results/
+          layers.py · semantic_eval.py · judge_eval.py · explain_eval.py · infosys_compare.py · results/
 agent/    llm_agent.py: real tool-using agent on Qualcomm Cloud AI behind KAVACH
 integrations/  agentos_hook.py: KAVACH as Infosys Topaz AgentOS hooks
 docs/     BLUEPRINT.md (end-to-end design + research) · INFOSYS_GAP_ANALYSIS.md · AUDIT_OF_EXISTING_DOCS.md · img/

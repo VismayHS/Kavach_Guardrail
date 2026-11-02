@@ -8,6 +8,7 @@ __pycache__/
 !kavach/**/*.env.example
 .DS_Store
 bench/agentdojo_runs/
+bench/results/rehearsal/
 .kavach/
 examples/mcp/sent_mail.jsonl
 keys/

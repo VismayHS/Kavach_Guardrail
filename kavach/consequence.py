@@ -18,7 +18,7 @@ from .addresses import domain_of, parse_recipients
 from .environment import INTERNAL_DOMAIN, MAIL_RECALL_S, PAYMENT_HOLD_S, Environment
 from .manifest import ToolSpec, arg, model_of
 from .models import Effect, Label, Reversibility, TaskContext, ToolCall
-from .sql import classify
+from .sql import READ_STATEMENTS, WRITE_STATEMENTS, classify, guard, statement_kind
 
 STAGE_BUDGET_S = 0.25          # a statement that can't be staged in this time is too expensive to run (A8)
 TOO_EXPENSIVE = f"too expensive to stage (over {STAGE_BUDGET_S * 1000:.0f} ms)"
@@ -186,7 +186,10 @@ class ConsequenceEngine:
         changes: list[dict] = []
         try:
             if not ddl and sq["tables_written"]:      # row-level diff: which rows and columns really change (A5)
-                changelog.install(clone, sq["tables_written"])
+                changelog.install(clone, sq["tables_written"])   # before guard(): it refuses to create triggers
+            guard(clone)
+            if statement_kind(sql) not in WRITE_STATEMENTS:
+                raise ValueError(f"{statement_kind(sql).upper() or 'this'} statements are not allowed on this tool")
             _budget(clone)
             cur = clone.execute(sql)
             clone.set_progress_handler(None, 0)
@@ -223,7 +226,10 @@ class ConsequenceEngine:
         clone = self.env.db_copy()
         sq = classify(clone, sql)
         clone.execute("PRAGMA query_only = ON")      # a "read" that writes fails here, not in production
+        guard(clone)
         try:
+            if statement_kind(sql) not in READ_STATEMENTS:
+                raise ValueError(f"{statement_kind(sql).upper() or 'this'} statements are not allowed on this tool")
             _budget(clone)
             n = len(clone.execute(sql).fetchmany(10000))
             err = None
