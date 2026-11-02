@@ -229,6 +229,35 @@ def resume(kill_id: str, who: dict | None = Depends(caller)):
         raise HTTPException(404, str(e))
 
 
+class ReplayIn(BaseModel):
+    policy_yaml: str
+    task_ids: list[str] | None = None
+
+
+@app.get("/api/policy", dependencies=[Depends(caller)])
+def policy_info():
+    p = gw.policy
+    return {"version": p.version, "sha256": p.sha256, "signed_by": getattr(p, "signed_by", None),
+            "rules": p.rules, "enforce": gw.cfg.enforce,
+            "candidate": None if gw.candidate is None else {"version": gw.candidate.version,
+                                                            "sha256": gw.candidate.sha256,
+                                                            "percent": gw.cfg.candidate_percent}}
+
+
+@app.post("/api/policy/replay")
+def policy_replay(body: ReplayIn, who: dict | None = Depends(caller)):
+    """F9: re-run past tasks under a draft policy and list every decision that would change."""
+    if who is not None and who["role"] not in ("admin", "policy_author"):
+        raise HTTPException(403, "only an admin or a policy author can replay policies")
+    from .policy import PolicyEngine
+    from .replay import replay
+    try:
+        draft = PolicyEngine.from_text(body.policy_yaml)
+    except Exception as e:
+        raise HTTPException(422, f"draft policy doesn't load: {e}")
+    return replay(gw, draft, body.task_ids)
+
+
 @app.get("/api/tasks", dependencies=[Depends(caller)])
 def tasks(limit: int = 50):
     """Recent sessions (newest first) with their Rule-of-Two legs, for a session list in a UI."""
