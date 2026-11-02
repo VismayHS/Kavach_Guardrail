@@ -4,15 +4,17 @@ KAVACH is our entry for **ET-03 "Agentic AI Guardrail Validator"** in the Infosy
 
 ## Branches (check first)
 - `main`: original prototype (740 scenarios, 12 rules, 68.4% safe auto). Deck, blueprint and Infosys comparison on `main` still describe this version.
-- `build/phase-0` … `build/phase-4`: stacked work by dhanush-sr (1–2 Nov 2026). **`build/phase-4` contains all of it** and is a fast-forward of `main` except for the commit that added this file. Latest: 940 scenarios, 47 families, rules R1–R24, 95.2% safe auto, 0% unsafe auto-allowed, real Qualcomm runs, KAVACH verified inside Topaz AgentOS.
-- First open task: merge `build/phase-4` into `main` (ask the user before pushing).
+- `build/phase-0` … `build/phase-4` (`4c42d4e`): stacked work by dhanush-sr (1–2 Nov 2026): 940 scenarios, 47 families, rules R1–R24, undo windows, Qualcomm judge, AgentOS hook.
+- **`vismay-dev`**: `build/phase-4` + `main`'s handoff docs + Vismay's gap work (2 Nov), one commit per fix, every commit tested. Rules R29–R34 (R25–R28 are reserved for the Phase 5 roadmap; new rules start at R35), SQL sandbox authorizer, server-side env, orchestrator/agent tokens, persistent state (`KAVACH_STATE`), signed receipt checkpoints, recalibration, and the eval scripts (`bench/layers.py`, `semantic_eval.py`, `explain_eval.py`). What's done and what's blocked: `docs/HANDOFF.md` §0.
+- Merging into `main` is a team decision; ask before pushing anything but `vismay-dev`.
 
 ## Commands
 ```bash
 pip install -r requirements.txt            # Python 3.11+
-python -m pytest tests -q                  # NOT plain `pytest`: integrations/agentos_live_test.py needs a real AgentOS
+python -m pytest -q                        # every test; a commit must keep them all passing
 python -m bench.run --quick                # seed-0 benchmark (~1 min); without --quick also 5 seeds
-python -m bench.lofo ; python -m bench.holdout
+python -m bench.lofo ; python -m bench.holdout ; python -m bench.layers
+python -m bench.semantic_eval --offline     # judge-on runs need the Qualcomm key (rehearsals go to bench/results/rehearsal/)
 python -m uvicorn kavach.server:app --port 8000   # dashboard http://localhost:8000
 python scripts/build_deck.py && (cd deliverables && soffice --headless --convert-to pdf KAVACH_Solution_Deck.pptx)
 python scripts/build_page.py               # docs/KAVACH_Blueprint.html from docs/BLUEPRINT.md
@@ -26,6 +28,7 @@ Qualcomm: `IMAGINE_API_KEY` + `IMAGINE_API_ENDPOINT=https://aisuite.cirrascale.c
 - Fail closed: unknown tools, timeouts, LLM errors never become ALLOW.
 - Payment facts come from records, never from the agent's text. Provenance is per value (user / derived / untrusted).
 - Every decision writes a hash-chained, HMAC-signed receipt.
+- Agent-kind tokens never supply the user's request or tool outputs; the server, not the caller, sets the environment.
 
 ## Working conventions
 - Report numbers honestly. The suite is synthetic and written by us; say so. If a change moves a benchmark number, regenerate `bench/results/*` and every doc/slide that quotes it (README, docs/BLUEPRINT.md, docs/INFOSYS_GAP_ANALYSIS.md, scripts/build_deck.py text, deck PDF, HTML page).
@@ -33,3 +36,5 @@ Qualcomm: `IMAGINE_API_KEY` + `IMAGINE_API_ENDPOINT=https://aisuite.cirrascale.c
 - Synthetic data only; no real customer data, credentials or keys in the repo.
 - Git: don't force-push or rewrite history without asking. Commit author is VismayHS <vismayhs@gmail.com>.
 - `bench.run` overwrites `kavach/model/risk_model.json`; commit model + results together or restore the file.
+- Commits: one fix per commit, its regression test in the same commit, the full suite passing at that commit. Attack first (a test that fails on the old code), then the fix.
+- Runs against `scripts/fake_imagine.py` are rehearsals: they write to the git-ignored `bench/results/rehearsal/`, never to a results file.

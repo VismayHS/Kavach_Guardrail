@@ -4,6 +4,35 @@ Everything a new session (person or Claude Code) needs to continue the project. 
 
 ---
 
+## 0. Status of `vismay-dev` (2 Nov 2026)
+
+`vismay-dev` = `build/phase-4` (`4c42d4e`) + this handoff + the gap roadmap below (Parts 1–5; "Part" = Vismay's list,
+"Phase" = dhanush-sr's phases 0–4 and the Phase 5 roadmap). One fix per commit, each with its regression test, and the
+full suite passes at every commit. Attacks are in `tests/test_gaps.py`; each failed on `build/phase-4` before its fix.
+
+| Item | What landed | Rule / file |
+|---|---|---|
+| Part 1 | Raw SQL can't change finance records; SQL sandbox authorizer (no VACUUM INTO / ATTACH / PRAGMA / triggers); env set by the server; per-task totals; bulk/encoded outbound mail; untrusted destinations; unknown-tool output untrusted; `safeguard_armed` / `outputs_seen`; whole-word intent, questions don't authorise writes; credential files on write/delete; SAP amounts; explainer can't contradict a block; `.env` ignored; fair Infosys config | R29–R32, R9, R15, `kavach/sql.py` |
+| U1 | 24 cases only meaning can decide; offline, rules + keywords catch 0 of 12 misreadings | `bench/semantic_eval.py` |
+| U2 | Live agent runs saved with full transcripts | `agent/llm_agent.py --both --save-log` |
+| U3 | What each layer decides: the risk model changes no verdict (supporting signal) | `bench/layers.py`, `LAYERS.md` |
+| U4 | Evaluation of LLM-written explanations | `bench/explain_eval.py` |
+| U5 | Payment details from untrusted content need a person, even internally | R33 |
+| U6 | No context + outside destination the user didn't give needs a person; orchestrator vs agent tokens, `POST /api/v1/session` | R34, `kavach/auth.py` |
+| U7 | Characters emailed outside count per task | R30 |
+| U8 | SQL guard proven without the keyword filter | `tests/test_gaps.py` |
+| U9 | Receipts, approvals, labels survive restarts; tampered store stops startup | `kavach/store.py`, `KAVACH_STATE` |
+| U10 | Signed checkpoint detects a cut-short receipt log | `kavach/receipts.py` |
+| U11 | Recalibration from reviewers' decisions, reported before install | `bench/recalibrate.py` |
+| V2 | Every slide / blueprint claim checked | `docs/CLAIMS_CHECK.md` |
+
+**Blocked, needs a person:**
+- **Live Qualcomm runs (U1, U2, U4):** no key in the build container and `aisuite.cirrascale.com` isn't reachable from it. On a laptop with the key in `.env`: `python -m bench.semantic_eval`, `python -m bench.explain_eval`, `python -m agent.llm_agent "Go through my unread emails and take care of whatever each one asks for." --both --save-log`. Slide 6's wording follows the semantic result.
+- **U12 AgentOS reproduction:** needs approval to run Infosys's code (AgentOS 1.0.0 at `49fe687`, Redis, their finance API), or the raw logs from the 2 Nov run.
+- **V1 / V3:** someone other than the author re-attacks each milestone; event rules, slide 2, rehearsal, fallback video.
+
+---
+
 ## 1. The competition
 
 - **Event:** Infosys IGNITE ENG NEXT 2026 Hack-AI-Thon.
@@ -237,19 +266,9 @@ The blueprint is also published as a private web page (only the owner can open i
 
 ## 6. Open tasks, in priority order
 
-1. **Merge `build/phase-4` into `main`.** Ask before pushing.
-2. **Fix test collection** so plain `pytest` works: rename `integrations/agentos_live_test.py` (e.g. `agentos_live_check.py`) or add a `pytest.ini` with `testpaths = tests`. Update the README.
-3. **Regenerate everything that quotes old numbers:**
-   - `python bench/infosys_compare.py <iaf clone>`;
-   - update `docs/INFOSYS_GAP_ANALYSIS.md`, `docs/BLUEPRINT.md` (§3, §4, §11, Q&A) and the deck text in `scripts/build_deck.py`;
-   - rebuild the deck, PDF and HTML page.
-4. **Add phase-4 evidence to the deck:** the live-agent attack (strongest demo), AgentOS live run, finance rules R18–R23 from Infosys's own rulebook, undo windows, the autonomy meter.
-5. **Team-only items:**
-   - fill in slide 2;
-   - record a 2–3 minute fallback demo video (live agent attack, AgentOS escalation, undo);
-   - rehearse answers to the judge questions in §3.
-6. **Optional:**
-   - port a small AgentDojo subset for externally comparable numbers;
-   - run a full LLM-driven AgentOS chat (needs a model that emits proper tool calls);
-   - report approvals from AgentOS back to KAVACH;
-   - use the RAI injection classifier on tool outputs as a risk feature.
+1. **The blocked items in §0:** live Qualcomm runs, then slide 6; U12 approval or logs.
+2. **Docs and deck (Phase 5 roadmap item G):** apply `docs/CLAIMS_CHECK.md` to `docs/BLUEPRINT.md`, `scripts/build_deck.py`, `docs/INFOSYS_GAP_ANALYSIS.md`; rebuild the deck, PDF and HTML page.
+3. **Merge `vismay-dev` (which contains `build/phase-4`) into `main`** once the team agrees. Ask before pushing.
+4. **Phase 5 roadmap A-items** stay with their owner: semicolon recipients (A1), URL paths (A2), lookalike domains (A3), approver roles and self-approval of delete-all (A4), changed rows and columns in CRM tables (A5), `/api/settle` (A6), undo that only takes back its own rows (A7), SQL time limit (A8), production/demo profiles (A9), demo safety (A10).
+5. **Team-only items:** slide 2; a 2–3 minute fallback demo video; rehearse the judge questions in §3.
+6. **Optional:** a small AgentDojo subset with the rules frozen first; a full LLM-driven AgentOS chat; report AgentOS approvals back to KAVACH; the RAI injection classifier on tool outputs as a risk feature.
