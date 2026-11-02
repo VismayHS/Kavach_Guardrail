@@ -903,7 +903,8 @@ function stageBank(s) {
 
 function stageFeed(s) {
   const lines = s.feed.map(r => [r, stageLine(r)]).filter(([, l]) => l).slice(-8).reverse();
-  return lines.length ? lines.map(([r, l]) => `<li><time>${clock(r.ts)}</time>${l[0]}<div><b>${nw(esc(l[1]))}</b>${l[3] ? ` <span class="rule">${esc(l[3])}</span>` : ''}${l[2] ? `<p>${l[2]}</p>` : ''}</div></li>`).join('')
+  const who = p => ({ claude: '<span class="rule real">real Claude</span>', 'scripted-agent': '<span class="rule">scripted agent</span>' }[p] || '');
+  return lines.length ? lines.map(([r, l]) => `<li><time>${clock(r.ts)}</time>${l[0]}<div><b>${nw(esc(l[1]))}</b>${l[3] ? ` <span class="rule">${esc(l[3])}</span>` : ''}${r.body.type === 'decision' ? ` ${who(r.body.principal)}` : ''}${l[2] ? `<p>${l[2]}</p>` : ''}<p>${traceLink(corrOf(r.body), 'Trace this action')}</p></div></li>`).join('')
     : '<li class="feed-empty">Nothing yet. Each decision appears here as it happens.</li>';
 }
 
@@ -1066,7 +1067,7 @@ async function pageReceipts() {
   const table = !all.length
     ? emptyNote('No receipts yet', `Every decision KAVACH makes writes one here. Try ${runLink('email_injection', 'the poisoned email')}.`)
     : !rows.length ? emptyNote('None of that kind yet', 'Choose another filter to see the rest.')
-      : `<div class="scroll"><table class="register"><thead><tr><th>No.</th><th>Time</th><th>What happened</th><th>Who</th><th>Hash</th><th><span class="sr">Open</span></th></tr></thead><tbody>${rows.map(r => `<tr><td>${r.seq}</td><td style="white-space:nowrap">${new Date(r.ts * 1000).toLocaleTimeString()}</td><td><div class="stack">${(RECEIPT[r.body.type] || (b => stamp('info', b.type)))(r.body)}</div></td><td>${esc(titleCase(whoOf(r.body))) || '<span class="meta">System</span>'}</td><td>${copyValue(r.hash.slice(0, 12))}</td><td><button class="btn quiet sm" type="button" data-act="receipt" data-id="${esc(r.id)}">View</button></td></tr>`).join('')}</tbody></table></div>`;
+      : `<div class="scroll"><table class="register"><thead><tr><th>No.</th><th>Time</th><th>What happened</th><th>Who</th><th>Hash</th><th><span class="sr">Open</span></th></tr></thead><tbody>${rows.map(r => `<tr><td>${r.seq}</td><td style="white-space:nowrap">${new Date(r.ts * 1000).toLocaleTimeString()}</td><td><div class="stack">${(RECEIPT[r.body.type] || (b => stamp('info', b.type)))(r.body)}</div></td><td>${esc(titleCase(whoOf(r.body))) || '<span class="meta">System</span>'}</td><td>${copyValue(r.hash.slice(0, 12))}</td><td><button class="btn quiet sm" type="button" data-act="receipt" data-id="${esc(r.id)}">View</button> ${traceLink(corrOf(r.body))}</td></tr>`).join('')}</tbody></table></div>`;
   return `<div class="page">${head('Receipts', 'Every decision and every human choice is written down in order, and each record is chained to the one before, so nobody can quietly rewrite what happened.',
     `<button class="btn primary" type="button" data-act="verify">${icon('shield-check')}Verify the chain</button>`)}
     ${band}
@@ -1074,6 +1075,47 @@ async function pageReceipts() {
     ${table}</div>`;
 }
 
+
+// ---------------------------------------------------------------- trace: one action, request to real effect, by its id
+const corrOf = b => b.corr || b.decision?.call?.call_id || '';
+const traceLink = (corr, text = 'Trace') => corr ? `<a class="meta" href="#/trace/${encodeURIComponent(corr)}">${esc(text)}</a>` : '';
+const STEP_WORD = { 'decision': 'KAVACH decided', 'execution': 'It ran', 'window-closed': 'Its window closed',
+  'undo': 'Taken back', 'released-early': 'Sent now by a person', 'human-approved-execution': 'A person approved it',
+  'human-approved': 'A person approved it', 'human-denied': 'A person refused it', 'human-approved-draft': 'Saved as a draft',
+  'human-approval-partial': 'One approver signed', 'approval-expired': 'Nobody answered in time', 'outcome-mismatch': 'Cancelled: details changed' };
+async function pageTrace(corr) {
+  if (!corr) {
+    const recs = (await api('/api/receipts?limit=200')).filter(r => r.body.type === 'decision').reverse().slice(0, 15);
+    return `<div class="page narrow">${head('Trace', 'Every action has one id, from the agent\'s request to its real effect. It is on each receipt about it and in the X-Kavach-Correlation header of the email it sends. Pick one.')}
+      ${recs.length ? `<div class="sheet rows">${recs.map(r => `<a class="row" href="#/trace/${encodeURIComponent(corrOf(r.body))}">${verdictStamp(r.body.decision.verdict)}<span class="row-main"><span class="row-title" style="display:block">${esc(toolName(r.body.decision.call.tool))}</span><span class="row-sub" style="display:block">${esc(titleCase(r.body.principal || ''))} · ${esc(corrOf(r.body))}</span></span>${icon('chevron-right')}</a>`).join('')}</div>`
+        : emptyNote('Nothing to trace yet', 'Run a story on the Live demo page first.')}</div>`;
+  }
+  let t;
+  try { t = await api(`/api/trace/${encodeURIComponent(corr)}`); } catch (e) {
+    return `<div class="page narrow">${head('Trace')}${emptyNote('No action with that id', esc(corr), '<a class="btn" href="#/trace">See recent actions</a>', 'failed')}</div>`;
+  }
+  S.crumb = corr;
+  const c = t.connector || {};
+  const where = t.tool === 'payment.release' ? 'the bank' : t.tool === 'mail.send' ? 'the mail server' : 'the tool';
+  const effect = c.invoked ? stamp(c.outcome === 'sent' || c.outcome === 'settled' || c.outcome === 'ran' ? 'done' : c.outcome === 'unknown' ? 'possible' : 'failed',
+    { sent: 'Reached the inbox', settled: 'Reached the bank', failed: 'Refused by ' + where, unknown: 'Not sure it arrived', ran: 'Ran' }[c.outcome] || c.outcome)
+    : stamp(c.outcome === 'waiting' ? 'queued' : c.outcome?.startsWith('waiting for') ? 'queued' : 'rejected',
+      c.outcome === 'waiting' ? 'Waiting in its window' : c.outcome?.startsWith('refused:') ? 'Never called' : titleCase(c.outcome || ''));
+  const args = Object.entries(t.args || {}).map(([k, v]) => `<div><code>${esc(k)}</code> ${esc(String(v)).slice(0, 220)}</div>`).join('');
+  const step = (n, title, body) => `<li class="step" data-state="done"><span class="step-n" aria-hidden="true">${n}</span><div class="step-body"><h3>${title}</h3>${body}</div></li>`;
+  return `<div class="page narrow stage">${head(`Trace ${corr}`, `${esc(titleCase(t.user || ''))} as ${esc(seatWord(t.role || ''))} · task ${esc(t.task_id || '')}`)}
+    <ol class="steps">
+    ${step(1, 'What the user asked', `<p>${esc(t.request || '(no request stated)')}</p>`)}
+    ${step(2, 'What the agent had read', t.untrusted_sources?.length
+      ? `<p>Untrusted content (written by someone else) was in front of the agent:</p><p class="meta">${t.untrusted_sources.map(esc).join(' · ')}</p>`
+      : '<p class="meta">Nothing untrusted: only the user\'s words and internal records.</p>')}
+    ${step(3, 'What the agent proposed', `<p><b>${esc(toolName(t.tool))}</b> <code class="tool">${esc(t.tool)}</code></p><div class="meta">${args}</div><p class="meta">Arguments digest ${esc((t.args_sha256 || '').slice(0, 16))}${t.action_digest ? ` · approval bound to ${esc(t.action_digest.slice(0, 16))}` : ''}</p>`)}
+    ${step(4, 'What KAVACH decided', `<div class="step-out">${verdictStamp(t.verdict)}<div><b>${esc(plain(t.reason || ''))}</b>${t.rules?.length ? `<p>${t.rules.map(g => `<span class="rule">${esc(g.rule)}</span> ${esc(g.message)}`).join('<br>')}</p>` : ''}<p class="meta">Decided in ${Number(t.latency_ms || 0).toFixed(1)} ms</p></div></div>`)}
+    ${step(5, `What really happened at ${where}`, `<div class="step-out">${effect}<div><b>${c.invoked ? `KAVACH handed it to ${where}.` : `KAVACH never handed it to ${where}.`}</b>${c.header ? `<p>Find it at ${where} by its header <code>${esc(c.header)}</code>${t.hold ? ` (status ${esc(t.hold.status)})` : ''}.</p>` : ''}</div></div>`)}
+    ${step(6, 'Receipts', `<ul class="world-list">${t.receipts.map(r => `<li><b>${esc(STEP_WORD[r.type] || r.type)}</b><span class="meta">${esc(r.id)} · ${new Date(r.ts * 1000).toLocaleTimeString()} · hash ${esc(r.hash)}</span></li>`).join('')}</ul>
+      <p>${t.chain?.valid ? stamp('done', 'Chain verifies') : stamp('failed', 'Chain broken')} <span class="meta">${plural(t.chain?.count || 0, 'receipt')} checked${t.chain?.reason ? `: ${esc(t.chain.reason)}` : ''}</span></p>`)}
+    </ol></div>`;
+}
 
 // ---------------------------------------------------------------- sessions (one task = one request and everything it did)
 const legsStamp = r => stamp(r?.human_required ? 'possible' : r?.legs >= 2 ? 'lead' : 'skipped', `${r?.legs ?? 0} of 3`,
@@ -1333,6 +1375,7 @@ const ROUTES = {
   approvals: { title: 'Approvals', render: pageApprovals },
   windows: { title: 'Undo windows', render: pageWindows },
   receipts: { title: 'Receipts', render: pageReceipts },
+  trace: { title: 'Trace', render: pageTrace },
   results: { title: 'Results', render: pageResults },
   rules: { title: 'Rulebook', render: pageRules, after: afterRules },
   sessions: { title: 'Sessions', render: pageSessions },

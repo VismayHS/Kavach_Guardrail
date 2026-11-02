@@ -534,3 +534,6 @@ blockquote.mail p { margin-top: 4px; font-size: 17px; }
 .compose.pay { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); max-width: 560px; }
 @media (max-width: 767px) { .compose.pay { grid-template-columns: minmax(0, 1fr); } }
 .hold-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.stage .step-out .hold-acts { grid-column: 2 / -1; justify-content: flex-start; }   /* under the text: a long address never runs into Cancel */
+.stage .step-out b { overflow-wrap: anywhere; }
+.feed .rule.real { border-color: var(--vx-stamp-deep); color: var(--vx-stamp-deep); }
