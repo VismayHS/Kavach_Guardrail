@@ -326,7 +326,12 @@ class Environment:
         return {"refunded": tx["id"]}
 
     def web_fetch(self, url: str) -> str:
-        return self.web.get(url, "404 not found")
+        """The page at `url`, however the address is written (www.x/a and https://www.x/a/ are one page)."""
+        from .provenance import canon_url
+        if url in self.web:
+            return self.web[url]
+        want = canon_url(str(url))
+        return next((page for u, page in self.web.items() if canon_url(u) == want), "404 not found")
 
     # ---------------------------------------------------------------- accounts payable
     def ap_invoice_facts(self, invoice_id: str) -> dict | None:

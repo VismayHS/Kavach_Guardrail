@@ -92,8 +92,9 @@ def facts(gw, task_id: str, call, spec, labels: dict, staged: dict, effect) -> d
     untrusted = {a for a, lab in ctrl.items() if lab.trust == Trust.UNTRUSTED}
     # R1: a value read whole from a source the user pointed at, for an action the user asked for, goes to a person
     asked = bool(spec) and gw.policy._asked_for(ctx, call.tool, spec)
-    # (a fetch only needs the pointing: following a link in a source the user named is part of reading it)
-    delegated = {a for a in untrusted if ctrl[a].delegated and (asked or ingress)}
+    # (a fetch only needs the pointing: a link in a message, channel or file the user named, not inside a web page)
+    delegated = {a for a in untrusted if gw.policy.followable(ctrl[a], reg)} if ingress else \
+        {a for a in untrusted if ctrl[a].delegated and asked}
     copied = {a for a in untrusted if any(s.startswith("tool:") for s in ctrl[a].sources)}
     lim, fin = cfg["limits"], cfg["finance"]
     amt = float(arg(spec, call.args, "amount", 0) or 0) if m in ("transfer", "refund") else 0.0

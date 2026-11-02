@@ -156,15 +156,18 @@ class PolicyEngine:
                 elif lab and lab.trust == Trust.UNTRUSTED and spec.effect != "ingress":
                     add("R1", "DENY", f"'{a}' = {call.args.get(a)!r} came from untrusted content "
                         f"({', '.join(lab.sources)}), not from the user.", arg=a, sources=lab.sources)
-                elif lab and lab.trust == Trust.UNTRUSTED and spec.effect == "ingress" and lab.delegated:
-                    # reading what a source the user pointed at links to is part of reading it; what comes back is
-                    # untrusted too, so it can't choose a destination (R1), and R13/R25 still judge the URL itself
+                elif lab and lab.trust == Trust.UNTRUSTED and spec.effect == "ingress" and self.followable(lab, registry):
+                    # a message, channel or file the user pointed at stands for what's in it, its links included
+                    # ("the article Bob posted"); what comes back is untrusted too, so it can't choose a destination
+                    # (R1), and R13/R25 still judge the URL itself
                     add("R1", "PASS", f"Follows a link read from {', '.join(lab.sources)}, which the user pointed at; "
                         "what it returns is untrusted like everything read.", arg=a, sources=lab.sources,
                         delegated=True)
                 elif lab and lab.trust == Trust.UNTRUSTED and spec.effect == "ingress":
-                    add("R1", "REQUIRE_APPROVAL", f"URL {call.args.get(a)!r} was supplied by untrusted content.",
-                        arg=a, sources=lab.sources)
+                    inside_page = lab.delegated     # a web page the user named: its links are other pages
+                    add("R1", "REQUIRE_APPROVAL", f"URL {call.args.get(a)!r} was supplied by untrusted content"
+                        + (" (a link inside a web page the user named: the user named that page, not the pages it "
+                           "links to)." if inside_page else "."), arg=a, sources=lab.sources)
 
         # R11 verbatim untrusted instructions driving writes
         if spec.effect in ("write", "payment", "external_send"):
@@ -558,6 +561,16 @@ class PolicyEngine:
     def _all_internal(self, to: str) -> bool:
         recipients = parse_recipients(to)
         return bool(recipients) and all(self._internal_host(domain_of(r)) for r in recipients)
+
+    @staticmethod
+    def followable(lab: Label, registry: ToolRegistry) -> bool:
+        """A link the agent may fetch without a person: read whole from a source the user pointed at that is not
+        itself a web page. A web address the user typed names that page; its links are the page's navigation, and
+        following them is browsing nobody asked for (where an injected "visit this site" sits)."""
+        def page(src: str) -> bool:
+            spec = registry.get(src[5:].split("#", 1)[0]) if src.startswith("tool:") else None
+            return model_of(spec) == "web_fetch"
+        return lab.delegated and not all(page(s) for s in lab.sources)
 
     @staticmethod
     def destination_arg(spec: ToolSpec) -> str | None:
