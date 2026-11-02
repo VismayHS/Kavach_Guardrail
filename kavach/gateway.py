@@ -334,7 +334,9 @@ class Kavach:
         return {"resumed": kill_id, "scope": k["scope"], "target": k["target"]}
 
     # ------------------------------------------------------------------ the decision path
-    def check(self, task_id: str, call: ToolCall) -> Decision:
+    def check(self, task_id: str, call: ToolCall, flow: dict[str, Label] | None = None) -> Decision:
+        """flow (E9 planner mode): exact labels for the arguments, from the plan's references. They replace the
+        inferred trust and sources; confidentiality and PII counts keep the larger of the two."""
         t0 = time.perf_counter()
         task = self.tasks[task_id]
         ctx = task.ctx
@@ -362,6 +364,10 @@ class Kavach:
         elif spec:
             labels = {k: Label(Trust.DERIVED, task.prov.label(v, False).conf, ["agent"],
                                task.prov.label(v, False).pii_entities) for k, v in call.args.items()}
+        for k, ex in (flow or {}).items():
+            inf = labels.get(k)
+            labels[k] = ex if inf is None else Label(ex.trust, max(ex.conf, inf.conf, key=lambda c: c.rank),
+                                                     list(ex.sources), max(ex.pii_entities, inf.pii_entities))
 
         # [3] consequence (staged before policy so bulk/row rules use measured numbers)
         effect = None
