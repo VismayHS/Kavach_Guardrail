@@ -1,0 +1,16 @@
+# Optional features. The core (pip install -r requirements.txt) runs without any of these; each feature says
+# what it needs and its tests skip when the package is missing.
+-r requirements.txt
+mcp>=2.3                    # E1 MCP proxy (python -m kavach.mcp_proxy)
+agentdojo>=0.1.35           # B1 AgentDojo benchmark (bench/agentdojo_kavach.py)
+torch>=2.9                  # C3 prompt-injection classifier on CPU (kavach/injection_probe.py)
+transformers>=4.50
+presidio-analyzer>=2.2      # E8 PII detection (kavach/pii.py); then: python -m spacy download en_core_web_sm
+openai-agents>=0.2          # E2 adapters (kavach/adapters/)
+langchain-core>=0.3
+claude-agent-sdk>=0.1
+cedarpy>=4.0                # E4 Cedar policies and proofs
+opentelemetry-sdk>=1.30     # F6 telemetry
+opentelemetry-exporter-otlp-proto-http>=1.30
+cryptography>=43            # F5 Ed25519-signed receipts
+sqlalchemy>=2.0             # E5 persistent state
