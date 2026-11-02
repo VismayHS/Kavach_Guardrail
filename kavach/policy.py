@@ -13,7 +13,7 @@ from pathlib import Path
 import yaml
 
 from .addresses import domain_of, parse_recipients
-from .finance import iban_check, name_similarity
+from .finance import iban_check, looks_like_iban, name_similarity, same_account, same_amount
 from .intent import BREADTH
 from .lookalike import Lookalike, registered
 from .manifest import ToolRegistry, ToolSpec, arg, argname, model_of
@@ -36,6 +36,12 @@ TARGETED = {"sql_write": None, "ap_release": "invoice_id", "ap_propose": "invoic
 DESTINATION = {"email": "to", "transfer": "to_account", "refund": "invoice_id", "ap_release": "invoice_id"}
 # a name typed in a request (file, path, web or email address): something with an inner . / or @ ("pay." stays a word)
 NAME_TOKEN = re.compile(r"['\"]?[^\s'\"]+[./@][^\s'\".,;:!?)]\S*")
+
+
+def credential_path(cfg: dict, path) -> bool:
+    """R9: a credential file (one matcher for the Python rules and the Cedar facts)."""
+    p = str(path or "").lower()
+    return any(s in p for s in cfg["sensitive_paths"])
 
 
 class PolicyEngine:
@@ -235,7 +241,9 @@ class PolicyEngine:
                 values=st["untrusted_details"])
 
         # R36 one task's characters to outside addresses: a list split into short emails adds up
-        if m == "email" and st.get("task_outbound_chars", 0) > self.cfg["limits"]["task_outbound_chars_max"]:
+        prior = st.get("task_prior") or {}
+        if m == "email" and prior.get("chars", 0) > 0 \
+                and st.get("task_outbound_chars", 0) > self.cfg["limits"]["task_outbound_chars_max"]:
             add("R36", "REQUIRE_APPROVAL", f"This task would have emailed {st['task_outbound_chars']:,} characters to "
                 f"outside addresses in total (limit {self.cfg['limits']['task_outbound_chars_max']:,}); data may be "
                 "leaving in parts.", chars=st["task_outbound_chars"])
@@ -329,7 +337,8 @@ class PolicyEngine:
             if guarded:
                 add("R35", "DENY", f"Raw SQL may not change {', '.join(guarded)}: the finance rules rely on these "
                     "records. Use the finance tools, which go through approval.", tables=guarded)
-            if ctx.env == "prod" and st.get("task_rows", 0) > self.cfg["limits"]["task_rows_approval"]:
+            if ctx.env == "prod" and (st.get("task_prior") or {}).get("rows", 0) > 0 \
+                    and st.get("task_rows", 0) > self.cfg["limits"]["task_rows_approval"]:
                 add("R36", "REQUIRE_APPROVAL", f"This task would have changed {st['task_rows']} rows in total "
                     f"(limit {self.cfg['limits']['task_rows_approval']}); a big change may be split into small ones.",
                     rows=st["task_rows"])
@@ -366,18 +375,19 @@ class PolicyEngine:
         if spec.effect in ("payment", "external_send") and st.get("repeat"):
             add("R36", "REQUIRE_APPROVAL", f"This task already ran the same {call.tool} call; a repeat needs a person.")
         task_money = st.get("task_money") or {}
-        if task_money.get("INR", 0) > self.cfg["limits"]["task_money_approval"]:
+        before = (st.get("task_prior") or {}).get("money") or {}
+        if before.get("INR", 0) > 0 and task_money.get("INR", 0) > self.cfg["limits"]["task_money_approval"]:
             add("R36", "REQUIRE_APPROVAL", f"This task would have moved INR {task_money['INR']:,.0f} in total "
                 f"(limit {self.cfg['limits']['task_money_approval']:,}).", total=task_money["INR"])
         release_limit = self.cfg["finance"]["role_release_limit"].get(ctx.principal.role, 0)
-        if m == "ap_release" and task_money.get("EUR", 0) > release_limit:
+        if m == "ap_release" and before.get("EUR", 0) > 0 and task_money.get("EUR", 0) > release_limit:
             add("R36", "REQUIRE_APPROVAL", f"This task would have released EUR {task_money['EUR']:,.0f} in total; role "
                 f"'{ctx.principal.role}' may release up to EUR {release_limit:,.0f}.", total=task_money["EUR"])
 
         # R9 secrets: not into the agent's context, and not overwritten or deleted either
         if m in ("file_read", "file_write", "file_delete"):
             p = str(arg(spec, call.args, "path", ""))
-            if any(s in p.lower() for s in self.cfg["sensitive_paths"]):
+            if credential_path(self.cfg, p):
                 what = "reading it into an agent context" if m == "file_read" else "changing it"
                 add("R9", "DENY", f"'{p}' is a credential file; {what} is blocked.")
 
@@ -455,13 +465,36 @@ class PolicyEngine:
         m = model_of(spec)
         if m == "ap_release" and "amount" in e:
             inv, amt, cur = e["invoice_id"], e["amount"], e["currency"]
+            # R41 first, so it is the stated reason: the account and amount the agent names must be the invoice's
+            # own. The money only ever goes to the account on record, and a mismatch is refused, not escalated:
+            # an approval click must never be able to send it somewhere else.
+            given_acct, given_amt = arg(spec, call.args, "to_account"), arg(spec, call.args, "amount")
+            who = f"{e['vendor_name']} ({e['vendor_id']})"
+            if not str(e.get("iban") or "").strip():
+                add("R41", "DENY", f"{who} has no bank account on record, so {inv} can't be paid; AP must add a "
+                    "verified one first.", vendor=e["vendor_id"])
+            elif not same_account(given_acct, e["iban"]):
+                add("R41", "DENY", f"{given_acct!r} is not the account on record for {who}, which is {e['iban']}. "
+                    f"KAVACH pays {inv} only to that account; new bank details need verification by AP, not an "
+                    "approval.", given=given_acct, on_record=e["iban"])
+            elif not same_amount(given_amt, amt):
+                add("R41", "DENY", f"{given_amt} is not {inv}'s amount: the invoice says {cur} {amt:,.2f}.",
+                    given=given_amt, on_record=amt)
+            else:
+                add("R41", "PASS", f"Paying {inv}'s own record: {e['iban']}, {cur} {amt:,.2f}.")
             if e["sanctioned"]:
                 add("R21", "DENY", f"{e['vendor_name']} is on the sanctions watch list; payments are blocked.",
                     vendor=e["vendor_id"])
             elif not e["bank_verified"]:
                 add("R21", "REQUIRE_APPROVAL", f"{e['vendor_name']}'s bank account has not been independently verified.",
                     vendor=e["vendor_id"])
-            if e["proposal_id"] is None:
+            if e["status"] == "held":                      # the first payment hasn't even left: cancel it, don't add one
+                add("R19", "DENY", f"{inv} is already waiting in its hold; releasing it again would pay it twice. "
+                    "Cancel the waiting payment instead if it needs to change.", status="held")
+            elif e["status"] == "paid":                    # sometimes right (the first one bounced): a person decides
+                add("R19", "REQUIRE_APPROVAL", f"Warning: {inv} was already paid ({cur} {amt:,.0f} to {e['iban']}). "
+                    "Approve only if that payment failed or was returned; otherwise it is paid twice.", status="paid")
+            elif e["proposal_id"] is None:
                 add("R19", "REQUIRE_APPROVAL", f"No payment proposal exists for {inv}; releasing it would skip the "
                     "proposer/releaser split.")
             elif e["proposed_by"] == ctx.principal.user_id or e["proposal_task"] == ctx.task_id:
@@ -485,7 +518,7 @@ class PolicyEngine:
                 add("R21", "DENY", f"{e['vendor_name']} matches sanctions list entry '{hit['match']}' "
                     f"(similarity {hit['score']}); payments are blocked.", vendor=e["vendor_id"], screening=hit)
             ok, why = iban_check(e.get("iban", ""))
-            if not ok:
+            if looks_like_iban(e.get("iban", "")) and not ok:      # other formats (Indian a/c + IFSC) aren't IBANs
                 add("R30", "DENY", f"The vendor's bank account on record is not a valid IBAN ({why}); fix the vendor "
                     "master before paying.", iban=e.get("iban"))
         if m == "bank_change":

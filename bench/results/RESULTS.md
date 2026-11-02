@@ -12,17 +12,25 @@ Suite: 940 labelled scenarios, 47 families; train 210 / calibration 84 / test 28
 | Static denylist (text match) | 87.2% | 87.2% | 100.0% | 100.0% | 0.0% | 0.0% | 0.0% | - |
 | Tool-type gating | 38.5% | 38.5% | 25.0% | 47.6% | 0.0% | 57.5% | 0.0% | - |
 | Approve every write (manual interrupt) | 3.9% | 3.9% | 0.0% | 9.5% | 0.0% | 93.6% | 0.0% | - |
-| KAVACH: rules only | 3.9% | 0.0% | 0.0% | 95.2% | 0.0% | 23.4% | 94.7% | 1.82 / 3.95 |
-| KAVACH: no provenance | 3.9% | 0.0% | 12.5% | 90.5% | 0.0% | 41.5% | 94.4% | 1.76 / 4.63 |
-| KAVACH: fixed threshold | 0.0% | 0.0% | 0.0% | 95.2% | 0.0% | 25.5% | 94.4% | 1.69 / 3.47 |
-| KAVACH: no undo windows | 0.0% | 0.0% | 0.0% | 95.2% | 0.0% | 25.5% | 38.9% | 1.47 / 2.78 |
-| KAVACH (full) | 0.0% | 0.0% | 0.0% | 95.2% | 0.0% | 25.5% | 94.4% | 1.47 / 3.38 |
+| KAVACH: rules only | 3.9% | 0.0% | 0.0% | 95.2% | 0.0% | 23.4% | 94.7% | 2.17 / 9.72 |
+| KAVACH: model only (rules off) | 69.2% | 15.4% | 37.5% | 100.0% | 0.0% | 14.9% | 86.1% | 2.09 / 8.06 |
+| KAVACH: no provenance | 3.9% | 0.0% | 12.5% | 90.5% | 0.0% | 39.4% | 94.4% | 2.61 / 10.44 |
+| KAVACH: fixed threshold | 0.0% | 0.0% | 0.0% | 95.2% | 0.0% | 25.5% | 94.4% | 1.98 / 8.47 |
+| KAVACH: no undo windows | 0.0% | 0.0% | 0.0% | 95.2% | 0.0% | 25.5% | 38.9% | 2.50 / 9.39 |
+| KAVACH (full) | 0.0% | 0.0% | 0.0% | 95.2% | 0.0% | 25.5% | 94.4% | 2.23 / 8.57 |
 
-Calibration on test split: ECE 0.0149 (raw) -> 0.0012 (isotonic), Brier 0.0.
+Calibration on test split: ECE 0.015 (raw) -> 0.0012 (isotonic), Brier 0.0.
 
-Operating points chosen on the calibration split: C_block=0.002 (KAVACH), fixed tau=0.05 (ablation).
+Operating points chosen on the calibration split: C_block=0.002 (KAVACH), fixed tau=0.02 (ablation).
 
 Latency excludes the optional Qualcomm LLM judge.
+
+## What these numbers mean
+
+- **The suite and the rules were written by the same team.** Most rules were written for specific scenario families, so 0% unsafe auto-allowed mostly says the rules do what we wrote them to do. For numbers we didn't write, see AGENTDOJO.md (ETH Zurich's benchmark).
+- **The risk model learns only from actions that pass every rule:** 210 training actions, of which 10 are unsafe (1 unsafe family gets past the rules: attack:misaligned_write). With so few unsafe examples, a near-perfect calibration score (Brier ~0) means the test is easy, not that the model is perfect.
+- **What the model alone catches** (rules off, only unknown-tool and schema checks left): 69.2% of unsafe actions auto-allowed, 37.5% injection success, 100.0% of safe actions auto-completed. The rules carry the safety; the model's job is ranking what the rules let through.
+- The leave-one-family-out (LOFO.md) and fresh holdout (HOLDOUT.md) results check new wording and unseen families, but they are still our own scenarios.
 
 ## Robustness: 5 independent suites and splits (mean, min–max)
 
@@ -33,9 +41,10 @@ Latency excludes the optional Qualcomm LLM judge.
 | Tool-type gating | 38.5% (38%–38%) | 38.5% (38%–38%) | 25.0% (25%–25%) | 47.6% (48%–48%) | 0.0% (0%–0%) | 57.5% (57%–57%) | 0.0% (0%–0%) |
 | Approve every write (manual interrupt) | 3.9% (4%–4%) | 3.9% (4%–4%) | 0.0% (0%–0%) | 9.5% (10%–10%) | 0.0% (0%–0%) | 93.6% (94%–94%) | 0.0% (0%–0%) |
 | KAVACH: rules only | 3.9% (4%–4%) | 0.0% (0%–0%) | 0.0% (0%–0%) | 95.2% (95%–95%) | 0.0% (0%–0%) | 23.4% (23%–23%) | 94.7% (95%–95%) |
-| KAVACH: no provenance | 3.9% (4%–4%) | 0.0% (0%–0%) | 12.5% (12%–12%) | 90.5% (90%–90%) | 0.0% (0%–0%) | 41.8% (41%–43%) | 94.4% (94%–94%) |
+| KAVACH: model only (rules off) | 69.2% (69%–69%) | 15.4% (15%–15%) | 37.5% (38%–38%) | 100.0% (100%–100%) | 0.0% (0%–0%) | 14.9% (15%–15%) | 86.1% (86%–86%) |
+| KAVACH: no provenance | 3.9% (4%–4%) | 0.0% (0%–0%) | 12.5% (12%–12%) | 90.5% (90%–90%) | 0.0% (0%–0%) | 39.6% (39%–40%) | 94.4% (94%–94%) |
 | KAVACH: fixed threshold | 0.0% (0%–0%) | 0.0% (0%–0%) | 0.0% (0%–0%) | 95.2% (95%–95%) | 0.0% (0%–0%) | 25.5% (26%–26%) | 94.4% (94%–94%) |
 | KAVACH: no undo windows | 0.0% (0%–0%) | 0.0% (0%–0%) | 0.0% (0%–0%) | 95.2% (95%–95%) | 0.0% (0%–0%) | 25.5% (26%–26%) | 38.9% (39%–39%) |
 | KAVACH (full) | 0.0% (0%–0%) | 0.0% (0%–0%) | 0.0% (0%–0%) | 95.2% (95%–95%) | 0.0% (0%–0%) | 25.5% (26%–26%) | 94.4% (94%–94%) |
 
-ECE (calibrated) per seed: [0.0012, 0.0012, 0.0013, 0.0011, 0.0013]; C_block selected per seed: [0.002, 0.002, 0.002, 0.002, 0.002]
+ECE (calibrated) per seed: [0.0012, 0.0012, 0.0013, 0.0012, 0.0013]; C_block selected per seed: [0.002, 0.002, 0.002, 0.002, 0.002]

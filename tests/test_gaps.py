@@ -146,6 +146,31 @@ def test_money_split_across_payments_adds_up(gw):
     assert "R36" in rules(ds[2], "REQUIRE_APPROVAL")
 
 
+def test_delegated_agents_share_the_tasks_totals(gw):
+    tid, _ = gw.start_task("meera", "finance", "Pay Northwind Supplies its invoices to account ACC-11-2001: "
+                           "4000 for INV-1, 4000 for INV-2, 4000 for INV-3.")
+    pay = lambda t, i: gw.run(t, ToolCall("payments.transfer", {"to_account": "ACC-11-2001", "amount": 4000,  # noqa
+                                                                "memo": f"INV-{i}"}))
+    assert allowed(pay(tid, 1))
+    a = gw.delegate(tid, "payer-a", "Pay INV-2.", ["payments.transfer"])
+    assert allowed(pay(a, 2))
+    b = gw.delegate(tid, "payer-b", "Pay INV-3.", ["payments.transfer"])      # a fresh sub-agent starts at zero no more
+    third = pay(b, 3)
+    assert third.verdict == Verdict.ESCALATE and "R36" in rules(third, "REQUIRE_APPROVAL")
+
+
+@pytest.mark.parametrize("request_text,tool,args,own_rule", [
+    ("The invoices table looks broken, fix it.", "crm.execute", {"sql": "DELETE FROM invoices"}, "R10"),
+    ("Refund 12000 on invoice 1042, the customer was double charged.", "payments.refund",
+     {"invoice_id": 1042, "amount": 12000}, "R5"),
+])
+def test_a_single_action_over_its_own_limit_is_not_called_a_split(gw, request_text, tool, args, own_rule):
+    """R36 is about totals across actions; one big action is its own rule's business (R10 rows, R5 money)."""
+    tid, _ = gw.start_task("asha", "support", request_text)
+    d = gw.check(tid, ToolCall(tool, args))
+    assert own_rule in rules(d, "REQUIRE_APPROVAL") and "R36" not in rules(d)
+
+
 def test_an_undone_payment_no_longer_counts(gw):
     tid, _ = gw.start_task("meera", "finance", "Pay Northwind Supplies its invoices to account ACC-11-2001: "
                            "6000 for INV-1 and 6000 for INV-2.")
@@ -226,6 +251,21 @@ def test_credential_files_cannot_be_read_changed_or_deleted(gw, tool, args):
     tid, _ = gw.start_task("ravi", "admin", "Tidy the workspace files.")
     d = gw.check(tid, ToolCall(tool, args))
     assert d.verdict == Verdict.DENY and "R9" in rules(d, "DENY")
+
+
+@pytest.mark.parametrize("path,credential", [("src/tokenizer.py", False), ("docs/keyboard.md", False),
+                                             ("src/keys.py", False), ("~/.ssh/id_ed25519", True),
+                                             ("config/api.token", True), ("certs/server.key", True), (".env", True)])
+def test_credential_patterns_dont_catch_ordinary_code_files(gw, path, credential):
+    """Claude Code's Read goes through R9 too (Phase 5 manifest): a code file named after tokens isn't a secret."""
+    from kavach.manifest import register_manifests
+    register_manifests(gw.registry, gw.policy.cfg["roles"], [str(Path(__file__).resolve().parents[1] / "kavach" /
+                                                               "manifests" / "claude_code.yaml")])
+    tid, _ = gw.start_task("dev", "admin", "Explain how this project works.")
+    for tool in ("files.read", "Read"):
+        key = gw.registry.get(tool).arg_map.get("path", "path")
+        d = gw.check(tid, ToolCall(tool, {key: path}))
+        assert ("R9" in rules(d, "DENY")) is credential, (tool, path)
 
 
 # ---------------------------------------------------------------- invented SAP amounts (R15)

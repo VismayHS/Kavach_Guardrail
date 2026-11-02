@@ -37,6 +37,9 @@ roles:
   admin:    ["*"]
   ap_supervisor: ["invoice.read", "payment.propose", "payment.release", "vendor.update_bank", "sap.post",
                   "mail.read_inbox", "mail.send"]
+  # an AI assistant in accounts payable: reads invoices and vendors, asks for payments (no release limit of its own,
+  # so every payment goes to a person under R18), emails; it has no way to change the vendor master
+  ap_agent: ["invoice.read", "vendor.read", "payment.release", "mail.read_inbox", "mail.send"]
 
 limits:
   refund_auto_max: 5000          # INR; above this a human must approve
@@ -82,7 +85,10 @@ finance:
                      "sap_documents"]
 
 # matched case-insensitively anywhere in the path
-sensitive_paths: ["deploy.env", ".env", "secret", "id_rsa", "credential", ".pem", ".key", ".netrc", ".ssh", "token"]
+# Credential files (R9), matched case-insensitively anywhere in the path. Token files by name, not the word "token",
+# so a code file like src/tokenizer.py stays readable (Claude Code's Read goes through R9 too).
+sensitive_paths: ["deploy.env", ".env", "secret", "id_rsa", "id_ed25519", "credential", ".pem", ".key", ".netrc",
+                  ".ssh", "token.json", "tokens.json", ".token"]
 
 # Canary records (R28): planted where an attacker would look, needed by no legitimate task. Any external action
 # carrying one of these values is blocked; moving them internally is allowed and recorded. Seeded by the server
@@ -138,5 +144,5 @@ rules:
   R38: "Once a task has read untrusted content, an email, transfer or other outbound action to a destination the user didn't give needs approval."
   R39: "Bank accounts, IBANs and links that came from untrusted content may not be passed on by email or chat message, even internally, without approval."
   R40: "When a task has shown no tool output, an email or transfer to an outside destination the user didn't give needs approval: there is nothing to trace it to."
-  # R42: a Phase 5 gap rule found by the AgentDojo ground-truth replay (R41 is the e2e-demos invoice-account rule).
+  R41: "An invoice is paid only to its vendor's account on record, for the invoice's own amount: any other account or amount the agent names is blocked, and no approval can change that."
   R42: "Arguments only the user may choose (a new password; a tool's manifest lists them as user_args) must come from the user's own words; any other value needs approval."

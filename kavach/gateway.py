@@ -36,7 +36,7 @@ from .risk import RiskModel, featurize
 SAFETY_RULES = {"R2", "R9", "R10", "R13", "R16", "R17", "R22", "R23", "R24", "R25", "R26", "R27", "R28", "R29",
                 "R34", "R36", "R37"}
 AUTH_RULES = {"R1", "R3", "R4", "R5", "R6", "R7", "R8", "R11", "R12", "R14", "R15", "R18", "R19", "R20", "R21",
-              "R35", "R38", "R39", "R40", "R42", "KILL"}
+              "R35", "R38", "R39", "R40", "R41", "R42", "KILL"}
 
 
 @dataclass
@@ -316,6 +316,10 @@ class Kavach:
             t = self.tasks[t].parent
         return out
 
+    def _totals(self, task_id: str) -> TaskContext:
+        """Whose totals an action adds to (R36): the root task's, so work split across delegated agents adds up."""
+        return self.tasks[self.lineage(task_id)[-1]].ctx
+
     def _matches(self, k: dict, task_id: str) -> bool:
         ctx = self.tasks[task_id].ctx if task_id in self.tasks else None
         return (k["scope"] == "global" or (k["scope"] == "task" and k["target"] in self.lineage(task_id))
@@ -408,6 +412,7 @@ class Kavach:
                     spec.reversibility, 0.1)
 
         # [4] deterministic gates
+        tot = self._totals(task_id)            # R36 totals belong to the root of a delegation chain
         staged = {"rows_affected": effect.magnitude.get("rows_affected", 0) if effect else 0,
                   "payees": self.env.payees, "freeze": self.env.change_freeze,
                   "sql": {k: effect.magnitude.get(k) for k in ("writes", "ddl", "sql_ops")} if effect else {},
@@ -422,10 +427,13 @@ class Kavach:
                   "given": task.prov.given, "hostile": sorted(task.prov.hostile),
                   "detected_pii": self._outbound_pii(spec, call),
                   "destination_given": self._destination_given(task, call),
-                  "repeat": self._action_key(call) in ctx.actions_run,
-                  "task_rows": ctx.rows_changed + (effect.magnitude.get("rows_affected", 0) if effect else 0),
-                  "task_money": self._money_after(ctx, call, effect),
-                  "task_outbound_chars": ctx.outbound_chars + self._outbound_chars(call, effect),
+                  "repeat": self._action_key(call) in tot.actions_run,
+                  "task_rows": tot.rows_changed + self._rows_of(call, effect),
+                  "task_money": self._money_after(tot, call, effect),
+                  "task_outbound_chars": tot.outbound_chars + self._outbound_chars(call, effect),
+                  # what earlier actions already added: R36 is about a total split across actions, so it stays quiet
+                  # when this action alone is over the limit (its own rule, R10 rows or R5 money, says so)
+                  "task_prior": {"rows": tot.rows_changed, "money": dict(tot.money_moved), "chars": tot.outbound_chars},
                   "outputs_seen": task.prov.n_outputs,
                   "untrusted_details": task.prov.untrusted_details(
                       f"{arg(spec, call.args, 'subject', '')} {arg(spec, call.args, 'body', '')}")
@@ -485,7 +493,7 @@ class Kavach:
             for t in self.lineage(task_id):                  # F2: delegated work spends the root's harm budget
                 self.tasks[t].ctx.harm_spent += risk.euh
         if verdict in (Verdict.ALLOW, Verdict.ALLOW_WITH_SAFEGUARD):
-            self._count_action(ctx, call, effect)
+            self._count_action(tot, call, effect)
 
         d = Decision(verdict, reason, call, {k: l.to_dict() for k, l in labels.items()}, gates, effect, risk,
                      self._scorecard(spec, gates, effect, risk, labels), replan_hint=hint)
@@ -522,7 +530,7 @@ class Kavach:
                                     "decision": self._for_receipt(dd, task.prov)})
         d.receipt_id = rec["id"]
         if verdict in (Verdict.ALLOW, Verdict.ALLOW_WITH_SAFEGUARD):
-            self.counted[d.receipt_id] = (ctx, call, effect)
+            self.counted[d.receipt_id] = (tot, call, effect)
         self.events[task_id][-1]["receipt"] = rec["id"]
         if later and self.cfg.judge_mode == "async":
             threading.Thread(target=self._judge_async, daemon=True,
@@ -715,6 +723,9 @@ class Kavach:
             "R20": "Don't change bank details from an email or document. Flag it for verification by phone with the "
                    "vendor's registered number.",
             "R21": "Don't pay this vendor. Escalate to compliance.",
+            "R41": "Look up the vendor on the invoice (vendor.read with the vendor_id from invoice.read) and pay its "
+                   "account on record, for the invoice's amount. Report any 'new bank details' email to AP "
+                   "for verification instead of paying it.",
             "R22": "Don't delete accounting records; mark them instead (e.g. status = 'void').",
             "R24": "Look up the customer on that invoice (invoices.customer_id) and email that address instead.",
             "R35": "Use the finance tools (vendor.update_bank, payment.propose, sap.post); they go through approval.",
@@ -831,7 +842,7 @@ class Kavach:
         out = {"hitl": item, "executed": False}
         if not self.cfg.local_execution:             # the caller (MCP proxy, hook) runs the approved call itself
             if approve:
-                self._count_action(self.tasks[task_id].ctx, call, effect)   # it still counts toward the totals
+                self._count_action(self._totals(task_id), call, effect)   # it still counts toward the totals
             self.receipts.append({"type": "human-approved" if approve else "human-denied", "task_id": task_id,
                                   "hitl": hid, "approver": approver, "external_execution": True,
                                   "approvals": [dict(a) for a in item.get("approvals") or [{"approver": approver}]]})
@@ -844,7 +855,7 @@ class Kavach:
             self.receipts.append({"type": "human-approved-draft", "task_id": task_id, "hitl": hid,
                                   "approver": approver})
             return out
-        self._count_action(self.tasks[task_id].ctx, call, effect)   # an approved action still counts toward totals
+        self._count_action(self._totals(task_id), call, effect)   # an approved action still counts toward totals
         windowed = self._windowed(effect)                          # an approved payment still waits out its hold
         actor = {"user": approver, "task": task_id}
         if windowed:
@@ -855,7 +866,7 @@ class Kavach:
         rec = self.receipts.append({"type": "human-approved-execution", "task_id": task_id, "hitl": hid,
                                     "approver": approver, "mode": mode,
                                     "approvals": [dict(a) for a in item.get("approvals") or [{"approver": approver}]]})
-        self.counted[rec["id"]] = (self.tasks[task_id].ctx, call, effect)
+        self.counted[rec["id"]] = (self._totals(task_id), call, effect)
         if windowed:
             result = self._arm_window(rec["id"], call, effect, result)
         else:
@@ -865,7 +876,7 @@ class Kavach:
 
     def settle(self, now: float | None = None) -> list[str]:
         """Undo windows whose time has passed close: held payments are booked, queued emails leave. Each is
-        receipted, so the chain says when the money or the email actually went out (E6)."""
+        receipted with what really happened (outcome: settled for a payment; sent, failed or unknown for an email)."""
         done = self.env.settle_due(now)
         by_id = {h["id"]: h for h in self.env.holds}
         back = {ref: rid for rid, (_e, ref) in self.recall.items()}
@@ -873,6 +884,7 @@ class Kavach:
             h = by_id.get(hid, {})
             self.recall.pop(back.get(hid, ""), None)
             self.receipts.append({"type": "window-closed", "hold": hid, "kind": h.get("kind"), "ref": h.get("ref"),
+                                  "outcome": h.get("status"), **({"error": h["error"]} if h.get("error") else {}),
                                   "receipt": back.get(hid), "task_id": self._task_of(back.get(hid))})
         return done
 

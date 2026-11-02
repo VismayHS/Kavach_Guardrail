@@ -3,9 +3,9 @@
 KAVACH is our entry for **ET-03 "Agentic AI Guardrail Validator"** in the Infosys IGNITE ENG NEXT 2026 Hack-AI-Thon: check whether an AI agent's planned action is **safe, authorized, explainable and reversible** before it runs. Platform: Qualcomm Cloud AI Playground. Read `docs/HANDOFF.md` for the full context (competition, research, design, results, open tasks) before starting non-trivial work.
 
 ## Branches (check first)
-- `main`: original prototype (740 scenarios, 12 rules, 68.4% safe auto). Deck, blueprint and Infosys comparison on `main` still describe this version.
+- `main` (`32c6767`): `build/phase-5` merged (PR #1): Ashwin's Phase 5 (R25–R34, AgentDojo, MELON, red team, Cedar, MCP proxy, adapters, persistent store, signed receipts, learning loop, deploy files) and dhanush-sr's console UI.
 - `build/phase-0` … `build/phase-4` (`4c42d4e`): stacked work by dhanush-sr (1–2 Nov 2026): 940 scenarios, 47 families, rules R1–R24, undo windows, Qualcomm judge, AgentOS hook.
-- **`vismay-dev`**: `build/phase-4` + `main`'s handoff docs + Vismay's gap work (2 Nov), one commit per fix, every commit tested. Rules R35–R40 (R25–R34 belong to the Phase 5 roadmap; new rules start at R41), SQL sandbox authorizer, server-side env, orchestrator/agent tokens, persistent state (`KAVACH_STATE`), signed receipt checkpoints, recalibration, and the eval scripts (`bench/layers.py`, `semantic_eval.py`, `explain_eval.py`). What's done and what's blocked: `docs/HANDOFF.md` §0.
+- **`vismay-dev`**: `main` + Vismay's gap work (2 Nov), one fix per commit, every commit tested. Rules R35–R40 (R25–R34 are Phase 5's; new rules start at R41), SQL sandbox authorizer, server-set environment (`KAVACH_ENV`), orchestrator/agent tokens, per-task totals across delegation chains, signed receipt checkpoint on the Phase 5 store, and the eval scripts (`bench/layers.py`, `semantic_eval.py`, `explain_eval.py`). Every change to teammates' files: `docs/MERGE_NOTES.md`. Done and blocked: `docs/HANDOFF.md` §0.
 - Merging into `main` is a team decision; ask before pushing anything but `vismay-dev`.
 
 ## Commands
@@ -13,7 +13,10 @@ KAVACH is our entry for **ET-03 "Agentic AI Guardrail Validator"** in the Infosy
 pip install -r requirements.txt            # Python 3.11+
 python -m pytest -q                        # every test; a commit must keep them all passing
 python -m bench.run --quick                # seed-0 benchmark (~1 min); without --quick also 5 seeds
+python -m bench.conformal                  # after bench.run: model rows for the learning loop + CONFORMAL.md
 python -m bench.lofo ; python -m bench.holdout ; python -m bench.layers
+python -m bench.redteam fuzz ; python -m kavach.policy_verify     # offline red team; Cedar proofs + parity
+pip install -r requirements-extra.txt      # optional features (Cedar, OTel, MCP, AgentDojo...); their tests skip without
 python -m bench.semantic_eval --offline     # judge-on runs need the Qualcomm key (rehearsals go to bench/results/rehearsal/)
 python -m uvicorn kavach.server:app --port 8000   # dashboard http://localhost:8000
 python scripts/build_deck.py && (cd deliverables && soffice --headless --convert-to pdf KAVACH_Solution_Deck.pptx)
@@ -34,7 +37,8 @@ Qualcomm: `IMAGINE_API_KEY` + `IMAGINE_API_ENDPOINT=https://aisuite.cirrascale.c
 - Report numbers honestly. The suite is synthetic and written by us; say so. If a change moves a benchmark number, regenerate `bench/results/*` and every doc/slide that quotes it (README, docs/BLUEPRINT.md, docs/INFOSYS_GAP_ANALYSIS.md, scripts/build_deck.py text, deck PDF, HTML page).
 - Never claim something was run live (Qualcomm, AgentOS) unless it was; label rehearsals with the mock as rehearsals.
 - Synthetic data only; no real customer data, credentials or keys in the repo.
-- Git: don't force-push or rewrite history without asking. Commit author is VismayHS <vismayhs@gmail.com>.
-- `bench.run` overwrites `kavach/model/risk_model.json`; commit model + results together or restore the file.
+- Git: don't force-push or rewrite history without asking. Commit author is VismayHS <vismayhs@gmail.com>, and only VismayHS: no `Co-Authored-By` or other attribution trailers in commit messages.
+- `bench.run` overwrites `kavach/model/risk_model.json`; run `python -m bench.conformal` after it (it puts the train/cal/test rows the learning loop needs back into the model file), then commit model + results together, or restore the file.
+- `python -m bench.redteam fuzz` rewrites `bench/results/REDTEAM.md` without its hand-written "Found and fixed" section; keep that section.
 - Commits: one fix per commit, its regression test in the same commit, the full suite passing at that commit. Attack first (a test that fails on the old code), then the fix.
 - Runs against `scripts/fake_imagine.py` are rehearsals: they write to the git-ignored `bench/results/rehearsal/`, never to a results file.

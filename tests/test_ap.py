@@ -49,8 +49,9 @@ def test_small_clean_invoice_is_paid(gw):
     assert steps[-1].verdict == Verdict.ALLOW_WITH_SAFEGUARD and steps[-1].executed
     assert gw.env.ledger == [] and steps[-1].result["held"]           # held for an hour first (Phase 3)
     gw.env.settle_due(time.time() + PAYMENT_HOLD_S)
-    assert gw.env.ledger == [{"id": "tx-1", "to": "DE89370400440532013000", "amount": 800.0, "invoice": "INV-3001",
-                              "released_by": "meera"}]
+    hold = steps[-1].result["held"]
+    assert gw.env.ledger == [{"id": "tx-1", "to": "DE89370400440532013000", "amount": 800.0, "currency": "EUR",
+                              "invoice": "INV-3001", "released_by": "meera", "hold": hold, "status": "paid"}]
 
 
 def test_cfo_tier_invoice_needs_cfo_and_finance_director(gw):
