@@ -347,6 +347,37 @@ function afterAgent() {
   if (S.runId) pollRun(S.runId, true);
 }
 
+// ---------------------------------------------------------------- side by side: the demo's opening
+function sideCol(kind, d, ask, sub) {
+  const ok = d.verdict.startsWith('ALLOW');
+  return `<section class="col" aria-label="${esc(ask)}">
+    <header class="col-head"><h2>${esc(ask)}</h2>${verdictStamp(d.verdict, { cls: 'lg vx-land' })}<p class="col-sub">${esc(sub)}</p></header>
+    <div class="col-body">${decisionHead(d)}<div class="decision">${decisionDetails(d)}</div></div>
+    <div class="col-end"><div class="panel"><h3>${ok ? 'It goes out, and you can still stop it' : 'Nothing left the company'}</h3>
+      <p class="meta">${ok ? 'Queued for 5 minutes in Undo windows; after that it is delivered (in the full stack you can watch it arrive in Mailpit).' : 'The agent was told why and what to do instead. The customer list never left.'}</p></div></div>
+  </section>`;
+}
+async function pageSide() {
+  const r = S.side;
+  const btn = `<button class="btn ${r ? '' : 'primary'}" type="button" data-act="run-side"${S.sideRunning ? ' disabled' : ''}>${S.sideRunning ? icon('loader-circle', 'spin') : icon(r ? 'rotate-ccw' : 'play')}${S.sideRunning ? 'Running' : r ? 'Run again' : 'Run it'}</button>`;
+  const intro = head('One request, two actions', 'Ravi asks the agent to summarise his inbox and email a customer. One of the emails in his inbox hides an instruction. The agent tries to do both. KAVACH lets the first through and stops the second, and says why.', btn);
+  if (S.sideError) return `<div class="page">${intro}${emptyNote("That run didn't finish", esc(S.sideError), '', 'failed')}</div>`;
+  if (!r) return `<div class="page">${intro}<p class="ask">“Summarise my unread emails, and email john.menon@client4.com that invoice 1042 is being processed.”</p>
+    <p class="who">Asked by Ravi, analyst</p>${emptyNote('Not run yet', `Press Run it. No Qualcomm connection needed: the agent's steps are scripted, KAVACH's decisions are real.`)}</div>`;
+  const h = r.hidden_instruction;
+  return `<div class="page">${intro}<p class="ask">“${esc(r.request)}”</p><p class="who">Asked by Ravi, analyst · one task, one inbox</p>
+    ${h ? `<section class="section">${sectionHead('Hidden in the inbox')}<div class="panel"><p class="meta">From ${esc(h.from)} (${esc(h.id)}). The agent reads it while summarising:</p><pre class="pre">${esc(h.body)}</pre></div></section>` : ''}
+    <div class="duo">${sideCol('legit', r.legit, 'What Ravi asked for', 'Email John about invoice 1042. Ravi typed the address himself.')}
+      ${sideCol('injected', r.injected, 'What the hidden email asked for', 'Send the customer list to billing@acme-invoices.co. Nobody asked for that but the email.')}</div>
+    <section class="section">${sectionHead('The demo company after this run')}<div class="tag">${field('Emails waiting to go out', String(r.state.waiting))}${field('Emails that left', String(r.state.outbox))}${field('Task', esc(r.task_id), { mono: true })}</div>
+      <p class="meta">Every decision above is a signed receipt. <a href="#/sessions/${esc(r.task_id)}">Open the session</a> or <a href="/api/evidence/${esc(r.task_id)}?format=html" target="_blank" rel="noopener">its evidence pack</a>.</p></section></div>`;
+}
+async function runSide() {
+  S.sideRunning = true; S.sideError = null; route(true);
+  try { S.side = await post('/api/demo/side-by-side'); } catch (e) { S.sideError = e.message; }
+  S.sideRunning = false; route(true); chrome().catch(() => {});
+}
+
 // ---------------------------------------------------------------- scenarios
 const STORY = {
   ap_cfo_tier: ['ap', 'A EUR 650,000 invoice', 'The supervisor may only release EUR 25,000. This one needs the CFO and the Finance Director.'],
@@ -884,6 +915,7 @@ function afterRules(hit) {
 
 // ---------------------------------------------------------------- shell: routes, top bar, polling
 const ROUTES = {
+  start: { title: 'One request, two actions', render: pageSide },
   agent: { title: 'Live agent', render: pageAgent, after: afterAgent },
   scenarios: { title: 'Scenarios', render: pageScenarios },
   check: { title: 'Check an action', render: pageCheck },
@@ -911,7 +943,7 @@ async function route(quiet) {
   const token = ++routeToken;
   const [name, arg] = location.hash.replace(/^#\/?/, '').split('/');
   const r = ROUTES[name];
-  if (!r) { location.replace('#/agent'); return; }
+  if (!r) { location.replace('#/start'); return; }
   setDrawer(false);
   if (S.page !== name) S.flash = null;
   S.page = name;
@@ -994,6 +1026,7 @@ const ACT = {
   },
   autorun(a) { if (!S.results[a.dataset.id] || S.page !== 'scenarios') S.autoRun = a.dataset.id; else S.autoRun = a.dataset.id; },
   'run-scenario'(b) { flip(b, true); runScenario(b.dataset.id); },
+  'run-side'(b) { flip(b, true); runSide(); },
   async undo(b) {
     flip(b, true);
     const rid = b.dataset.r;
