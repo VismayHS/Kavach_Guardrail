@@ -68,3 +68,18 @@ def test_api_exports_the_chain_with_its_public_key(monkeypatch):
     header, items = json.loads(text[0]), [json.loads(x) for x in text[1:]]
     assert header["public_key"] == c.get("/api/receipts/public-key").json()["public_key"]
     assert verify_chain(items, public_pem=header["public_key"])["valid"]
+
+
+def test_rotated_keys_each_verify_their_own_receipts():
+    a, b = Signer.generate(), Signer.generate()
+    log = ReceiptLog(key=b"k" * 32, signer=a)
+    log.append({"type": "decision", "n": 1})
+    log.signer = b                                   # a new key (rotation, or a restart without a key file)
+    log.append({"type": "decision", "n": 2})
+    assert verify_chain(log.items, public_pems=[b.public_pem])["valid"] is False     # the old receipt needs its key
+    out = verify_chain(log.items, public_pems=[a.public_pem, b.public_pem])
+    assert out["valid"] and out["ed25519_verified"] == 2 and sorted(out["key_ids"]) == sorted([a.key_id, b.key_id])
+    log.known_keys[a.key_id] = a.public_pem
+    assert log.verify()["valid"]
+    header = json.loads(next(log.export_lines()))
+    assert header["public_key"] == b.public_pem and set(header["public_keys"]) == {a.public_pem, b.public_pem}

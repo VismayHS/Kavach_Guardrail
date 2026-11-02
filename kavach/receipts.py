@@ -33,6 +33,8 @@ class ReceiptLog:
         self.items: list[dict] = []
         self.lock = threading.Lock()
         self.listeners: list = []          # callables(receipt) after each append (telemetry, SIEM, persistence)
+        self.known_keys: dict[str, str] = {}   # kid -> public PEM of keys that signed earlier receipts (rotation,
+                                               # or a restart with a new key): old receipts verify with their own key
 
     def append(self, body: dict) -> dict:
         with self.lock:
@@ -54,28 +56,34 @@ class ReceiptLog:
     def get(self, rid: str) -> dict | None:
         return next((r for r in self.items if r["id"] == rid), None)
 
+    def public_keys(self) -> list[str]:
+        cur = [self.signer.public_pem] if self.signer is not None else []
+        return cur + [p for p in self.known_keys.values() if p not in cur]
+
     def verify(self) -> dict:
-        out = verify_chain(self.items, hmac_key=self.key,
-                           public_pem=self.signer.public_pem if self.signer is not None else None)
-        return out
+        return verify_chain(self.items, hmac_key=self.key, public_pems=self.public_keys() or None)
 
     def export_lines(self):
         """JSONL: a header (public key, key id, head), then every receipt in order."""
         head = self.items[-1]["hash"] if self.items else "0" * 64
         yield json.dumps({"type": "kavach-receipts", "version": 1, "count": len(self.items), "head": head,
                           "public_key": self.signer.public_pem if self.signer is not None else None,
+                          "public_keys": self.public_keys(),
                           "kid": self.signer.key_id if self.signer is not None else None,
                           "ephemeral_key": bool(self.signer is not None and self.signer.ephemeral)}) + "\n"
         for r in list(self.items):
             yield json.dumps(r, default=str) + "\n"
 
 
-def verify_chain(items: list[dict], hmac_key: bytes | None = None, public_pem: str | None = None) -> dict:
-    """Recompute every hash and link; check the HMAC if the key is given and the Ed25519 signature if a public
-    key is given (or carried in an export)."""
+def verify_chain(items: list[dict], hmac_key: bytes | None = None, public_pem: str | None = None,
+                 public_pems: list[str] | None = None) -> dict:
+    """Recompute every hash and link; check the HMAC if the key is given and the Ed25519 signature if public keys
+    are given (or carried in an export). Each receipt must verify with the key it names (kid), and that key must be
+    one of the trusted ones."""
     from .signing import key_id, load_public, verify
-    pub = load_public(public_pem) if public_pem else None
-    kid = key_id(pub) if pub is not None else None
+    pems = [p for p in ([public_pem] if public_pem else []) + list(public_pems or []) if p]
+    keys = {key_id(k): k for k in (load_public(p) for p in pems)}
+    kid = next(iter(keys), None)
     prev, signed = "0" * 64, 0
     for r in items:
         core = {k: r[k] for k in ("seq", "ts", "prev_hash", "body")}
@@ -83,15 +91,16 @@ def verify_chain(items: list[dict], hmac_key: bytes | None = None, public_pem: s
         ok = r["prev_hash"] == prev and h == r["hash"]
         if ok and hmac_key is not None:
             ok = hmac.compare_digest(r["sig"], hmac.new(hmac_key, h.encode(), hashlib.sha256).hexdigest())
-        if ok and pub is not None:
+        if ok and keys:
             ed = r.get("ed25519") or {}
-            ok = ed.get("kid") == kid and verify(pub, h.encode(), ed.get("sig", ""))
+            pub = keys.get(ed.get("kid"))
+            ok = pub is not None and verify(pub, h.encode(), ed.get("sig", ""))
             signed += ok
         if not ok:
             return {"valid": False, "broken_at": r["id"], "checked": r["seq"]}
         prev = h
     return {"valid": True, "count": len(items), "head": prev[:16], "ed25519_verified": signed,
-            "key_id": kid}
+            "key_id": kid, "key_ids": sorted(keys)}
 
 
 def _cli(argv=None) -> int:
@@ -101,7 +110,8 @@ def _cli(argv=None) -> int:
     k.add_argument("dir")
     v = sub.add_parser("verify", help="verify an exported receipt chain (JSONL)")
     v.add_argument("file")
-    v.add_argument("--pubkey", help="trusted public key PEM (default: the one in the export's header)")
+    v.add_argument("--pubkey", action="append", help="trusted public key PEM, repeatable (default: the keys in the "
+                                                     "export's header)")
     a = ap.parse_args(argv)
     if a.cmd == "keygen":
         from .signing import Signer
@@ -114,9 +124,10 @@ def _cli(argv=None) -> int:
         return 0
     lines = [json.loads(x) for x in Path(a.file).read_text().splitlines() if x.strip()]
     header, items = (lines[0], lines[1:]) if lines and lines[0].get("type") == "kavach-receipts" else ({}, lines)
-    pem = Path(a.pubkey).read_text() if a.pubkey else header.get("public_key")
-    out = verify_chain(items, public_pem=pem)
-    if a.pubkey is None and pem:
+    pems = [Path(p).read_text() for p in a.pubkey] if a.pubkey else (header.get("public_keys") or
+                                                                     [header.get("public_key")])
+    out = verify_chain(items, public_pems=[p for p in pems if p])
+    if a.pubkey is None and any(pems):
         out["note"] = "checked against the key in the export's own header; pass --pubkey for a key you trust"
     print(json.dumps(out, indent=1))
     return 0 if out["valid"] else 1
