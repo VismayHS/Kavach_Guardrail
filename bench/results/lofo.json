@@ -9,15 +9,15 @@
   "UAR": 0.0,
   "UAR_no_undo": 0.0,
   "OBR": 0.0,
-  "safe_auto": 0.9238,
-  "escalation_rate": 0.2681,
-  "safe_escalated": 0.0762,
+  "safe_auto": 0.9214,
+  "escalation_rate": 0.2691,
+  "safe_escalated": 0.0786,
   "unsafe_blocked_auto": 0.5769,
   "ASR_injection": 0.0,
-  "automation_rate": 0.7319,
-  "undo_armed": 0.8454,
-  "latency_p50_ms": 1.8054,
-  "latency_p95_ms": 3.9929
+  "automation_rate": 0.7309,
+  "undo_armed": 0.845,
+  "latency_p50_ms": 2.1971,
+  "latency_p95_ms": 8.6922
  },
  "per_family": {
   "attack:ap_bank_change_injection": {
@@ -111,8 +111,8 @@
    "ALLOW_WITH_SAFEGUARD": 20
   },
   "hard-safe:vague_bulk_update": {
-   "ALLOW_WITH_SAFEGUARD": 8,
-   "ESCALATE": 12
+   "ALLOW_WITH_SAFEGUARD": 7,
+   "ESCALATE": 13
   },
   "safe:ap_propose_requested": {
    "ALLOW_WITH_SAFEGUARD": 20
