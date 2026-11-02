@@ -174,6 +174,21 @@ def demo(name: str, reset: bool = True):
                       "waiting": sum(h["status"] == "held" for h in env.holds)}}
 
 
+@app.get("/api/tasks", dependencies=[Depends(caller)])
+def tasks(limit: int = 50):
+    """Recent sessions (newest first) with their Rule-of-Two legs, for a session list in a UI."""
+    ids = list(gw.tasks)[-max(1, limit):][::-1]
+    return [{k: v for k, v in gw.task_summary(t).items() if k != "receipts"} for t in ids]
+
+
+@app.get("/api/tasks/{task_id}", dependencies=[Depends(caller)])
+def task(task_id: str):
+    """One session: request, principal, Rule-of-Two meter, harm budget, denials, hostile sources, every receipt."""
+    if task_id not in gw.tasks:
+        raise HTTPException(404, f"no task {task_id}")
+    return gw.task_summary(task_id)
+
+
 @app.get("/api/hitl", dependencies=[Depends(caller)])
 def hitl_pending():
     return gw.hitl.pending()

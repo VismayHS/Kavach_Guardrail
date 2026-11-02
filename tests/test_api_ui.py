@@ -39,3 +39,17 @@ def test_event_stream_replays_receipts(monkeypatch):
         text = "".join(r.iter_text())
     ids = [int(line[4:]) for line in text.splitlines() if line.startswith("id: ")]
     assert ids == list(range(1, total + 1)) and "event: decision" in text
+
+
+def test_rule_of_two_meter_on_decisions_and_sessions(monkeypatch):
+    c = client(monkeypatch)
+    run = c.post("/api/demo/email_injection").json()
+    send = run["steps"][-1]
+    assert send["rule_of_two"] == {"untrusted_input": True, "private_data": True, "outbound_action": True,
+                                   "legs": 3, "human_required": True}
+    assert run["steps"][0]["rule_of_two"]["legs"] == 1            # only the untrusted inbox so far
+    s = c.get(f"/api/tasks/{run['task_id']}").json()
+    assert s["rule_of_two"]["legs"] == 3 and s["request"] == "Summarise my unread emails."
+    assert [r["tool"] for r in s["receipts"] if r["type"] == "decision"] == ["mail.read_inbox", "crm.query", "mail.send"]
+    assert c.get("/api/tasks").json()[0]["task_id"] == run["task_id"]
+    assert c.get("/api/tasks/task-nope").status_code == 404
