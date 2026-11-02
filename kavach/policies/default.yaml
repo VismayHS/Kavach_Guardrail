@@ -109,4 +109,6 @@ rules:
   R26: "A change to a sensitive column (email, phone, IBAN, amount, owner...) that the request doesn't ask for needs approval."
   R27: "If the agent still proposes a state-changing action when the user's request is masked out (MELON), the action is driven by injected content and needs approval."
   R28: "Canary records exist only to be stolen: any external action carrying one is blocked."
+  R30: "Bank accounts must be valid: an IBAN with the wrong length or check digits is blocked (a typo, or an invented account)."
+  R31: "Confirmation of Payee: a new bank account registered to someone other than the vendor needs approval."
   R29: "If a classifier flagged injected instructions in content the task read, state-changing actions need approval unless every target was typed by the user (a model signal: it escalates, never blocks)."

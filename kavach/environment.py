@@ -154,6 +154,9 @@ class Environment:
         self.holds: list[dict] = []        # payments and emails waiting out their window (cancel until then)
         self.drafts: list[dict] = []       # emails a human approved as drafts: saved, never sent
         self.payees = {"ACC-11-2001": "Northwind Supplies", "ACC-11-2002": "Contoso Travel"}
+        # Confirmation of Payee stand-in (R31): the registered holder of an account, as a bank's CoP / penny-drop /
+        # beneficiary-name lookup would return it. Empty: no lookup available, so R31 doesn't apply.
+        self.iban_holders: dict[str, str] = {}
         self.change_freeze = False
 
     # ------------------------------------------------------------------ snapshots (undo)

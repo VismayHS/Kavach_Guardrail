@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 import yaml
 
 from .addresses import domain_of, parse_recipients
+from .finance import iban_check, name_similarity
 from .intent import BREADTH
 from .lookalike import Lookalike, registered
 from .manifest import ToolRegistry, ToolSpec, arg, argname, model_of
@@ -42,6 +43,10 @@ class PolicyEngine:
         self.version = self.cfg["version"]
         self.rules = self.cfg["rules"]
         self.lookalike = Lookalike(list(self.cfg.get("internal_domains", [])) + list(self.cfg.get("known_domains", [])))
+        import os
+
+        from .finance import SanctionsList
+        self.sanctions = SanctionsList.load(os.environ.get("KAVACH_SANCTIONS_CSV") or self.cfg.get("sanctions_list"))
 
     def file_conf(self, path: str) -> Conf | None:
         """Sensitivity of a workspace file by name (N2); None = the tool's default."""
@@ -222,6 +227,9 @@ class PolicyEngine:
                     add("R5", "PASS", f"Refund {amt:,.0f} within auto limit.")
             else:
                 payee_known = arg(spec, call.args, "to_account") in (staged or {}).get("payees", {})
+                acct = str(arg(spec, call.args, "to_account", ""))
+                if re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9 ]{8,34}", acct.upper()) and not iban_check(acct)[0]:
+                    add("R30", "DENY", f"{acct!r} is not a valid IBAN: {iban_check(acct)[1]}.", iban=acct)
                 if amt > lim["transfer_hard_max"]:
                     add("R5", "DENY", f"Transfer {amt:,.0f} exceeds hard cap.")
                 elif not payee_known or amt > lim["transfer_auto_max"]:
@@ -270,6 +278,15 @@ class PolicyEngine:
             else:
                 add("R18", "PASS", f"{cur} {amt:,.0f} is within role '{ctx.principal.role}'s release limit "
                     f"({cur} {limit:,.0f}).")
+        if m == "ap_release" and "amount" in e:
+            hit = self.sanctions.screen(e.get("vendor_name", ""))          # F7: the list, not only a database flag
+            if hit and not e["sanctioned"]:
+                add("R21", "DENY", f"{e['vendor_name']} matches sanctions list entry '{hit['match']}' "
+                    f"(similarity {hit['score']}); payments are blocked.", vendor=e["vendor_id"], screening=hit)
+            ok, why = iban_check(e.get("iban", ""))
+            if not ok:
+                add("R30", "DENY", f"The vendor's bank account on record is not a valid IBAN ({why}); fix the vendor "
+                    "master before paying.", iban=e.get("iban"))
         if m == "bank_change":
             lab = labels.get(argname(spec, "iban"))
             if lab and lab.trust == Trust.UNTRUSTED:
@@ -279,6 +296,15 @@ class PolicyEngine:
             else:
                 add("R20", "REQUIRE_APPROVAL", "Bank detail changes need independent verification (a call to the "
                     "vendor's registered number) and AP Manager sign-off.")
+            # after R20, so provenance stays the stated reason when both apply
+            new = str(arg(spec, call.args, "iban", ""))
+            ok, why = iban_check(new)
+            if not ok:
+                add("R30", "DENY", f"{new!r} is not a valid IBAN: {why}.", iban=new)
+            holder = e.get("holder_name")
+            if holder and name_similarity(holder, e.get("vendor_name", "")) < 0.85:
+                add("R31", "REQUIRE_APPROVAL", f"Confirmation of Payee: the account is registered to {holder!r}, not "
+                    f"{e.get('vendor_name')!r}.", holder=holder)
         if m == "sql_write":
             kept = set(e.get("tables_written") or []) & set(fin["retained_tables"])
             if kept and {"delete", "drop"} & set(e.get("sql_ops") or []):
