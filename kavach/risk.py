@@ -19,14 +19,13 @@ from __future__ import annotations
 
 import json
 import math
-import re
 from pathlib import Path
 
 import numpy as np
 
 from .manifest import ToolSpec
 from .models import Effect, Label, Risk, Trust
-from .provenance import DOCID
+from .provenance import arg_targets, named_targets
 
 FEATURES = ["untrusted_control", "untrusted_data", "external_sink", "pii_out", "rows", "no_where", "ddl",
             "prod", "amount", "payee_unknown", "misalignment", "scope_excess", "irreversibility", "harm",
@@ -41,17 +40,14 @@ PRIOR = {"intercept": -3.2, "coef": {"untrusted_control": 4.0, "untrusted_data":
          "secret": 3.0, "ingress_untrusted_url": 1.5, "control_from_user": -2.0, "target_mismatch": 2.0}}
 
 
-IDS = re.compile(r"(?<![\w.-])\d{2,}(?![\w-])")
-
 
 def featurize(spec: ToolSpec, args: dict, labels: dict[str, Label], effect: Effect, intent: dict, env: str,
               user_request: str = "") -> dict:
     m = effect.magnitude
     # targets the user named (ids, invoice numbers like INV-3040...) that a state-changing action ignores entirely
-    named = set(IDS.findall(user_request)) | set(DOCID.findall(user_request))
-    arg_text = " ".join(str(v) for v in args.values())
+    named = named_targets(user_request)
     target_mismatch = float(bool(named) and spec.effect not in ("read", "ingress")
-                            and not any(n in arg_text for n in named))
+                            and not named & arg_targets(args))
     ctrl = [labels[a] for a in spec.control_args if a in labels]
     data = [labels[a] for a in spec.data_args if a in labels]
     rows = m.get("rows_affected", 0) or 0

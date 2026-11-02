@@ -10,12 +10,15 @@ The result is a measured/predicted blast radius and a harm magnitude H in [0,1].
 from __future__ import annotations
 
 import math
+import re
 import time
 
 from .environment import INTERNAL_DOMAIN, Environment
 from .manifest import ToolSpec
 from .models import Effect, Label, Reversibility, TaskContext, ToolCall
 from .sql import classify
+
+INVOICE_REF = re.compile(r"\binvoice\s*(?:no\.?|number)?\s*#?\s*(\d+)\b", re.I)    # "invoice 2339", "invoice #12"
 
 
 def harm_from(raw: float) -> float:
@@ -45,9 +48,11 @@ class ConsequenceEngine:
             pii = sum(labels[k].pii_entities for k in spec.data_args if k in labels)
             conf = max((labels[k].conf.rank for k in spec.data_args if k in labels), default=0)
             raw = len(ext) * 1.0 + pii * 0.5 + (2.0 if conf >= 2 and ext else 0.0)
+            named, stray = self._invoice_recipients(ctx.user_request, ext)
             eff = Effect("predicted", rev,
                          {"recipients": len(to), "external_recipients": len(ext), "pii_records": pii,
-                          "body_chars": len(str(a.get("body", ""))), "domains": sorted({x.split("@")[-1] for x in to})},
+                          "body_chars": len(str(a.get("body", ""))), "domains": sorted({x.split("@")[-1] for x in to}),
+                          "named_invoices": named, "not_invoice_customer": stray},
                          harm_from(raw),
                          f"1 email to {', '.join(to) or '?'} ({len(ext)} external) carrying {pii} PII values; "
                          "cannot be recalled once sent.", safeguard=spec.safeguard)
@@ -81,13 +86,30 @@ class ConsequenceEngine:
             eff = Effect("predicted", rev, {"amount": amt, "gl_account": a.get("gl_account"), "doc_type": a.get("doc_type")},
                          harm_from(amt / 2000.0), f"Post a {a.get('doc_type')} document of EUR {amt:,.0f} to GL account "
                          f"{a.get('gl_account')}; undoing a posted document needs a reversal entry.")
-        else:  # ingress: mail.read_inbox, web.fetch
+        elif spec.effect == "ingress":  # mail.read_inbox, web.fetch
             eff = Effect("static", rev, {"ingress": True}, 0.0,
                          "Read-only fetch; output will be labelled UNTRUSTED for the rest of the task.")
+        else:  # a tool KAVACH has no model for (e.g. a draft onboarded from its MCP annotations): assume the worst
+            outside = spec.sink == "external"
+            eff = Effect("predicted", rev, {"unknown_effect": True},
+                         harm_from(0.0 if spec.effect == "read" else 6.0 if outside else 3.0),
+                         f"No model of what {tool} does; treated as {spec.effect}, {rev.value}"
+                         + (", reaching outside the company." if outside else "."))
         eff.staged_ms = round((time.perf_counter() - t0) * 1000, 2)
         return eff
 
     # ---------------------------------------------------------------- staging
+    def _invoice_recipients(self, request: str, recipients: list[str]) -> tuple[list[str], list[str]]:
+        """R24 facts: CRM invoices the user named, and the recipients who aren't the customer on any of them.
+        Owners' addresses stay out of the effect: the agent may never have read them, so receipts couldn't mask them."""
+        ids = sorted({int(i) for i in INVOICE_REF.findall(request)})
+        if not ids or not recipients:
+            return [], []
+        rows = self.env.db.execute("SELECT i.id, lower(c.email) FROM invoices i JOIN customers c ON c.id = "
+                                   f"i.customer_id WHERE i.id IN ({','.join('?' * len(ids))})", ids).fetchall()
+        owners = {e for _, e in rows}
+        return [str(i) for i, _ in rows], [r for r in recipients if rows and r.lower() not in owners]
+
     def _stage_payment(self, tool: str, invoice_id: str, rev: Reversibility, safeguard: str | None) -> Effect:
         """Amount, payee, proposal and 3-way match come from the records, never from the call's text."""
         f = self.env.ap_invoice_facts(invoice_id)

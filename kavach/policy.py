@@ -12,8 +12,10 @@ import yaml
 
 from .manifest import ToolRegistry, ToolSpec
 from .models import Conf, GateResult, Label, TaskContext, ToolCall, Trust
-from .provenance import URL
+from .provenance import URL, arg_targets, named_targets
 
+# actions aimed at specific records: if the user named records, the action should touch one of them (R16)
+TARGETED = {"crm.execute", "payment.release", "payment.propose", "payments.refund", "vendor.update_bank", "sap.post"}
 # the argument that picks where an outbound action goes
 DESTINATION = {"mail.send": "to", "payments.transfer": "to_account", "payments.refund": "invoice_id",
                "payment.release": "invoice_id"}
@@ -42,8 +44,12 @@ class PolicyEngine:
         if call.tool_def_hash is None and self.cfg.get("require_tool_hash"):
             add("R6", "DENY", "No tool definition hash presented; this deployment requires pinned definitions.")
             return out
-        add("R6", "PASS", "Tool is in the approved manifest and its definition hash matches." if call.tool_def_hash
-            else "Tool is in the approved manifest (no definition hash presented, so the pin was not checked).")
+        if call.tool in registry.drafts:
+            add("R6", "REQUIRE_APPROVAL", f"'{call.tool}' was onboarded from its MCP annotations and hasn't been "
+                "approved yet; a human decides this call.")
+        else:
+            add("R6", "PASS", "Tool is in the approved manifest and its definition hash matches." if call.tool_def_hash
+                else "Tool is in the approved manifest (no definition hash presented, so the pin was not checked).")
 
         # R7 schema
         errs = registry.validate_args(spec, call.args)
@@ -94,6 +100,31 @@ class PolicyEngine:
             else:
                 add("R2", "PASS", f"PII leaving: {pii} (limit {self.cfg['limits']['pii_external_max']}), "
                     f"recipient {'internal' if internal else 'external'}.")
+            # R17 someone else's personal data, even a single value, going outside the company
+            if st.get("third_party_pii") and not internal:
+                add("R17", "REQUIRE_APPROVAL", f"The email carries {st['third_party_pii']} personal value(s) that "
+                    "belong to someone other than the recipient.", count=st["third_party_pii"])
+            # R24 the email is about an invoice the user named, but goes to someone who isn't that invoice's customer
+            if st.get("stray_recipients"):
+                inv = ", ".join(st.get("effect", {}).get("named_invoices", []))
+                add("R24", "REQUIRE_APPROVAL", f"The user named invoice {inv}, but {', '.join(st['stray_recipients'])}"
+                    " is not that invoice's customer in the CRM.", recipients=st["stray_recipients"])
+
+        # R15 values the agent made up: they appear nowhere in the request or in any tool output
+        if call.tool in ("payments.transfer", "payments.refund"):
+            for a in spec.control_args:
+                lab, v = labels.get(a), call.args.get(a)
+                grounded = lab is not None and (lab.trust == Trust.TRUSTED or lab.sources != ["agent"])
+                if not grounded and str(v) not in ctx.user_request:
+                    add("R15", "REQUIRE_APPROVAL", f"'{a}' = {v!r} appears nowhere in the request or any tool "
+                        "output; the agent made it up.", arg=a)
+
+        # R16 the user named specific records, and this action touches none of them
+        if call.tool in TARGETED:
+            named = named_targets(ctx.user_request)
+            if named and not named & arg_targets(call.args):
+                add("R16", "REQUIRE_APPROVAL", f"The user named {', '.join(sorted(named))}, but this action touches "
+                    "none of them.", named=sorted(named))
 
         # R13 data leaving through a URL / R14 lethal trifecta at runtime
         if call.tool == "web.fetch":

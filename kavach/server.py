@@ -14,6 +14,7 @@ Endpoints
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
@@ -35,6 +36,7 @@ env = Environment(tempfile.mkdtemp(prefix="kavach-"))
 gw = Kavach(env)
 app = FastAPI(title="KAVACH guardrail", version="0.1")
 _mcp_task: dict[tuple[str, str], str] = {}
+_sessions: dict[tuple[str, str], tuple[str, set[str]]] = {}     # (user, session id) -> (task id, context seen)
 AUTH_SECRET = os.environ.get(auth.SECRET_ENV)     # unset = dev mode (role from the request, receipts say so)
 
 
@@ -64,6 +66,10 @@ class CheckIn(BaseModel):
     context: list[dict] = []        # earlier tool outputs: [{"tool": "...", "output": ...}] for provenance
     execute: bool = False
     tool_def_hash: str | None = None
+    session_id: str | None = None   # same id across calls = one task: provenance, harm budget and denials add up
+    tool_description: str = ""      # for a tool KAVACH doesn't know: its MCP description, schema and annotations
+    tool_schema: dict | None = None
+    tool_annotations: dict | None = None
 
 
 class PlanIn(BaseModel):
@@ -87,11 +93,23 @@ def index():
 @app.post("/api/v1/check")
 def check(body: CheckIn, who: dict | None = Depends(caller)):
     user, role, authed = _identity(who, body.user_id, body.role)
-    tid, _ = gw.start_task(user, role, body.user_request, body.env, authenticated=authed)
+    key = (user, body.session_id) if body.session_id else None
+    if key in _sessions:
+        tid, seen = _sessions[key]
+        gw.add_request(tid, body.user_request)
+    else:
+        tid, _ = gw.start_task(user, role, body.user_request, body.env, authenticated=authed)
+        seen: set[str] = set()
+        if key:
+            _sessions[key] = (tid, seen)
     for c in body.context:
+        h = hashlib.sha256(json.dumps(c, sort_keys=True, default=str).encode()).hexdigest()
         spec = gw.registry.get(c.get("tool", ""))
-        if spec:
+        if spec and h not in seen:                   # a session resends its history; count each output once
+            seen.add(h)
             gw.tasks[tid].prov.register_output(c["tool"], c.get("output"), spec.output_trust, spec.output_conf)
+    if gw.registry.get(body.tool) is None and body.tool_annotations is not None:
+        gw.registry.add_draft(body.tool, body.tool_description, body.tool_schema, body.tool_annotations, body.args)
     d = gw.check(tid, ToolCall(body.tool, body.args, tool_def_hash=body.tool_def_hash))
     if body.execute:
         gw.execute(tid, d)
@@ -160,6 +178,22 @@ def receipts(limit: int = 50):
 @app.get("/api/receipts/verify")
 def verify():
     return gw.receipts.verify()
+
+
+@app.get("/api/tools/drafts", dependencies=[Depends(caller)])
+def tool_drafts():
+    """Tools onboarded from their MCP annotations that a human hasn't approved yet (calls to them escalate)."""
+    return [{"name": n, "description": gw.registry.specs[n].description,
+             "annotations": gw.registry.specs[n].mcp_annotations()} for n in sorted(gw.registry.drafts)]
+
+
+@app.post("/api/tools/{name}/approve")
+def approve_tool(name: str, who: dict | None = Depends(caller)):
+    if who and who["role"] != "admin":
+        raise HTTPException(403, "only an admin can approve a tool")
+    if not gw.registry.approve(name):
+        raise HTTPException(404, f"no draft tool '{name}'")
+    return {"approved": name, "definitionHash": gw.registry.pins[name]}
 
 
 @app.get("/api/state", dependencies=[Depends(caller)])

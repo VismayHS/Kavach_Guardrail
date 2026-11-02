@@ -97,13 +97,44 @@ def default_manifest() -> dict[str, ToolSpec]:
     return {s.name: s for s in specs}
 
 
+MCP_TYPES = {"string": "str", "integer": "int", "number": "float", "boolean": "bool"}
+JSON_TYPES = {v: k for k, v in MCP_TYPES.items()}
+
+
 class ToolRegistry:
     def __init__(self, specs: dict[str, ToolSpec] | None = None):
         self.specs = specs or default_manifest()
         self.pins = {n: s.definition_hash() for n, s in self.specs.items()}
+        self.drafts: set[str] = set()        # onboarded from MCP annotations, not yet approved by a human
 
     def get(self, name: str) -> ToolSpec | None:
         return self.specs.get(name)
+
+    def add_draft(self, name: str, description: str = "", input_schema: dict | None = None,
+                  annotations: dict | None = None, arg_names=()) -> ToolSpec:
+        """Onboard an unknown tool from its MCP description. Until a human approves it, calls escalate (R6).
+        Missing hints take MCP's own cautious defaults: not read-only, destructive, open world."""
+        ann = annotations or {}
+        props = (input_schema or {}).get("properties") or {k: {} for k in arg_names}
+        params = {k: MCP_TYPES.get(v.get("type"), "any") for k, v in props.items()}
+        read = bool(ann.get("readOnlyHint", False))
+        rev = Reversibility.IDEMPOTENT if read else (
+            Reversibility.IRREVERSIBLE if ann.get("destructiveHint", True) else Reversibility.COMPENSABLE)
+        spec = ToolSpec(name, description, params, list((input_schema or {}).get("required", [])),
+                        effect="read" if read else "write",
+                        sink="external" if ann.get("openWorldHint", True) else "internal",
+                        reversibility=rev, control_args=[] if read else list(params))
+        self.specs[name], self.pins[name] = spec, spec.definition_hash()
+        self.drafts.add(name)
+        return spec
+
+    def approve(self, name: str) -> bool:
+        """A human approved the draft: its definition is now pinned like any other tool."""
+        if name not in self.drafts:
+            return False
+        self.drafts.discard(name)
+        self.pins[name] = self.specs[name].definition_hash()
+        return True
 
     def verify_pin(self, name: str, presented_hash: str | None) -> bool:
         """True if the definition the agent saw matches the approved, pinned one."""
@@ -118,6 +149,8 @@ class ToolRegistry:
                 errors.append(f"missing required arg '{r}'")
         for k, v in args.items():
             t = spec.params.get(k)
+            if t == "any":
+                continue
             if t is None:
                 errors.append(f"unexpected arg '{k}'")
             elif t == "str" and not isinstance(v, str):
@@ -132,8 +165,8 @@ class ToolRegistry:
             out.append({
                 "name": s.name, "description": s.description,
                 "inputSchema": {"type": "object", "required": s.required,
-                                "properties": {k: {"type": {"str": "string", "int": "integer", "float": "number",
-                                                            "bool": "boolean"}[v]} for k, v in s.params.items()}},
+                                "properties": {k: ({"type": JSON_TYPES[v]} if v in JSON_TYPES else {})
+                                               for k, v in s.params.items()}},
                 "annotations": s.mcp_annotations(),
                 "_meta": {"kavach/definitionHash": self.pins[s.name]},
             })

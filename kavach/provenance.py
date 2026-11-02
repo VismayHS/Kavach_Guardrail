@@ -24,10 +24,62 @@ from .models import Conf, Label, Trust
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 URL = re.compile(r"https?://[^\s\"'<>)]+")
 ACCOUNT = re.compile(r"\bACC-\d{2}-\d{4}\b")
-PHONE = re.compile(r"\+91-9\d{9}")
+PHONE = re.compile(r"\+\d{1,3}[- ]?\d{6,12}\b")                                          # +91-9798935572
 IBAN = re.compile(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,3})?\b")   # spaced or not
 DOCID = re.compile(r"\b[A-Z]{1,5}-\d{3,}\b")                                              # INV-3040, PO-3001
+UPI = re.compile(r"\b[\w.-]{2,}@[A-Za-z]{2,}\b(?![\w.-]*\.[A-Za-z])")                    # ravi@okhdfcbank
+PAN = re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b")                                               # Indian tax id
+AADHAAR = re.compile(r"\b\d{4}[ -]?\d{4}[ -]?\d{4}\b")                                    # Verhoeff-checked
+CARD = re.compile(r"\b(?:\d[ -]?){12,18}\d\b")                                            # Luhn-checked
 NUMBER = re.compile(r"(?<![\w.-])\d[\d,]*(?:\.\d+)?(?![\w-])")
+TARGET_NUM = re.compile(r"(?<![\w.-])\d{2,}(?![\w-])")
+SHORT_ID = re.compile(r"\b(?:customer|client|invoice|record|order|ticket|account|vendor|id)\s*[#:=]?\s*(\d)\b", re.I)
+REPLY = re.compile(r"\b(reply|respond|write back)\b", re.I)
+
+_VD = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 2, 3, 4, 0, 6, 7, 8, 9, 5], [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+       [3, 4, 0, 1, 2, 8, 9, 5, 6, 7], [4, 0, 1, 2, 3, 9, 5, 6, 7, 8], [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+       [6, 5, 9, 8, 7, 1, 0, 4, 3, 2], [7, 6, 5, 9, 8, 2, 1, 0, 4, 3], [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+       [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]]
+_VP = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 5, 7, 6, 2, 8, 3, 0, 9, 4], [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+       [8, 9, 1, 6, 0, 4, 3, 5, 2, 7], [9, 4, 5, 3, 1, 2, 6, 8, 7, 0], [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+       [2, 7, 9, 3, 8, 0, 6, 4, 1, 5], [7, 0, 4, 6, 9, 1, 3, 2, 5, 8]]
+
+
+def _digits(s: str) -> str:
+    return re.sub(r"\D", "", s)
+
+
+def _aadhaar_ok(d: str) -> bool:
+    """Aadhaar numbers start with 2-9 and carry a Verhoeff check digit."""
+    c = 0
+    for i, ch in enumerate(reversed(d)):
+        c = _VD[c][_VP[i % 8][int(ch)]]
+    return d[0] not in "01" and c == 0
+
+
+def _luhn_ok(d: str) -> bool:
+    s = 0
+    for i, ch in enumerate(reversed(d)):
+        n = int(ch) * (2 if i % 2 else 1)
+        s += n - 9 if n > 9 else n
+    return 13 <= len(d) <= 19 and s % 10 == 0
+
+
+def is_pii(e: str) -> bool:
+    """Entities that identify a person: emails, UPI ids, phones, PAN, Aadhaar, card numbers."""
+    return "@" in e or e.startswith(("+", "pan:", "aadhaar:", "card:"))
+
+
+def named_targets(text: str) -> set[str]:
+    """Record ids a user names: numbers of 2+ digits, document ids like INV-3040, and one-digit ids after a record
+    word ("customer 3", "id = 3"). A bare one-digit number is usually a count ("the 3 emails"), so it isn't one."""
+    return set(TARGET_NUM.findall(text)) | set(DOCID.findall(text)) | set(SHORT_ID.findall(text))
+
+
+def arg_targets(args: dict) -> set[str]:
+    """Records an action touches: named_targets of its argument values, plus any whole-number value (invoice_id=3)."""
+    vals = [str(v) for v in args.values()]
+    return named_targets(" ".join(vals)) | {v for v in vals if v.isdigit()}
 
 
 def _norm_num(s: str) -> str:
@@ -46,6 +98,10 @@ def entities(text: str) -> set[str]:
     out |= {re.sub(r"\s", "", m).upper() for m in IBAN.findall(text)}
     out |= set(DOCID.findall(text))
     out |= set(PHONE.findall(text))
+    out |= {u.lower() for u in UPI.findall(text)}
+    out |= {"pan:" + m for m in PAN.findall(text)}
+    out |= {"aadhaar:" + d for d in map(_digits, AADHAAR.findall(text)) if _aadhaar_ok(d)}
+    out |= {"card:" + d for d in map(_digits, CARD.findall(text)) if _luhn_ok(d)}
     out |= {"#" + _norm_num(n) for n in NUMBER.findall(text) if len(n.replace(",", "")) >= 3}
     return out
 
@@ -64,6 +120,9 @@ class ProvenanceTracker:
     user_text: str = ""
     private_seen: bool = False      # the task has read PII / confidential data (lethal-trifecta leg 1)
     untrusted_seen: bool = False    # the task has read untrusted content (lethal-trifecta leg 2)
+    senders: dict[str, str] = field(default_factory=dict)          # From: address of a message read -> source
+    pii_owner: dict[str, set[str]] = field(default_factory=dict)   # PII value -> the records (people) it belongs to
+    n_outputs: int = 0
 
     def register_user(self, text: str) -> None:
         self.user_text += " " + text
@@ -71,29 +130,49 @@ class ProvenanceTracker:
 
     def mask(self, text: str) -> str:
         """Replace PII values that came from private tool outputs with [PII] (for receipts and logs)."""
-        hide = lambda m: "[PII]" if m.group(0).lower() in self.pii_values else m.group(0)  # noqa: E731
-        return PHONE.sub(hide, EMAIL.sub(hide, text))
+        def hide(norm):
+            return lambda m: "[PII]" if norm(m.group(0)) in self.pii_values else m.group(0)
+        for rx, norm in ((EMAIL, str.lower), (UPI, str.lower), (PHONE, str), (PAN, lambda s: "pan:" + s),
+                         (AADHAAR, lambda s: "aadhaar:" + _digits(s)), (CARD, lambda s: "card:" + _digits(s))):
+            text = rx.sub(hide(norm), text)
+        return text
 
     def register_output(self, tool: str, output, trust: str, conf: Conf) -> None:
         self.private_seen |= conf in (Conf.PII, Conf.CONFIDENTIAL)
         self.untrusted_seen |= trust == "untrusted"
         records = output if isinstance(output, list) else [output]
-        for rec in records:
+        self.n_outputs += 1
+        for i, rec in enumerate(records):
             src = f"tool:{tool}"
             if isinstance(rec, dict) and "id" in rec:
                 src += f"#{rec['id']}"
+            record_key = f"{src}@{self.n_outputs}:{i}"      # one person's row: their email, phone... share it
+            if tool == "mail.read_inbox" and isinstance(rec, dict) and rec.get("from"):
+                self.senders[str(rec["from"]).lower()] = src     # the header, not addresses written in the body
             text = rec if isinstance(rec, str) else json.dumps(rec, default=str)
             t = Trust(trust) if trust in ("untrusted", "derived", "trusted") else Trust.DERIVED
             lab = Label(t, conf, [src])
             for e in entities(text):
-                is_pii = e.startswith("+91") or "@" in e
-                e_conf = conf if (conf != Conf.PII or is_pii) else Conf.CONFIDENTIAL
+                pii = is_pii(e)
+                e_conf = conf if (conf != Conf.PII or pii) else Conf.CONFIDENTIAL
                 self.origins.setdefault(e, []).append(Label(t, e_conf, [src]))
-                if conf == Conf.PII and is_pii:
+                if conf == Conf.PII and pii:
                     self.pii_values.add(e)
+                    self.pii_owner.setdefault(e, set()).add(record_key)
             if lab.trust == Trust.UNTRUSTED:
                 for sh in shingles(text):
                     self.untrusted_shingles.setdefault(sh, src)
+
+    def third_party_pii(self, recipients: list[str], text: str) -> int:
+        """R17: PII values in `text` that belong to someone other than the recipients themselves."""
+        rcpt = {r.strip().lower() for r in recipients if r.strip()}
+        mine = set().union(*(self.pii_owner.get(r, set()) for r in rcpt))
+        return sum(1 for e in entities(text)
+                   if e in self.pii_values and e not in rcpt and not (self.pii_owner.get(e, set()) & mine))
+
+    def given(self, value: str) -> bool:
+        """The user typed this value, or asked to reply to the message it came from."""
+        return any(s == "user" or s.startswith("sender:") for s in self.label(value, is_control=True).sources)
 
     def label(self, value, is_control: bool) -> Label:
         text = value if isinstance(value, str) else str(value)
@@ -115,6 +194,9 @@ class ProvenanceTracker:
             if e in self.user_entities:
                 if trust != Trust.UNTRUSTED or not is_control:
                     sources.append("user")
+                continue
+            if is_control and e in self.senders and REPLY.search(self.user_text):
+                sources.append(f"sender:{self.senders[e]}")   # the user asked to reply to this message's sender
                 continue
             for lab in self.origins.get(e, []):
                 sources.extend(lab.sources)

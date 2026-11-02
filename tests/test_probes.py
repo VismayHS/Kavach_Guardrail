@@ -1,7 +1,7 @@
 """Regression tests for the holes found by probing (fix plan probes P1-P9, Phase 0 in docs/plan/06_build_roadmap.md).
 
 Each test is the attack (or the legitimate task) as it was run against the old code; it must keep its
-fixed outcome. P2 is expected to fail until Phase 1 labels email headers separately (F5).
+fixed outcome. P2 (reply to the sender) became allowed in Phase 1, when email headers got their own label.
 """
 import json
 import sqlite3
@@ -107,7 +107,6 @@ def test_p7_mixed_recipients_count_as_external(gw):
     assert d.verdict == Verdict.ESCALATE and "R2" in rules(d, "REQUIRE_APPROVAL")
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 1 (F5): label email headers separately so replying to the sender works")
 def test_p2_reply_to_the_sender_is_allowed(gw):
     tid, _ = gw.start_task("ravi", "analyst", "Reply to John's email about invoice 1042 and say it's being processed.")
     gw.run(tid, ToolCall("mail.read_inbox", {"unread_only": True}))

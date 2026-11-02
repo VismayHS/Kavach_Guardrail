@@ -15,8 +15,10 @@ It then **allows** the call, **allows it with undo armed**, **escalates it to a 
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                       # 57 tests (+1 expected failure until reply-to-sender lands)
+python -m pytest -q                       # 69 tests
 python -m bench.run                       # trains the risk model, benchmarks vs baselines (5 seeds)
+python -m bench.lofo                      # each family judged by a model trained without it
+python -m bench.holdout                   # families written after the rules, never trained on
 python -m uvicorn kavach.server:app --port 8000   # then open http://localhost:8000
 ```
 
@@ -51,7 +53,8 @@ Auth: set `KAVACH_AUTH_SECRET` (32+ random bytes) and the API requires `Authoriz
 ```
 kavach/   models · manifest · provenance · consequence · policy (+ policies/default.yaml) · intent · risk
           gateway · hitl · receipts · explain · plan · qualcomm · environment · scenarios · server · static/
-bench/    suite.py (labelled scenarios) · run.py (train, calibrate, baselines, Pareto, multi-seed) · infosys_compare.py · results/
+bench/    suite.py (labelled scenarios) · run.py (train, calibrate, baselines, Pareto, multi-seed) · lofo.py · holdout.py
+          infosys_compare.py · results/
 agent/    llm_agent.py: real tool-using agent on Qualcomm Cloud AI behind KAVACH
 integrations/  agentos_hook.py: KAVACH as Infosys Topaz AgentOS hooks
 docs/     BLUEPRINT.md (end-to-end design + research) · INFOSYS_GAP_ANALYSIS.md · AUDIT_OF_EXISTING_DOCS.md · img/
@@ -73,4 +76,4 @@ Findings and the gaps they show: [`docs/INFOSYS_GAP_ANALYSIS.md`](docs/INFOSYS_G
 
 ## Results
 
-See [`bench/results/RESULTS.md`](bench/results/RESULTS.md). The suite is synthetic: its scenario families mirror the axes of AgentDojo and AmPermBench, but the numbers are **not** comparable with results published on those benchmarks.
+See [`bench/results/RESULTS.md`](bench/results/RESULTS.md), [`LOFO.md`](bench/results/LOFO.md) (leave one family out) and [`HOLDOUT.md`](bench/results/HOLDOUT.md). The suite is synthetic: its scenario families mirror the axes of AgentDojo and AmPermBench, but the numbers are **not** comparable with results published on those benchmarks.

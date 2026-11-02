@@ -1,6 +1,6 @@
 # KAVACH benchmark results
 
-Suite: 880 labelled scenarios, 44 families; train 260 / calibration 104 / test 264 (all numbers below are on the held-out test split).
+Suite: 880 labelled scenarios, 44 families; train 200 / calibration 80 / test 264 (all numbers below are on the held-out test split).
 
 **Synthetic suite.** Not comparable with numbers published on AgentDojo / AmPermBench.
 
@@ -10,14 +10,14 @@ Suite: 880 labelled scenarios, 44 families; train 260 / calibration 104 / test 2
 | Static denylist (text match) | 86.1% | 100.0% | 100.0% | 0.0% | 0.0% | - |
 | Tool-type gating | 37.5% | 25.0% | 45.0% | 0.0% | 59.1% | - |
 | Approve every write (manual interrupt) | 4.2% | 0.0% | 10.0% | 0.0% | 93.2% | - |
-| KAVACH: rules only | 29.2% | 0.0% | 95.0% | 0.0% | 6.8% | 0.25 / 0.72 |
-| KAVACH: no provenance | 0.7% | 0.0% | 45.8% | 0.0% | 61.7% | 0.25 / 0.77 |
-| KAVACH: fixed threshold | 0.7% | 0.0% | 80.0% | 0.0% | 29.2% | 0.24 / 0.41 |
-| KAVACH (full) | 0.7% | 0.0% | 80.0% | 0.0% | 29.2% | 0.25 / 0.44 |
+| KAVACH: rules only | 4.2% | 0.0% | 95.0% | 0.0% | 20.4% | 0.42 / 0.79 |
+| KAVACH: no provenance | 4.2% | 12.5% | 95.0% | 0.0% | 37.5% | 0.41 / 0.91 |
+| KAVACH: fixed threshold | 0.0% | 0.0% | 95.0% | 0.0% | 22.7% | 0.42 / 0.77 |
+| KAVACH (full) | 0.0% | 0.0% | 95.0% | 0.0% | 22.7% | 0.43 / 0.96 |
 
-Calibration on test split: ECE 0.0704 (raw) -> 0.0109 (isotonic), Brier 0.0483.
+Calibration on test split: ECE 0.014 (raw) -> 0.001 (isotonic), Brier 0.0.
 
-Operating points chosen on the calibration split: C_block=0.002 (KAVACH), fixed tau=0.25 (ablation).
+Operating points chosen on the calibration split: C_block=0.002 (KAVACH), fixed tau=0.02 (ablation).
 
 Latency excludes the optional Qualcomm LLM judge.
 
@@ -29,9 +29,9 @@ Latency excludes the optional Qualcomm LLM judge.
 | Static denylist (text match) | 86.4% (85%–88%) | 100.0% (100%–100%) | 100.0% (100%–100%) | 0.0% (0%–0%) | 0.0% (0%–0%) |
 | Tool-type gating | 37.5% (38%–38%) | 25.0% (25%–25%) | 45.0% (45%–45%) | 0.0% (0%–0%) | 59.1% (59%–59%) |
 | Approve every write (manual interrupt) | 4.2% (4%–4%) | 0.0% (0%–0%) | 10.0% (10%–10%) | 0.0% (0%–0%) | 93.2% (93%–93%) |
-| KAVACH: rules only | 29.2% (29%–29%) | 0.0% (0%–0%) | 95.0% (95%–95%) | 0.0% (0%–0%) | 6.8% (7%–7%) |
-| KAVACH: no provenance | 1.0% (0%–2%) | 0.4% (0%–2%) | 45.3% (45%–46%) | 0.0% (0%–0%) | 62.1% (61%–63%) |
-| KAVACH: fixed threshold | 0.4% (0%–1%) | 0.0% (0%–0%) | 80.2% (80%–81%) | 0.0% (0%–0%) | 29.2% (28%–30%) |
-| KAVACH (full) | 0.8% (0%–2%) | 0.0% (0%–0%) | 80.3% (80%–81%) | 0.0% (0%–0%) | 28.9% (28%–30%) |
+| KAVACH: rules only | 4.2% (4%–4%) | 0.0% (0%–0%) | 95.0% (95%–95%) | 0.0% (0%–0%) | 20.4% (20%–20%) |
+| KAVACH: no provenance | 4.2% (4%–4%) | 12.5% (12%–12%) | 95.0% (95%–95%) | 0.0% (0%–0%) | 37.8% (37%–39%) |
+| KAVACH: fixed threshold | 0.0% (0%–0%) | 0.0% (0%–0%) | 95.0% (95%–95%) | 0.0% (0%–0%) | 22.7% (23%–23%) |
+| KAVACH (full) | 0.0% (0%–0%) | 0.0% (0%–0%) | 95.0% (95%–95%) | 0.0% (0%–0%) | 22.7% (23%–23%) |
 
-ECE (calibrated) per seed: [0.0109, 0.0415, 0.0218, 0.0114, 0.0139]; C_block selected per seed: [0.002, 0.002, 0.005, 0.002, 0.002]
+ECE (calibrated) per seed: [0.001, 0.0011, 0.0011, 0.0012, 0.0011]; C_block selected per seed: [0.002, 0.002, 0.002, 0.002, 0.002]

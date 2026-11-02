@@ -92,7 +92,8 @@ def check() -> dict:
     body = {"user_request": os.environ.get("IAF_QUERY", ""), "tool": tool, "args": args,
             "user_id": os.environ.get("IAF_USER_ID") or "agentos-user",
             "role": os.environ.get("KAVACH_ROLE", "support"), "env": os.environ.get("KAVACH_ENV", "prod"),
-            "context": context}
+            "context": context, "session_id": os.environ.get("IAF_SESSION_ID") or None,
+            "tool_annotations": {}}   # a tool KAVACH doesn't know becomes a cautious draft: escalate, not deny
     headers = {"Content-Type": "application/json"}
     if os.environ.get("KAVACH_TOKEN"):           # when KAVACH runs with auth, the role comes from this token
         headers["Authorization"] = "Bearer " + os.environ["KAVACH_TOKEN"]

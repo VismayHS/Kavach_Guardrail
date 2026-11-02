@@ -30,8 +30,8 @@ from .provenance import ProvenanceTracker
 from .receipts import ReceiptLog
 from .risk import RiskModel, featurize
 
-SAFETY_RULES = {"R2", "R9", "R10", "R13", "R22", "R23"}
-AUTH_RULES = {"R1", "R3", "R4", "R5", "R6", "R7", "R8", "R11", "R12", "R14", "R18", "R19", "R20", "R21"}
+SAFETY_RULES = {"R2", "R9", "R10", "R13", "R16", "R17", "R22", "R23", "R24"}
+AUTH_RULES = {"R1", "R3", "R4", "R5", "R6", "R7", "R8", "R11", "R12", "R14", "R15", "R18", "R19", "R20", "R21"}
 
 
 @dataclass
@@ -90,6 +90,13 @@ class Kavach:
             self.receipts.append({"type": "plan", "task_id": tid, "request": request, "report": plan_report})
         return tid, plan_report
 
+    def add_request(self, task_id: str, request: str) -> None:
+        """A later user turn in the same session: its values count as typed by the user, and intent follows it."""
+        task = self.tasks[task_id]
+        if request and request != task.ctx.user_request:
+            task.prov.register_user(request)
+            task.ctx.user_request = request
+
     # ------------------------------------------------------------------ the decision path
     def check(self, task_id: str, call: ToolCall) -> Decision:
         t0 = time.perf_counter()
@@ -120,7 +127,12 @@ class Kavach:
                   "payees": self.env.payees, "freeze": self.env.change_freeze,
                   "sql": {k: effect.magnitude.get(k) for k in ("writes", "ddl", "sql_ops")} if effect else {},
                   "effect": effect.magnitude if effect else {},     # facts the rules read (amounts, payees...)
-                  "private_seen": task.prov.private_seen, "untrusted_seen": task.prov.untrusted_seen}
+                  "private_seen": task.prov.private_seen, "untrusted_seen": task.prov.untrusted_seen,
+                  "third_party_pii": task.prov.third_party_pii(
+                      str(call.args.get("to", "")).split(","),
+                      f"{call.args.get('subject', '')} {call.args.get('body', '')}") if call.tool == "mail.send" else 0,
+                  "stray_recipients": [r for r in (effect.magnitude.get("not_invoice_customer") or [] if effect else [])
+                                       if not task.prov.given(r)]}
         gates = self.policy.evaluate(ctx, call, spec, self.registry, labels, staged)
         if effect and effect.magnitude.get("inside_workspace") is False:
             gates.append(GateResult("R12", "DENY", "Path escapes the agent workspace."))
@@ -223,6 +235,7 @@ class Kavach:
                    "vendor's registered number.",
             "R21": "Don't pay this vendor. Escalate to compliance.",
             "R22": "Don't delete accounting records; mark them instead (e.g. status = 'void').",
+            "R24": "Look up the customer on that invoice (invoices.customer_id) and email that address instead.",
         }.get(rule_id)
 
     @staticmethod
