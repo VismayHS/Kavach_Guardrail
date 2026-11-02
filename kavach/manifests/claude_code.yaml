@@ -1,8 +1,9 @@
 # Claude Code's built-in tools, described for KAVACH (used by integrations/claude_code_hook.py and the Claude Agent
 # SDK adapter). File and repo contents are treated as untrusted input: a README, an issue or a fetched page can carry
-# instructions. KAVACH has no effect model for shell commands, so Bash is judged as an irreversible action that can
-# reach the network: expect it to escalate ("ask") unless the risk model is confident. (A shell sandbox with an
-# egress proxy is on the roadmap; Kairos-style system-boundary enforcement is what closes that gap.)
+# instructions. Bash commands are read by KAVACH's shell model (E10, kavach/shell.py): decode-and-run, privilege,
+# persistence, secrets sent to the network and writes outside the project are denied; network and secrets go to a
+# person ("ask"). The hook can't dry-run them (Claude Code runs them on your machine), so a command that deletes files
+# is also asked about. KAVACH's own shell.run tool adds the sandboxed dry run (kavach/manifests/shell.yaml).
 roles:
   claude_code: [Read, Write, Edit, MultiEdit, NotebookEdit, Bash, WebFetch, WebSearch, Glob, Grep, LS, TodoWrite, Task]
 tools:
@@ -63,6 +64,7 @@ tools:
     sink: external
     reversibility: irreversible
     control_args: [command]
+    effect_model: shell
     intent_verbs: [run, test, build, install, execute, start, check, lint, commit]
   WebFetch:
     description: Fetch a URL.
