@@ -14,6 +14,8 @@ Commits, in order:
 | R36: a delegation chain shares one set of task totals | closes a gap between the two branches' features |
 | Regenerate benchmark results and the risk model | numbers below |
 | R9: match token files by name | the merge made R9 deny Claude Code reading `src/tokenizer.py` |
+| R36: only for totals split across actions | the console's "Drop a table" and "A big refund" examples listed R36 beside R10 / R5 |
+| Console: say when receipts are missing from the end of the log | the Receipts page said "breaks at receipt null" |
 
 ## Rule numbers
 
@@ -106,6 +108,14 @@ New rules start at R41.
 - manifest: drafts from MCP annotations get `untrusted` / confidential output.
 - explain: an LLM rewrite of a DENY or ESCALATE that calls the action safe or approved is rejected.
 - auth: tokens carry `tenant` and `kind`; CLI `mint <user> <role> [hours] [tenant] [orchestrator|agent]`.
+
+### `kavach/static/app.js` (dhanush-sr / Ashwin)
+- Receipts page: when verification fails on the checkpoint (log cut short, checkpoint changed or removed), it says so
+  with the reason instead of "breaks at receipt null". The only change to the console.
+- Checked on this branch in headless Chromium: `tests/ui/console_check.py` passes (every page, CFO-tier approval,
+  sessions, kill switch, approval game, sign-in), and every page at 1440 px and 390 px shows no failed request, no
+  console error and no horizontal scroll. The six "Check an action" examples give the same verdicts and reasons as
+  on `main`.
 
 ### `agent/llm_agent.py` (Ashwin)
 - Keeps `--melon` and adds `--both` / `--save-log`; runs against the offline stand-in are saved under the
