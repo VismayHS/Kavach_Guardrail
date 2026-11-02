@@ -36,7 +36,8 @@ def test_server_restores_state_from_the_database():
     assert first["ready"]["store"]["backend"] == "sqlite" and first["ready"]["store"]["restored"]["receipts"] == 0
     n = first["verify"]["count"]
     second = run(url, "second")
-    assert second["ready"]["ready"] and second["ready"]["store"]["restored"] == {
+    restored = dict(second["ready"]["store"]["restored"])
+    assert second["ready"]["ready"] and restored.pop("risk_model") and restored == {
         "receipts": n, "chain_valid": True, "kills": 1, "holds_waiting": 0, "approvals_closed": 0}
     assert [k["target"] for k in second["kills"]] == ["mallory"]
     assert second["verify"]["valid"] and len(second["verify"]["key_ids"]) == 2

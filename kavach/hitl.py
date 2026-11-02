@@ -121,7 +121,10 @@ class ApprovalQueue:
             lab = {"features": item["decision"].get("risk", {}) and item["decision"]["risk"]["features"],
                    "label_unsafe": 0 if approve else 1, "tool": item["decision"]["call"]["tool"],
                    "p_harm": (item["decision"].get("risk") or {}).get("p_harm"), "approver": approver,
-                   "wait_s": item["wait_s"], "hitl": hid}
+                   "wait_s": item["wait_s"], "hitl": hid,
+                   # which part of KAVACH sent it to a person: a rule (REQUIRE_APPROVAL) or the model (PASS)
+                   "floor": "REQUIRE_APPROVAL" if any(g.get("outcome") == "REQUIRE_APPROVAL" for g in
+                                                      item["decision"].get("gates", [])) else "PASS"}
             self.labels.append(lab)
         for cb in list(self.on_label):
             try:

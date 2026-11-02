@@ -10,6 +10,8 @@ What is kept:
   * undo windows (E6): held payments and queued emails, with what they will send and when they go, and which
     receipt can take each back, so Undo still works after a restart and nothing goes out early or twice.
   * tool pins: the definition hash a human approved, so a rug-pull is still caught after a restart.
+  * human feedback (approve / refuse, with the action's features) and any risk model the learning loop promoted
+    (E11), so a restart keeps the retrained model instead of falling back to the shipped one.
 
 Approvals that were still waiting when the process stopped are closed as expired, with a receipt. The agent's
 context (where each value came from) lived in memory, and approving a call without it would be approving blind; the
@@ -34,6 +36,8 @@ pins = Table("kavach_tool_pins", md, Column("name", String(128), primary_key=Tru
              Column("hash", String(80), nullable=False))
 keys = Table("kavach_signing_keys", md, Column("kid", String(64), primary_key=True),
              Column("public_pem", Text, nullable=False))
+models = Table("kavach_risk_models", md, Column("id", Integer, primary_key=True, autoincrement=True),
+               Column("data", Text, nullable=False))
 labels = Table("kavach_feedback", md, Column("id", Integer, primary_key=True, autoincrement=True),
                Column("data", Text, nullable=False))
 
@@ -118,6 +122,15 @@ class Store:
         with self.lock, self.engine.begin() as c:
             c.execute(insert(labels).values(data=_dump(lab)))
 
+    def save_model(self, model: dict) -> None:
+        with self.lock, self.engine.begin() as c:
+            c.execute(insert(models).values(data=_dump(model)))
+
+    def latest_model(self) -> dict | None:
+        with self.engine.connect() as c:
+            r = c.execute(select(models.c.data).order_by(models.c.id.desc()).limit(1)).first()
+            return json.loads(r.data) if r else None
+
     def load_labels(self) -> list[dict]:
         with self.engine.connect() as c:
             return [json.loads(r.data) for r in c.execute(select(labels.c.data).order_by(labels.c.id))]
@@ -151,6 +164,11 @@ def attach(gw, store: Store) -> dict:
     restored = {"receipts": len(items), "chain_valid": chain["valid"]}
     for k in store.active_kills():
         gw.kills[k["id"]] = k
+    learned = store.latest_model()
+    if learned is not None:                       # E11: the last model the learning loop promoted
+        from .risk import RiskModel
+        gw.risk = RiskModel(model=learned)
+    restored["risk_model"] = gw.risk.sha
     restored["kills"] = len(gw.kills)
     for name, h in store.load_pins().items():
         if name in gw.registry.specs:

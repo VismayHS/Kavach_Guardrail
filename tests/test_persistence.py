@@ -35,7 +35,8 @@ def held_payment(gw):
 def test_receipt_chain_survives_a_restart_and_keeps_growing():
     url = db()
     gw, first = boot(url)
-    assert first == {"receipts": 0, "chain_valid": True, "kills": 0, "holds_waiting": 0, "approvals_closed": 0}
+    assert first == {"receipts": 0, "chain_valid": True, "kills": 0, "holds_waiting": 0, "approvals_closed": 0,
+                     "risk_model": gw.risk.sha}
     tid, _ = gw.start_task("asha", "analyst", "How many customers are in the south region?")
     gw.run(tid, ToolCall("crm.query", {"sql": "SELECT COUNT(*) FROM customers WHERE region = 'south'"}))
     n = len(gw.receipts.items)
@@ -124,3 +125,18 @@ def test_a_world_reset_discards_its_holds_for_good():
     held_payment(gw)
     gw.env.reset()                                                        # a demo reset: that world is gone
     assert boot(url)[1]["holds_waiting"] == 0                             # so its payment never comes back
+
+
+def test_a_promoted_risk_model_survives_a_restart():
+    from kavach.learning import apply, retrain
+    url = db()
+    gw, _ = boot(url)
+    rows = [r for r in gw.risk.data["test_system"] if r["x"] is not None and r["floor"] == "PASS"]
+    feats = __import__("kavach.risk", fromlist=["FEATURES"]).FEATURES
+    labels = [{"features": dict(zip(feats, r["x"])), "label_unsafe": r["y"], "approver": "asha", "floor": "PASS"}
+              for r in rows[:20]]
+    rep = retrain(gw.risk, labels)
+    assert rep["promote"], rep["reasons"]
+    apply(gw, rep, "admin")
+    gw2, restored = boot(url)
+    assert restored["risk_model"] == rep["candidate"]["sha"] == gw2.risk.sha

@@ -3,10 +3,12 @@ import math
 import tempfile
 
 import numpy as np
+import pytest
 
 from kavach.conformal import bound, crc_lambda, min_alpha
 from kavach.environment import Environment
 from kavach.gateway import GatewayConfig, Kavach
+from kavach.learning import apply, retrain, system_rates
 from kavach.models import ToolCall, Verdict
 from kavach.risk import FEATURES, RiskModel
 
@@ -63,3 +65,39 @@ def test_the_cap_sends_a_low_confidence_allow_to_a_person():
     assert gw.check(tid, d.call).verdict == Verdict.ALLOW_WITH_SAFEGUARD
     read = gw.check(tid, ToolCall("crm.query", {"sql": "SELECT COUNT(*) FROM customers"}))
     assert read.verdict == Verdict.ALLOW                               # reads lose nothing: never capped
+
+
+def labels_from(rows, n, unsafe):
+    out = []
+    for r in rows[:n]:
+        out.append({"features": dict(zip(FEATURES, r["x"])), "label_unsafe": unsafe, "approver": "asha",
+                    "floor": r["floor"]})
+    return out
+
+
+def test_retrain_promotes_only_past_the_gate_and_receipts_it():
+    rm = RiskModel()
+    rows = [r for r in rm.data["test_system"] if r["x"] is not None and r["floor"] == "PASS"]
+    rep = retrain(rm, [])
+    assert not rep["promote"] and "no usable feedback labels yet" in rep["reasons"]
+    good = labels_from([r for r in rows if r["y"] == 0], 10, 0) + labels_from([r for r in rows if r["y"] == 1], 10, 1)
+    ruled = labels_from([r for r in rm.data["test_system"] if r["floor"] == "REQUIRE_APPROVAL" and r["x"]], 5, 1)
+    assert retrain(rm, ruled)["feedback_labels"] == 0                 # rule escalations don't teach the model
+    rep = retrain(rm, good)
+    assert rep["candidate"]["UAR"] <= rep["current"]["UAR"] and rep["promote"], rep["reasons"]
+    gw = Kavach(Environment(tempfile.mkdtemp()), GatewayConfig(use_llm_judge=False))
+    out = apply(gw, rep, "admin")
+    assert gw.risk.sha == rep["candidate"]["sha"] and gw.risk.meta["parent"] == rm.sha
+    assert gw.receipts.items[-1]["body"]["type"] == "risk-model-promoted" and "model" not in out
+
+
+def test_poisoned_feedback_is_refused():
+    """An approver who approves unsafe actions (fatigue, or an insider) must not teach the model to allow them."""
+    rm = RiskModel()
+    unsafe = [r for r in rm.data["test_system"] if r["x"] is not None and r["y"] == 1 and r["floor"] == "PASS"]
+    bad = labels_from(unsafe, len(unsafe), 0) * 30
+    rep = retrain(rm, bad, weight=10.0)
+    if rep["candidate"]["UAR"] > rep["current"]["UAR"]:
+        assert not rep["promote"] and "would auto-allow more unsafe test actions" in rep["reasons"]
+    assert system_rates(rm, rm.data["test_system"])["UAR"] == rep["current"]["UAR"]
+    assert retrain(rm, bad, exclude_approvers={"asha"})["feedback_labels"] == 0
