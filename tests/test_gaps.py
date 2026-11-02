@@ -56,6 +56,37 @@ def read_inbox(gw, tid, extra):
     return out
 
 
+# ---------------------------------------------------------------- raw SQL on the records the finance rules trust (R29)
+@pytest.mark.parametrize("sql", [
+    f"UPDATE vendors SET iban = '{ATTACKER_IBAN}' WHERE id = 'V002'",
+    "UPDATE vendors SET sanctioned = 0, bank_verified = 1 WHERE id = 'V012'",
+    "UPDATE ap_invoices SET amount = 900 WHERE id = 'INV-3040'",
+    "INSERT INTO payment_proposals VALUES('P-9', 'INV-3024', 'someone.else', 'x', 'proposed')",
+    "/* routine */ WITH v AS (SELECT 1) UPDATE vendors SET iban = 'NL20INGB0001234567' WHERE id = 'V001'",
+])
+def test_raw_sql_cannot_rewrite_finance_records(gw, sql):
+    tid, _ = gw.start_task("asha", "support", "Update vendor V002 and V012 records in the CRM as discussed: iban, "
+                           "sanctioned flag, invoice INV-3040 amount, proposals.")
+    before = gw.env.db.execute("SELECT iban, sanctioned FROM vendors ORDER BY id").fetchall()
+    d = gw.run(tid, ToolCall("crm.execute", {"sql": sql}))
+    assert d.verdict == Verdict.DENY and "R29" in rules(d, "DENY")
+    assert gw.env.db.execute("SELECT iban, sanctioned FROM vendors ORDER BY id").fetchall() == before
+
+
+def test_bank_change_by_sql_no_longer_redirects_a_later_payment(gw):
+    t1, _ = gw.start_task("asha", "support", f"Set vendor V002's iban to {ATTACKER_IBAN}.")
+    gw.run(t1, ToolCall("crm.execute", {"sql": f"UPDATE vendors SET iban = '{ATTACKER_IBAN}' WHERE id = 'V002'"}))
+    t2, _ = gw.start_task("meera", "ap_supervisor", "Pay invoice INV-3022.")
+    d = gw.run(t2, ToolCall("payment.release", {"invoice_id": "INV-3022"}))
+    assert d.effect.magnitude["iban"] == "NL91ABNA0417164300"
+
+
+def test_crm_writes_elsewhere_still_run(gw):
+    tid, _ = gw.start_task("asha", "support", "Please update customer 42 to the gold tier.")
+    d = gw.run(tid, ToolCall("crm.execute", {"sql": "UPDATE customers SET tier = 'gold' WHERE id = 42"}))
+    assert d.verdict == Verdict.ALLOW_WITH_SAFEGUARD and "R29" not in rules(d)
+
+
 # ---------------------------------------------------------------- the sandbox may not reach the disk
 @pytest.mark.parametrize("tool,sql", [
     ("crm.execute", "VACUUM INTO '{out}'"),

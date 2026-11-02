@@ -154,6 +154,12 @@ class PolicyEngine:
             if ctx.env == "prod" and rows > self.cfg["limits"]["bulk_rows_approval"]:
                 add("R10", "REQUIRE_APPROVAL", f"Statement would change {rows} rows "
                     f"(limit {self.cfg['limits']['bulk_rows_approval']}).", rows=rows)
+            # R29 the finance rules trust these records, so changing them with SQL would switch the rules off
+            e = st.get("effect") or {}
+            guarded = sorted(set(e.get("tables_written") or []) & set(self.cfg["finance"]["protected_tables"]))
+            if guarded:
+                add("R29", "DENY", f"Raw SQL may not change {', '.join(guarded)}: the finance rules rely on these "
+                    "records. Use the finance tools, which go through approval.", tables=guarded)
         if call.tool == "crm.query" and (sql_info.get("writes") or sql_info.get("ddl")):
             add("R7", "DENY", f"crm.query is read-only but the statement would {', '.join(sql_info['sql_ops'])}.",
                 ops=sql_info.get("sql_ops"))

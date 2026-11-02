@@ -38,6 +38,9 @@ finance:
     - {max: null,   approvers: "CFO + Finance Director (dual control)"}
   retention_years: 7             # "Invoices (AP and AR): 7 years. Block deletion"
   retained_tables: ["ap_invoices", "payment_proposals", "sap_documents"]
+  # The finance rules read these tables, so raw SQL may not change them (R29); only the finance tools may.
+  protected_tables: ["vendors", "ap_invoices", "purchase_orders", "goods_receipts", "payment_proposals",
+                     "sap_documents"]
 
 sensitive_paths: ["deploy.env", ".env", "secrets", "id_rsa"]
 
@@ -67,3 +70,5 @@ rules:
   R22: "Invoices, payment records and posted documents may not be deleted (retention)."
   R23: "Invoices must pass the 3-way match (PO, goods receipt, invoice within 2% or EUR 100) before release."
   R24: "An email about an invoice the user named goes to that invoice's customer, an internal address, or an address the user gave; anyone else needs approval."
+  # R25-R28 are reserved by the Phase 5 roadmap.
+  R29: "Raw SQL may not change the tables the finance rules read (vendors, invoices, POs, receipts, proposals, SAP documents); only the finance tools may."
