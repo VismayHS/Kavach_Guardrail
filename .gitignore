@@ -7,3 +7,5 @@ __pycache__/
 !kavach/**/*.env.example
 .DS_Store
 bench/agentdojo_runs/
+.kavach/
+examples/mcp/sent_mail.jsonl
