@@ -193,7 +193,8 @@ JSON_TYPES = {v: k for k, v in MCP_TYPES.items()}
 
 class ToolRegistry:
     def __init__(self, specs: dict[str, ToolSpec] | None = None):
-        self.specs = specs or default_manifest()
+        # None means KAVACH's own tools; an empty dict means no tools (never silently the default set)
+        self.specs = default_manifest() if specs is None else specs
         self.pins = {n: s.definition_hash() for n, s in self.specs.items()}
         self.drafts: set[str] = set()        # onboarded from MCP annotations, not yet approved by a human
         self.on_approve: list = []           # callbacks(name, pin) when a human approves a draft (e.g. persist pins)
