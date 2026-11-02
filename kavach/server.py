@@ -299,6 +299,19 @@ def receipts_export():
                              headers={"Content-Disposition": "attachment; filename=kavach-receipts.jsonl"})
 
 
+@app.post("/api/receipts/anchor")
+def receipts_anchor(method: str, url: str, who: dict | None = Depends(caller)):
+    """Opt-in: anchor the chain head with an RFC 3161 timestamp authority or Sigstore Rekor (sends the head hash
+    outside). Admin only when auth is on."""
+    if who is not None and who["role"] != "admin":
+        raise HTTPException(403, "only an admin can anchor the receipt chain")
+    from .anchor import anchor_rekor, anchor_tsa
+    try:
+        return anchor_tsa(gw.receipts, url) if method == "tsa" else anchor_rekor(gw.receipts, url)
+    except Exception as e:
+        raise HTTPException(502, f"anchoring failed: {e}")
+
+
 @app.get("/api/receipts/public-key")
 def receipts_public_key():
     s = gw.receipts.signer
