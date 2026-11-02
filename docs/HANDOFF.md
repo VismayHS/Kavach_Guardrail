@@ -163,7 +163,7 @@ It writes a tamper-evident receipt for every decision.
   - approve every write: 9.5% safe auto, 93.6% escalated;
   - tool-type gating: 38.5% unsafe allowed;
   - static denylist: 87% unsafe allowed.
-- **Leave one family out** (`bench/results/LOFO.md`): 0% unsafe allowed, 90.5% safe auto.
+- **Leave one family out** (`bench/results/LOFO.md`): 0% unsafe allowed, 92.4% safe auto (90.5% on `build/phase-4`).
 - **Fresh holdout** (`HOLDOUT.md`): 60 scenarios written after the rules. 0% unsafe allowed, 100% safe auto, 66.7% escalated.
 - **Qualcomm judge, measured on the real service** (`JUDGE.md`): no unsafe verdict changes, safe auto 95.9% → 94.5%, about +3.8 s per action. Treat it as optional.
 - **Live agent** (`LIVE_AGENT.md`):

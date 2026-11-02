@@ -25,6 +25,7 @@ Checked 2 Nov 2026 against `vismay-dev`: the code, `bench/results/*` regenerated
 | 17 | "Hash chain + HMAC makes receipts tamper-evident" (blueprint §15) | True with two conditions | `kavach/receipts.py`: signed checkpoint now catches a cut-short log; the default key is public unless `KAVACH_RECEIPT_KEY` is set (persistent mode requires it) | Keep, with the key condition |
 | 18 | MCP drop-in (deck slide 5) | Overstated | `/mcp` is a minimal JSON-RPC front door over the demo tools; no upstream MCP servers | "MCP-style JSON-RPC front door" |
 | 19 | Only deterministic rules block (blueprint §7) | True | `gateway._decide`; `tests/test_evals.py` | Keep |
+| 19a | Infosys stack: defaults pass 95% of unsafe actions; hardened escalates 86.5% (`docs/INFOSYS_GAP_ANALYSIS.md`, deck App. F) | Outdated | `INFOSYS_COMPARISON.md` on the current suite, hardened config covering the finance tools | Defaults pass 96.2%; hardened: 0% injection success at 89.4% escalated and 14.3% of safe work automated |
 
 ## External sources
 
