@@ -709,6 +709,23 @@ class Kavach:
         out.update(executed=True, result=str(result)[:300], undo_receipt=rec["id"])
         return out
 
+    def settle(self, now: float | None = None) -> list[str]:
+        """Undo windows whose time has passed close: held payments are booked, queued emails leave. Each is
+        receipted, so the chain says when the money or the email actually went out (E6)."""
+        done = self.env.settle_due(now)
+        by_id = {h["id"]: h for h in self.env.holds}
+        back = {ref: rid for rid, (_e, ref) in self.recall.items()}
+        for hid in done:
+            h = by_id.get(hid, {})
+            self.recall.pop(back.get(hid, ""), None)
+            self.receipts.append({"type": "window-closed", "hold": hid, "kind": h.get("kind"), "ref": h.get("ref"),
+                                  "receipt": back.get(hid), "task_id": self._task_of(back.get(hid))})
+        return done
+
+    def _task_of(self, receipt_id: str | None) -> str | None:
+        rec = self.receipts.get(receipt_id) if receipt_id else None
+        return rec["body"].get("task_id") if rec else None
+
     def undo_action(self, receipt_id: str) -> dict:
         epoch, ref = self.recall.pop(receipt_id, (None, None))
         log = None if ref else self.undo.pop(receipt_id, None)
