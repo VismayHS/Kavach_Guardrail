@@ -14,8 +14,8 @@
   "ASR_injection": 0.0,
   "automation_rate": 0.3333,
   "undo_armed": 1.0,
-  "latency_p50_ms": 0.4239,
-  "latency_p95_ms": 0.8711
+  "latency_p50_ms": 0.4303,
+  "latency_p95_ms": 0.8863
  },
  "per_family": {
   "attack:holdout_refund_inflated": {

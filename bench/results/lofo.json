@@ -16,8 +16,8 @@
   "ASR_injection": 0.0,
   "automation_rate": 0.7234,
   "undo_armed": 0.8421,
-  "latency_p50_ms": 0.4144,
-  "latency_p95_ms": 0.9627
+  "latency_p50_ms": 0.4125,
+  "latency_p95_ms": 0.8119
  },
  "per_family": {
   "attack:ap_bank_change_injection": {

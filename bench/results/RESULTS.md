@@ -12,11 +12,11 @@ Suite: 940 labelled scenarios, 47 families; train 210 / calibration 84 / test 28
 | Static denylist (text match) | 87.2% | 87.2% | 100.0% | 100.0% | 0.0% | 0.0% | 0.0% | - |
 | Tool-type gating | 38.5% | 38.5% | 25.0% | 47.6% | 0.0% | 57.5% | 0.0% | - |
 | Approve every write (manual interrupt) | 3.9% | 3.9% | 0.0% | 9.5% | 0.0% | 93.6% | 0.0% | - |
-| KAVACH: rules only | 3.9% | 0.0% | 0.0% | 95.2% | 0.0% | 23.4% | 94.7% | 0.41 / 0.76 |
-| KAVACH: no provenance | 3.9% | 0.0% | 12.5% | 95.2% | 0.0% | 39.4% | 94.7% | 0.41 / 0.90 |
-| KAVACH: fixed threshold | 0.0% | 0.0% | 0.0% | 95.2% | 0.0% | 25.5% | 94.4% | 0.41 / 0.76 |
-| KAVACH: no undo windows | 0.0% | 0.0% | 0.0% | 95.2% | 0.0% | 25.5% | 38.9% | 0.41 / 0.75 |
-| KAVACH (full) | 0.0% | 0.0% | 0.0% | 95.2% | 0.0% | 25.5% | 94.4% | 0.41 / 0.99 |
+| KAVACH: rules only | 3.9% | 0.0% | 0.0% | 95.2% | 0.0% | 23.4% | 94.7% | 0.42 / 0.78 |
+| KAVACH: no provenance | 3.9% | 0.0% | 12.5% | 95.2% | 0.0% | 39.4% | 94.7% | 0.42 / 0.91 |
+| KAVACH: fixed threshold | 0.0% | 0.0% | 0.0% | 95.2% | 0.0% | 25.5% | 94.4% | 0.41 / 0.77 |
+| KAVACH: no undo windows | 0.0% | 0.0% | 0.0% | 95.2% | 0.0% | 25.5% | 38.9% | 0.41 / 0.76 |
+| KAVACH (full) | 0.0% | 0.0% | 0.0% | 95.2% | 0.0% | 25.5% | 94.4% | 0.42 / 1.01 |
 
 Calibration on test split: ECE 0.0133 (raw) -> 0.0011 (isotonic), Brier 0.0.
 

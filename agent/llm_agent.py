@@ -12,8 +12,10 @@ rule R1 and the agent receives a replan hint as the tool result.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -38,19 +40,65 @@ def openai_tools(gw: Kavach) -> list[dict]:
     return out
 
 
+PYTHONIC_CALL = re.compile(r"<\|python_tag\|>\s*([A-Za-z_]\w*)\((.*)\)\s*(?:<\|eom_id\|>|$)", re.S)
+
+
+def text_tool_calls(content: str | None) -> list[dict]:
+    """Llama on the Inference Cloud sometimes writes its tool call into the reply text instead of tool_calls: as JSON
+    ({"name": ..., "parameters": ...}) or pythonic (<|python_tag|>name(arg="...")). Read it as the call it is,
+    so it runs (unguarded) or is checked by KAVACH (guarded) rather than silently doing nothing."""
+    text, name, args = (content or "").strip(), None, None
+    try:
+        obj = json.loads(text)
+        if isinstance(obj, dict) and isinstance(obj.get("name"), str):
+            p = obj.get("parameters", obj.get("arguments", {}))
+            name, args = obj["name"], json.loads(p) if isinstance(p, str) else p
+    except (json.JSONDecodeError, TypeError):
+        m = PYTHONIC_CALL.search(text)
+        if m:
+            try:
+                call = ast.parse(f"f({m.group(2)})", mode="eval").body      # literal arguments only, never evaluated
+                name, args = m.group(1), {kw.arg: ast.literal_eval(kw.value) for kw in call.keywords}
+            except (SyntaxError, ValueError):
+                pass
+    if not name or not isinstance(args, dict):
+        return []
+    return [{"id": "text-call-1", "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}]
+
+
+def typed(gw: Kavach, tool: str, args: dict) -> dict:
+    """Llama on the Inference Cloud sends booleans and numbers as strings ("true", "4200"). Convert them to the types the
+    manifest declares, so "false" isn't truthy and KAVACH's schema check sees real numbers (it stays strict)."""
+    spec = gw.registry.get(tool)
+    out = dict(args)
+    for k, v in args.items():
+        t = spec.params.get(k) if spec else None
+        if not isinstance(v, str):
+            continue
+        if t == "bool" and v.strip().lower() in ("true", "false"):
+            out[k] = v.strip().lower() == "true"
+        elif t in ("int", "float"):
+            try:
+                out[k] = int(v) if t == "int" else float(v)
+            except ValueError:
+                pass
+    return out
+
+
 def run(request: str, guard: bool = True, role: str = "analyst", model: str | None = None, max_steps: int = 8) -> dict:
     env = Environment(tempfile.mkdtemp())
     gw = Kavach(env)
     llm = QualcommCloudAI(model=model or os.environ.get("KAVACH_AGENT_MODEL", "Llama-3.3-70B"), timeout=60)
     if not llm.enabled:
-        raise SystemExit("Set IMAGINE_API_KEY and IMAGINE_API_ENDPOINT (Qualcomm Cloud AI Playground).")
+        raise SystemExit("Set IMAGINE_API_KEY and IMAGINE_API_ENDPOINT (or INFERENCE_CLOUD_API_KEY and "
+                         "INFERENCE_CLOUD_ENDPOINT) for the Qualcomm Inference Cloud.")
     tid, plan = gw.start_task("ravi", role, request)
     msgs = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": request}]
     trace = []
     for _ in range(max_steps):
-        resp = llm.chat(msgs, tools=openai_tools(gw), max_tokens=600)
+        resp = llm.chat(msgs, tools=openai_tools(gw), max_tokens=4000)    # a long email body must not be cut off
         msg = resp["choices"][0]["message"]
-        calls = msg.get("tool_calls") or []
+        calls = msg.get("tool_calls") or text_tool_calls(msg.get("content"))
         msgs.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls} if calls
                     else {"role": "assistant", "content": msg.get("content") or ""})
         if not calls:
@@ -58,7 +106,7 @@ def run(request: str, guard: bool = True, role: str = "analyst", model: str | No
             break
         for c in calls:
             name = c["function"]["name"].replace("__", ".")
-            args = json.loads(c["function"].get("arguments") or "{}")
+            args = typed(gw, name, json.loads(c["function"].get("arguments") or "{}"))
             if guard:
                 d = gw.run(tid, ToolCall(name, args))
                 ok = d.verdict.value.startswith("ALLOW")

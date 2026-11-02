@@ -73,6 +73,7 @@ def is_pii(e: str) -> bool:
 def named_targets(text: str) -> set[str]:
     """Record ids a user names: numbers of 2+ digits, document ids like INV-3040 (also as 3040: "invoice 3040"), and
     one-digit ids after a record word ("customer 3", "id = 3"). A bare one digit is usually a count ("the 3 emails")."""
+    text = PHONE.sub(" ", IBAN.sub(" ", text))     # an account or phone number's digit groups aren't record ids
     docs = DOCID.findall(text)
     return set(TARGET_NUM.findall(text)) | set(docs) | {d.rsplit("-", 1)[1] for d in docs} | set(SHORT_ID.findall(text))
 
@@ -85,6 +86,7 @@ def named_records(text: str) -> set[str]:
     """Ids the user tied to a record ("invoice 1499", "GL account 400100", "customer 3") plus document ids anywhere.
     When there are any, the argument that picks the record must be one: "refund 1500 on invoice 1499" names no
     record 1500, and "refund 2000 on invoice 1042" doesn't allow refund(invoice_id=2000, amount=1042)."""
+    text = PHONE.sub(" ", IBAN.sub(" ", text))
     ids = set(RECORD_REF.findall(text)) | set(DOCID.findall(text))
     return ids | {i.rsplit("-", 1)[1] for i in ids if "-" in i}
 
