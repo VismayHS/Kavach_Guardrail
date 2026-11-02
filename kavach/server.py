@@ -244,6 +244,15 @@ def task(task_id: str):
     return gw.task_summary(task_id)
 
 
+@app.get("/api/demo/fatigue")
+def fatigue_game(seed: int = 7):
+    """D3: fifteen approval prompts (one disguised exfiltration) and, for the reveal, KAVACH's view of each."""
+    if not PROFILE.demo_endpoints:
+        raise HTTPException(404, "demo endpoints are off in this profile")
+    from .fatigue_demo import game
+    return game(seed)
+
+
 @app.get("/api/hitl", dependencies=[Depends(caller)])
 def hitl_pending():
     return gw.hitl.pending()

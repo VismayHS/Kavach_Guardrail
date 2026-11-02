@@ -53,3 +53,13 @@ def test_rule_of_two_meter_on_decisions_and_sessions(monkeypatch):
     assert [r["tool"] for r in s["receipts"] if r["type"] == "decision"] == ["mail.read_inbox", "crm.query", "mail.send"]
     assert c.get("/api/tasks").json()[0]["task_id"] == run["task_id"]
     assert c.get("/api/tasks/task-nope").status_code == 404
+
+
+def test_fatigue_game(monkeypatch):
+    c = client(monkeypatch)
+    g = c.get("/api/demo/fatigue").json()
+    assert len(g["prompts"]) == 15 and all("kavach" not in p for p in g["prompts"])     # no spoilers in the prompts
+    bad = g["reveal"][g["answer"]]
+    assert bad["bad"] and bad["verdict"] == "DENY" and bad["reason"].startswith("[R1]")
+    others = [v for k, v in g["reveal"].items() if k != g["answer"]]
+    assert sum(v["verdict"].startswith("ALLOW") for v in others) >= 10                # routine work mostly flows
