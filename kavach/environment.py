@@ -47,6 +47,7 @@ class Environment:
         self.canaries = canaries or {}          # planted records (R28); none unless asked for
         self.epoch = 0             # counts resets: an undo from before a reset must not touch the new world
         self.on_hold: list = []    # callbacks(hold) when a hold is created, settles or is cancelled (E6: persisted)
+        self.mailer = None         # E7: a real mail connector (kavach/connectors.py); None = the simulated outbox only
         self.reset()
 
     # ------------------------------------------------------------------ setup
@@ -281,6 +282,11 @@ class Environment:
 
     def _deliver(self, msg: dict) -> dict:
         msg = {"id": f"out-{len(self.outbox) + 1}", **msg}
+        if self.mailer is not None:                 # E7: the email really leaves (SMTP); a failure is recorded
+            try:
+                msg["delivered"] = self.mailer.send(msg)
+            except Exception as e:                   # the decision is made; delivery trouble must not lose the record
+                msg["delivery_error"] = f"{type(e).__name__}: {e}"
         self.outbox.append(msg)
         return msg
 
