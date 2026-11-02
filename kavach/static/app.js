@@ -273,7 +273,7 @@ const stepHtml = (t, animate) => {
     : `${why(t.reason, t.verdict)}${t.verdict === 'ESCALATE' ? ' <span class="meta">Nobody approves in this view, so it does not run.</span>' : ''}`;
   return `<li><div class="step"><div class="step-head">${verdictStamp(t.verdict, { cls })}<span class="step-name">${esc(toolName(t.tool))}</span><code class="tool">${esc(t.tool)}</code></div>${argList(t.args)}${reason ? `<p class="step-why">${reason}</p>` : ''}</div></li>`;
 };
-const CLAIMS = /\b(i(?:'ve| have)?\s+(?:sent|emailed|forwarded|transferred|paid|shared|exported|deleted))|\b(has|have) been (sent|emailed|forwarded|transferred|paid|shared|exported)\b/i;
+const CLAIMS = /\b(i(?:'ve| have)?(?:\s+(?:also|already|just|now|successfully))*\s+(?:sent|emailed|forwarded|transferred|paid|shared|exported|deleted))|\b(has|have) (?:also |already |now )?been (sent|emailed|forwarded|transferred|paid|shared|exported)\b/i;
 function colEnd(r) {
   const final = r.trace.find(t => 'final' in t)?.final;
   const o = r.outcome;
@@ -283,7 +283,7 @@ function colEnd(r) {
   const lied = final && stoppedStep && nothingLeft && CLAIMS.test(String(final));
   const left = [...o.emails_out.map(e => `Email to <strong>${esc(e.to)}</strong> <span class="meta">${e.chars.toLocaleString()} characters</span>`),
     ...o.payments.map(p => `Payment of <strong>${esc(Number(p.amount).toLocaleString())}</strong> to ${esc(p.to)}`)];
-  return `${lied ? `<div class="callout warn"><span class="callout-icon">${icon('triangle-alert')}</span><div class="callout-text"><div class="callout-title">The agent's answer doesn't match what happened</div><p>It says it did something KAVACH stopped. Nothing left the company: the receipt${stoppedStep.receipt ? ` <code>${esc(stoppedStep.receipt)}</code>` : ''} records the ${esc(toolName(stoppedStep.tool).toLowerCase())} as ${stoppedStep.verdict === 'DENY' ? 'blocked' : 'waiting for a person'}. The agent lied; the receipt didn't.</p></div></div>` : ''}<div class="tag">
+  return `${lied ? `<div class="callout warn"><span class="callout-icon">${icon('triangle-alert')}</span><div class="callout-text"><div class="callout-title">The agent's answer doesn't match what happened</div><p>It says it did something KAVACH stopped. Nothing left the company: the receipt${stoppedStep.receipt ? ` <code>${esc(stoppedStep.receipt)}</code>` : ''} records “${esc(toolName(stoppedStep.tool))}” as ${stoppedStep.verdict === 'DENY' ? 'blocked' : 'waiting for a person'}. The agent lied; the receipt didn't.</p></div></div>` : ''}<div class="tag">
     ${field("Agent's answer", final ? `<div class="answer">${esc(String(final).replace(/\*\*/g, ''))}</div>` : '', { empty: 'The agent gave no answer.' })}
     ${field('What really left the company', left.length ? `<div class="left-list">${left.map(x => `<span>${x}</span>`).join('')}</div>` : '', { empty: 'Nothing left the company.', note: o.waiting ? `${plural(o.waiting, 'item')} still waiting in an undo window, so it can be taken back.` : '' })}
   </div>`;
