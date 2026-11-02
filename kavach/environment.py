@@ -161,6 +161,61 @@ class Environment:
             for name, data in snap["files"].items():
                 (self.workspace / name).write_bytes(data)
 
+    # ------------------------------------------------------------------ row-level undo (A7)
+    def _file_images(self, tool: str, args: dict) -> dict:
+        if not tool.startswith("files.") or "path" not in args:
+            return {}
+        try:
+            p = self._safe(str(args["path"]))
+        except PermissionError:
+            return {}
+        return {str(p.relative_to(self.workspace.resolve())): p.read_bytes() if p.exists() else None}
+
+    def dispatch_logged(self, tool: str, args: dict, actor: dict | None = None) -> tuple[Any, dict]:
+        """Run a tool and record exactly what it changed: before/after images of every database row (from
+        temporary triggers) and of the file it touched. Undo then takes back these rows and this file only."""
+        from . import changelog
+        with self.lock:
+            files = self._file_images(tool, args)
+            changelog.install(self.db)
+            try:
+                result = self.dispatch(tool, args, actor=actor)
+                changes = changelog.collect(self.db)
+            finally:
+                changelog.uninstall(self.db)
+            after = self._file_images(tool, args)
+            return result, {"kind": "rows", "db": changes, "epoch": self.epoch,
+                            "files": {n: [files.get(n), after.get(n)] for n in set(files) | set(after)}}
+
+    def undo_logged(self, rec: dict) -> dict:
+        """Invert a dispatch_logged record. Refuses (changing nothing) if any of its rows or its file was changed
+        by someone else since; a whole-database snapshot record (DDL outside prod) is restored as before."""
+        from . import changelog
+        with self.lock:
+            if rec.get("kind") == "snapshot":
+                before = self.table_counts()
+                self.restore(rec["snapshot"])
+                return {"undone": True, "tables_before": before, "tables_after": self.table_counts()}
+            clash = changelog.conflicts(self.db, rec["db"])
+            for name, (_old, new) in rec["files"].items():
+                p = self.workspace / name
+                if (p.read_bytes() if p.exists() else None) != new:
+                    clash.append(f"file {name}")
+            if clash:
+                return {"undone": False, "reason": "changed since this action, so undo would overwrite someone "
+                        f"else's work: {', '.join(clash[:5])}"}
+            before = self.table_counts()
+            changelog.invert(self.db, rec["db"])
+            self.db.commit()
+            for name, (old, _new) in rec["files"].items():
+                p = self.workspace / name
+                if old is None:
+                    p.unlink(missing_ok=True)
+                else:
+                    p.write_bytes(old)
+            return {"undone": True, "rows": len(rec["db"]), "files": sorted(rec["files"]),
+                    "tables_before": before, "tables_after": self.table_counts()}
+
     def db_copy(self) -> sqlite3.Connection:
         """In-memory clone used as the staging sandbox (copy of current state)."""
         with self.lock:

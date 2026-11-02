@@ -32,11 +32,15 @@ from . import auth
 from .environment import Environment
 from .gateway import Kavach
 from .models import ToolCall
+from .profile import check_profile
 from .scenarios import SCENARIOS, materialize, prepare
 
 ROOT = Path(__file__).resolve().parent
+PROFILE = check_profile()           # KAVACH_PROFILE=prod refuses to start without real secrets (A9)
 env = Environment(tempfile.mkdtemp(prefix="kavach-"))
 gw = Kavach(env)
+if PROFILE.require_tool_hash:
+    gw.policy.cfg["require_tool_hash"] = True
 app = FastAPI(title="KAVACH guardrail", version="0.1")
 _mcp_task: dict[tuple[str, str], str] = {}
 _sessions: dict[tuple[str, str], tuple[str, set[str]]] = {}     # (user, session id) -> (task id, context seen)
@@ -85,6 +89,7 @@ class PlanIn(BaseModel):
 class HitlIn(BaseModel):
     approve: bool
     approver: str = "reviewer-1"
+    approver_role: str | None = None    # dev mode only; with auth on, the role comes from the token
     mode: str = "execute"
 
 
@@ -110,7 +115,7 @@ def check(body: CheckIn, who: dict | None = Depends(caller)):
         spec = gw.registry.get(c.get("tool", ""))
         if spec and h not in seen:                   # a session resends its history; count each output once
             seen.add(h)
-            gw.tasks[tid].prov.register_output(c["tool"], c.get("output"), spec.output_trust, spec.output_conf)
+            gw.register_output(tid, ToolCall(c["tool"], c.get("args") or {}), c.get("output"))
     if gw.registry.get(body.tool) is None and body.tool_annotations is not None:
         gw.registry.add_draft(body.tool, body.tool_description, body.tool_schema, body.tool_annotations, body.args)
     d = gw.check(tid, ToolCall(body.tool, body.args, tool_def_hash=body.tool_def_hash))
@@ -134,7 +139,7 @@ def scenarios():
 @app.post("/api/demo/{name}", dependencies=[Depends(caller)])
 def demo(name: str, reset: bool = True):
     sc = SCENARIOS.get(name)
-    if sc is None:
+    if sc is None or not PROFILE.demo_endpoints:
         raise HTTPException(404, "unknown scenario")
     if reset:
         prepare(env, sc)
@@ -161,8 +166,9 @@ def hitl_pending():
 @app.post("/api/hitl/{hid}")
 def hitl_resolve(hid: str, body: HitlIn, who: dict | None = Depends(caller)):
     approver = who["sub"] if who else body.approver     # four-eyes needs a verified approver identity
+    role = who["role"] if who else body.approver_role   # and quorum a verified role (N4)
     try:
-        return gw.resolve_hitl(hid, approver, body.approve, body.mode)
+        return gw.resolve_hitl(hid, approver, body.approve, body.mode, approver_role=role)
     except PermissionError as e:
         raise HTTPException(403, str(e))
     except (ValueError, KeyError) as e:
@@ -174,9 +180,12 @@ def undo(rid: str):
     return gw.undo_action(rid)
 
 
-@app.post("/api/settle", dependencies=[Depends(caller)])
-def settle(advance_s: float = 0.0):
-    """Held payments and queued emails whose window has passed go out; advance_s fast-forwards for the demo."""
+@app.post("/api/settle")
+def settle(advance_s: float = 0.0, who: dict | None = Depends(caller)):
+    """Held payments and queued emails whose window has passed go out. advance_s fast-forwards the clock for the
+    demo: dev profile only, and only for an admin when auth is on (N8); otherwise the hold can't be skipped."""
+    if advance_s > 0 and (not PROFILE.fast_forward or (who is not None and who["role"] != "admin")):
+        raise HTTPException(403, "only an admin, in the dev profile, can fast-forward holds")
     return {"settled": env.settle_due(time.time() + max(0.0, advance_s))}
 
 

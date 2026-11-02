@@ -19,9 +19,11 @@ import re
 from dataclasses import dataclass, field
 from urllib.parse import unquote
 
+from .addresses import domain_of, parse_recipients
 from .models import Conf, Label, Trust
 
-EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+URL_SEP = re.compile(r"[/_\-+=&?#;:~]")
+EMAIL =re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 URL = re.compile(r"https?://[^\s\"'<>)]+")
 ACCOUNT = re.compile(r"\bACC-\d{2}-\d{4}\b")
 PHONE = re.compile(r"\+\d{1,3}[- ]?\d{6,12}\b")                                          # +91-9798935572
@@ -138,6 +140,8 @@ class ProvenanceTracker:
     senders: dict[str, str] = field(default_factory=dict)          # From: address of a message read -> source
     pii_owner: dict[str, set[str]] = field(default_factory=dict)   # PII value -> the records (people) it belongs to
     n_outputs: int = 0
+    lookalike: object | None = None      # kavach.lookalike.Lookalike; a lookalike sender is never "reply to sender"
+    hostile: set[str] = field(default_factory=set)                 # sources an injection classifier flagged (C3)
 
     def register_user(self, text: str) -> None:
         self.user_text += " " + text
@@ -163,7 +167,8 @@ class ProvenanceTracker:
                 src += f"#{rec['id']}"
             record_key = f"{src}@{self.n_outputs}:{i}"      # one person's row: their email, phone... share it
             if tool == "mail.read_inbox" and isinstance(rec, dict) and rec.get("from"):
-                self.senders[str(rec["from"]).lower()] = src     # the header, not addresses written in the body
+                for addr in parse_recipients(str(rec["from"])):    # the header, not addresses written in the body
+                    self.senders[addr] = src
             text = rec if isinstance(rec, str) else json.dumps(rec, default=str)
             t = Trust(trust) if trust in ("untrusted", "derived", "trusted") else Trust.DERIVED
             lab = Label(t, conf, [src])
@@ -185,15 +190,24 @@ class ProvenanceTracker:
         return sum(1 for e in entities(text)
                    if e in self.pii_values and e not in rcpt and not (self.pii_owner.get(e, set()) & mine))
 
+    def reply_trusted(self, sender: str) -> bool:
+        """'Reply to the sender' trust: not for lookalike domains (R25), nor for a message a classifier flagged."""
+        if self.lookalike is not None and self.lookalike.check(domain_of(sender)):
+            return False
+        return self.senders.get(sender) not in self.hostile
+
     def given(self, value: str) -> bool:
         """The user typed this value, or asked to reply to the message it came from."""
         return any(s == "user" or s.startswith("sender:") for s in self.label(value, is_control=True).sources)
 
     def label(self, value, is_control: bool) -> Label:
         text = value if isinstance(value, str) else str(value)
-        if text.startswith(("http://", "https://")):
+        is_url = text.startswith(("http://", "https://"))
+        if is_url:
             text = unquote(text)    # %2B91-9... in a query string is still a phone number
         ents = entities(text) if isinstance(value, str) else {"#" + _norm_num(text)}
+        if is_url:                  # /q3/south-12.4/west-9.8: values glued to words by URL separators (N2)
+            ents |= {e for e in entities(URL_SEP.sub(" ", text.split("://", 1)[-1])) if e.startswith("#")}
         pii = sum(1 for e in ents if e in self.pii_values)
         conf = Conf.PII if pii else Conf.INTERNAL
         sources: list[str] = []
@@ -211,7 +225,10 @@ class ProvenanceTracker:
                     sources.append("user")
                 continue
             if is_control and e in self.senders and REPLY.search(self.user_text):
-                sources.append(f"sender:{self.senders[e]}")   # the user asked to reply to this message's sender
+                if self.reply_trusted(e):
+                    sources.append(f"sender:{self.senders[e]}")   # the user asked to reply to this message's sender
+                else:   # the user asked to reply, but the sender is suspect: a human checks it (R25), not a hard block
+                    sources.append(f"suspect-sender:{self.senders[e]}")
                 continue
             for lab in self.origins.get(e, []):
                 sources.extend(lab.sources)

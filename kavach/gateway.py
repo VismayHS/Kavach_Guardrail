@@ -21,9 +21,10 @@ from .environment import Environment
 from .explain import Explainer
 from .hitl import ApprovalQueue
 from .intent import IntentJudge
+from .addresses import parse_recipients
 from .manifest import ToolRegistry
-from .models import (Decision, Effect, GateResult, Label, Principal, Reversibility, TaskContext, ToolCall, Trust,
-                     Verdict)
+from .models import (Conf, Decision, Effect, GateResult, Label, Principal, Reversibility, TaskContext, ToolCall,
+                     Trust, Verdict)
 from .plan import validate_plan
 from .policy import PolicyEngine, floor_of
 from .provenance import ProvenanceTracker
@@ -83,6 +84,7 @@ class Kavach:
         tid = "task-" + uuid.uuid4().hex[:6]
         ctx = TaskContext(tid, Principal(user_id, role, authenticated=authenticated), request, env, plan=plan)
         task = Task(ctx)
+        task.prov.lookalike = self.policy.lookalike
         task.prov.register_user(request)
         self.tasks[tid] = task
         plan_report = None
@@ -91,6 +93,20 @@ class Kavach:
             ctx.plan_findings = plan_report["findings"]
             self.receipts.append({"type": "plan", "task_id": tid, "request": request, "report": plan_report})
         return tid, plan_report
+
+    def output_label(self, call: ToolCall) -> tuple[str, object]:
+        """(trust, confidentiality) of a tool's output: the manifest's, except files take their own sensitivity."""
+        spec = self.registry.get(call.tool)
+        trust, conf = (spec.output_trust, spec.output_conf) if spec else ("untrusted", Conf.INTERNAL)
+        if call.tool == "files.read":
+            conf = self.policy.file_conf(call.args.get("path", "")) or conf
+        return trust, conf
+
+    def register_output(self, task_id: str, call: ToolCall, output) -> None:
+        """Everything a task reads goes through here, so its provenance labels are the same on every path
+        (gateway execution, human-approved execution, API context, benchmark setup)."""
+        trust, conf = self.output_label(call)
+        self.tasks[task_id].prov.register_output(call.tool, output, trust, conf)
 
     def add_request(self, task_id: str, request: str) -> None:
         """A later user turn in the same session: its values count as typed by the user, and intent follows it."""
@@ -133,10 +149,11 @@ class Kavach:
                   "effect": effect.magnitude if effect else {},     # facts the rules read (amounts, payees...)
                   "private_seen": task.prov.private_seen, "untrusted_seen": task.prov.untrusted_seen,
                   "third_party_pii": task.prov.third_party_pii(
-                      str(call.args.get("to", "")).split(","),
+                      parse_recipients(call.args.get("to", "")),
                       f"{call.args.get('subject', '')} {call.args.get('body', '')}") if call.tool == "mail.send" else 0,
                   "stray_recipients": [r for r in (effect.magnitude.get("not_invoice_customer") or [] if effect else [])
-                                       if not task.prov.given(r)]}
+                                       if not task.prov.given(r)],
+                  "given": task.prov.given}
         gates = self.policy.evaluate(ctx, call, spec, self.registry, labels, staged)
         if effect and effect.magnitude.get("inside_workspace") is False:
             gates.append(GateResult("R12", "DENY", "Path escapes the agent workspace."))
@@ -172,7 +189,9 @@ class Kavach:
         if verdict == Verdict.ESCALATE:
             # the tool's own reversibility: a hold doesn't make a EUR 650,000 payment a one-person decision
             four_eyes = bool(effect and spec and spec.reversibility == Reversibility.IRREVERSIBLE and effect.harm > 0.5)
-            d.hitl_id = self.hitl.submit(task_id, ctx.principal.user_id, dd, four_eyes)
+            quorum = next((g.evidence["quorum"] for g in gates if g.outcome == "REQUIRE_APPROVAL"
+                           and g.evidence.get("quorum")), None)
+            d.hitl_id = self.hitl.submit(task_id, ctx.principal.user_id, dd, four_eyes, quorum)
             self.pending_calls[d.hitl_id] = (task_id, call, effect)
             dd["hitl_id"] = d.hitl_id
         rec = self.receipts.append({"type": "decision", "task_id": task_id, "principal": ctx.principal.user_id,
@@ -279,28 +298,36 @@ class Kavach:
         if d.verdict not in (Verdict.ALLOW, Verdict.ALLOW_WITH_SAFEGUARD):
             return d
         task = self.tasks[task_id]
-        spec = self.registry.get(d.call.tool)
         windowed = self._windowed(d.effect)
+        actor = {"user": task.ctx.principal.user_id, "task": task_id}
         if d.verdict == Verdict.ALLOW_WITH_SAFEGUARD and not windowed:
-            self.undo[d.receipt_id] = self.env.snapshot()
-        result = self.env.dispatch(d.call.tool, d.call.args,
-                                   actor={"user": task.ctx.principal.user_id, "task": task_id}, hold=windowed)
+            result, self.undo[d.receipt_id] = self._dispatch_undoable(d.call, d.effect, actor)
+        else:
+            result = self.env.dispatch(d.call.tool, d.call.args, actor=actor, hold=windowed)
         d.executed, d.result = True, result
         # post-condition: actual effect must match the staged prediction
-        if d.call.tool == "crm.execute" and d.effect and isinstance(result, dict):
+        if d.call.tool == "crm.execute" and d.effect and isinstance(result, dict) and d.receipt_id in self.undo:
             predicted = d.effect.magnitude.get("rows_affected", 0)
             if result.get("rowcount", 0) != predicted and not d.effect.magnitude.get("ddl"):
-                self.env.restore(self.undo[d.receipt_id])
+                self.env.undo_logged(self.undo.pop(d.receipt_id))
                 d.result = {"rolled_back": True, "reason": "actual effect diverged from sandbox prediction"}
         if windowed:
             d.result = self._arm_window(d.receipt_id, d.call, d.effect, result)
-        task.prov.register_output(d.call.tool, result, spec.output_trust, spec.output_conf)
+        self.register_output(task_id, d.call, result)
         self.receipts.append({"type": "execution", "task_id": task_id, "decision_receipt": d.receipt_id,
                               "result_preview": task.prov.mask(str(d.result))[:200]})   # mask before cutting
         return d
 
     def run(self, task_id: str, call: ToolCall) -> Decision:
         return self.execute(task_id, self.check(task_id, call))
+
+    def _dispatch_undoable(self, call: ToolCall, effect: Effect | None, actor: dict):
+        """Run a reversible write and keep what undo needs: the exact rows and file it changed (A7). Schema changes
+        (only possible outside prod) can't be logged per row, so they keep a whole-database snapshot."""
+        if effect is not None and effect.magnitude.get("ddl"):
+            snap = {"kind": "snapshot", "snapshot": self.env.snapshot(), "epoch": self.env.epoch}
+            return self.env.dispatch(call.tool, call.args, actor=actor), snap
+        return self.env.dispatch_logged(call.tool, call.args, actor=actor)
 
     @staticmethod
     def _windowed(effect: Effect | None) -> bool:
@@ -331,8 +358,13 @@ class Kavach:
                         f"approved {m.get('iban')} for {m.get('amount')}")
         return None
 
-    def resolve_hitl(self, hid: str, approver: str, approve: bool, mode: str = "execute") -> dict:
-        item = self.hitl.resolve(hid, approver, approve, mode)
+    def resolve_hitl(self, hid: str, approver: str, approve: bool, mode: str = "execute",
+                     approver_role: str | None = None) -> dict:
+        item = self.hitl.resolve(hid, approver, approve, mode, approver_role=approver_role)
+        if item["status"] == "pending":              # a quorum seat was filled; others still needed
+            self.receipts.append({"type": "human-approval-partial", "hitl": hid, "approver": approver,
+                                  "role": approver_role, "remaining": dict(item["remaining"])})
+            return {"hitl": item, "executed": False, "pending_quorum": dict(item["remaining"])}
         task_id, call, effect = self.pending_calls.pop(hid)
         out = {"hitl": item, "executed": False}
         if not approve:
@@ -343,25 +375,28 @@ class Kavach:
             self.receipts.append({"type": "human-approved-draft", "task_id": task_id, "hitl": hid,
                                   "approver": approver})
             return out
-        spec = self.registry.get(call.tool)
         windowed = self._windowed(effect)                          # an approved payment still waits out its hold
-        snap = None if windowed else self.env.snapshot()
-        result = self.env.dispatch(call.tool, call.args, actor={"user": approver, "task": task_id}, hold=windowed)
-        self.tasks[task_id].prov.register_output(call.tool, result, spec.output_trust, spec.output_conf)
+        actor = {"user": approver, "task": task_id}
+        if windowed:
+            result, log = self.env.dispatch(call.tool, call.args, actor=actor, hold=True), None
+        else:
+            result, log = self._dispatch_undoable(call, effect, actor)
+        self.register_output(task_id, call, result)
         rec = self.receipts.append({"type": "human-approved-execution", "task_id": task_id, "hitl": hid,
-                                    "approver": approver, "mode": mode})
+                                    "approver": approver, "mode": mode,
+                                    "approvals": [dict(a) for a in item.get("approvals") or [{"approver": approver}]]})
         if windowed:
             result = self._arm_window(rec["id"], call, effect, result)
         else:
-            self.undo[rec["id"]] = snap
+            self.undo[rec["id"]] = log
         out.update(executed=True, result=str(result)[:300], undo_receipt=rec["id"])
         return out
 
     def undo_action(self, receipt_id: str) -> dict:
         epoch, ref = self.recall.pop(receipt_id, (None, None))
-        snap = None if ref else self.undo.pop(receipt_id, None)
-        if snap is not None:
-            epoch = snap["epoch"]
+        log = None if ref else self.undo.pop(receipt_id, None)
+        if log is not None:
+            epoch = log["epoch"]
         if epoch is not None and epoch != self.env.epoch:   # ids restart after a reset: never touch the new world
             return {"undone": False, "reason": "the environment was reset since this action; nothing to take back"}
         if ref is not None:          # a held payment, queued email or parked SAP document: take back just that one
@@ -369,10 +404,11 @@ class Kavach:
             self.receipts.append({"type": "undo", "receipt": receipt_id, "cancelled": ref, "ok": ok})
             return {"undone": True, "cancelled": ref} if ok else {
                 "undone": False, "reason": f"{ref} can no longer be taken back (its window closed, or it was cancelled)"}
-        if snap is None:
-            return {"undone": False, "reason": "no snapshot for this receipt (not reversible or already undone)"}
-        before = self.env.table_counts()
-        self.env.restore(snap)
-        after = self.env.table_counts()
-        self.receipts.append({"type": "undo", "receipt": receipt_id, "before": before, "after": after})
-        return {"undone": True, "tables_before": before, "tables_after": after}
+        if log is None:
+            return {"undone": False, "reason": "no undo record for this receipt (not reversible or already undone)"}
+        out = self.env.undo_logged(log)
+        if not out["undone"]:
+            self.undo[receipt_id] = log            # nothing changed; it can be retried once the conflict is resolved
+        self.receipts.append({"type": "undo", "receipt": receipt_id, **{k: v for k, v in out.items()
+                                                                         if k in ("undone", "reason", "rows", "files")}})
+        return out

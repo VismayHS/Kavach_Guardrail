@@ -5,14 +5,26 @@ auto-allowed) or DENY (final). The rule id travels into the receipt.
 """
 from __future__ import annotations
 
+import fnmatch
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
 import yaml
 
+from .addresses import domain_of, parse_recipients
+from .intent import BREADTH
+from .lookalike import Lookalike, registered
 from .manifest import ToolRegistry, ToolSpec
 from .models import Conf, GateResult, Label, TaskContext, ToolCall, Trust
 from .provenance import URL, arg_targets, named_records, named_targets
+
+RANGE = re.compile(r"\b\d+\s*(?:to|-|–|through|till|until)\s*\d+\b", re.I)
+# "invoice 1042", "customer #17", "vendor V002", "invoice INV-3040": the record kind and its id
+NAMED_KIND = re.compile(r"\b(invoice|customer|client|vendor)s?\s*(?:no\.?|number)?\s*[#:=]?\s*([A-Z]{1,5}-?\d{2,}|\d+)\b",
+                        re.I)
+KIND_TABLES = {"invoice": ("invoices", "ap_invoices"), "customer": ("customers",), "client": ("customers",),
+               "vendor": ("vendors",)}
 
 # actions aimed at specific records (R16): if the user named records, the action must touch one of them, and the
 # argument that picks the record (None for SQL, whose numbers are mostly values) must be one the user named
@@ -29,6 +41,20 @@ class PolicyEngine:
         self.cfg = yaml.safe_load(Path(path).read_text())
         self.version = self.cfg["version"]
         self.rules = self.cfg["rules"]
+        self.lookalike = Lookalike(list(self.cfg.get("internal_domains", [])) + list(self.cfg.get("known_domains", [])))
+
+    def file_conf(self, path: str) -> Conf | None:
+        """Sensitivity of a workspace file by name (N2); None = the tool's default."""
+        name = Path(str(path)).name.lower()
+        for item in self.cfg.get("file_sensitivity", []):
+            if fnmatch.fnmatch(name, item["pattern"].lower()):
+                return Conf(item["conf"])
+        return None
+
+    def release_quorum(self, amount: float) -> dict[str, int]:
+        tiers = self.cfg["finance"]["release_tiers"]
+        tier = next(t for t in tiers if t["max"] is None or amount <= t["max"])
+        return dict(tier.get("quorum") or {})
 
     def evaluate(self, ctx: TaskContext, call: ToolCall, spec: ToolSpec | None, registry: ToolRegistry,
                  labels: dict[str, Label], staged: dict | None = None) -> list[GateResult]:
@@ -111,6 +137,13 @@ class PolicyEngine:
                 inv = ", ".join(st.get("effect", {}).get("named_invoices", []))
                 add("R24", "REQUIRE_APPROVAL", f"The user named invoice {inv}, but {', '.join(st['stray_recipients'])}"
                     " is not that invoice's customer in the CRM.", recipients=st["stray_recipients"])
+            # R25 a recipient whose domain imitates ours or a vendor's, unless the user typed that address
+            given = st.get("given") or (lambda _v: False)
+            fakes = [(r, self.lookalike.check(domain_of(r))) for r in parse_recipients(to)]
+            fakes = [(r, p) for r, p in fakes if p and not given(r)]
+            if fakes:
+                add("R25", "REQUIRE_APPROVAL", "Lookalike domain: " + "; ".join(f"{r} imitates {p}" for r, p in fakes)
+                    + ".", recipients=[r for r, _ in fakes])
 
         # R15 values the agent made up: they appear nowhere in the request or in any tool output
         if call.tool in ("payments.transfer", "payments.refund"):
@@ -131,6 +164,10 @@ class PolicyEngine:
                 what = f"picks {', '.join(sorted(pick))}" if other else "touches none of them"
                 add("R16", "REQUIRE_APPROVAL", f"The user named {', '.join(sorted(named))}, but this action {what}.",
                     named=sorted(named))
+            elif call.tool == "crm.execute":
+                self._rows_rule(ctx, st.get("effect") or {}, add)
+        if call.tool == "crm.execute":
+            self._columns_rule(ctx, st.get("effect") or {}, add)
 
         # R13 data leaving through a URL / R14 lethal trifecta at runtime
         if call.tool == "web.fetch":
@@ -213,7 +250,7 @@ class PolicyEngine:
                 tier = next(t for t in fin["release_tiers"] if t["max"] is None or amt <= t["max"])
                 add("R18", "REQUIRE_APPROVAL", f"Releasing {cur} {amt:,.0f} for {inv} needs {tier['approvers']}; "
                     f"role '{ctx.principal.role}' may release up to {cur} {limit:,.0f}.",
-                    amount=amt, approvers=tier["approvers"])
+                    amount=amt, approvers=tier["approvers"], quorum=dict(tier.get("quorum") or {}))
             else:
                 add("R18", "PASS", f"{cur} {amt:,.0f} is within role '{ctx.principal.role}'s release limit "
                     f"({cur} {limit:,.0f}).")
@@ -232,12 +269,41 @@ class PolicyEngine:
                 add("R22", "DENY", f"Records in {', '.join(sorted(kept))} must be kept for "
                     f"{fin['retention_years']} years; deleting them is blocked.", tables=sorted(kept))
 
+    def _rows_rule(self, ctx: TaskContext, e: dict, add) -> None:
+        """R16 on measured rows (N5): the user named records ("invoice 1042") and asked for nothing broad, so every
+        row of THAT kind the sandbox saw the statement update or delete must be one of them. A named customer says
+        nothing about which invoice rows may change ("delete the invoices for customer 23" is fine)."""
+        req = ctx.user_request
+        if not e.get("rows_changed") or BREADTH.search(req) or RANGE.search(req):
+            return
+        named: dict[str, set[str]] = {}
+        for kind, rid in NAMED_KIND.findall(req):
+            for table in KIND_TABLES.get(kind.lower(), ()):
+                named.setdefault(table, set()).update({rid, rid.rsplit("-", 1)[-1]})
+        extra = {t: [i for i in v if str(i) not in named[t]] for t, v in e["rows_changed"].items() if t in named}
+        extra = {t: v for t, v in extra.items() if v}
+        if extra:
+            ids = sorted({i for s in named.values() for i in s})
+            what = "; ".join(f"{t} {', '.join(map(str, v[:5]))}{' ...' if len(v) > 5 else ''}" for t, v in extra.items())
+            add("R16", "REQUIRE_APPROVAL", f"The user named {', '.join(ids)}, but the statement also changes {what}.",
+                named=ids, extra={t: v[:20] for t, v in extra.items()})
+
+    def _columns_rule(self, ctx: TaskContext, e: dict, add) -> None:
+        """R26 (N6): a sensitive column changed that the request never asks for."""
+        req = ctx.user_request.lower()
+        sens = self.cfg.get("sensitive_columns", {})
+        hits = [f"{t}.{c}" for t, cols in (e.get("columns_changed") or {}).items() for c in cols
+                if c in sens and not any(w in req for w in sens[c])]
+        if hits:
+            add("R26", "REQUIRE_APPROVAL", f"The statement also changes {', '.join(hits)}, which the request doesn't "
+                "ask for.", columns=hits)
+
     def _internal_host(self, host: str) -> bool:
         return any(host == d or host.endswith("." + d) for d in self.cfg["internal_domains"])
 
     def _all_internal(self, to: str) -> bool:
-        recipients = [r.strip().lower() for r in to.split(",") if r.strip()]
-        return bool(recipients) and all(self._internal_host(r.rsplit("@", 1)[-1]) for r in recipients)
+        recipients = parse_recipients(to)
+        return bool(recipients) and all(self._internal_host(domain_of(r)) for r in recipients)
 
     def _internal_destination(self, call: ToolCall, staged: dict) -> bool:
         if call.tool == "mail.send":
@@ -253,9 +319,15 @@ class PolicyEngine:
         user_hosts = {(urlparse(u).hostname or "").lower() for u in URL.findall(ctx.user_request)}
         if host in user_hosts or self._internal_host(host):
             return
+        imitates = self.lookalike.check(host)
+        if imitates:
+            add("R25", "REQUIRE_APPROVAL", f"Lookalike domain: {host!r} imitates {imitates}.", host=host)
         lab = labels.get("url")
         private = bool(lab and (lab.pii_entities or lab.conf.rank >= Conf.CONFIDENTIAL.rank))
-        payload = len(parts.query) + len(parts.fragment)
+        # everything the URL can carry (N2): query, fragment, path, and labels in front of the registered domain
+        name, tld = registered(host)
+        sub = host[: -len(f"{name}.{tld}")].rstrip(".") if tld and host.endswith(f"{name}.{tld}") else ""
+        payload = len(parts.query) + len(parts.fragment) + len(parts.path.strip("/")) + len(sub)
         if private or payload > self.cfg["limits"]["url_payload_max"]:
             what = "private values" if private else f"a {payload}-character payload"
             add("R13", "DENY", f"URL to {host!r}, a host the user never named, carries {what}.", host=host)

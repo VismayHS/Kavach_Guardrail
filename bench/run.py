@@ -53,9 +53,8 @@ def run_kavach(k: Kavach, env: Environment, sc: Scenario) -> dict:
     tid, _ = k.start_task(sc.user[0], sc.user[1], sc.request, sc.env)
     outputs = []
     for call in sc.setup:                       # trusted harness replays the agent's earlier steps
-        spec = k.registry.get(call.tool)
         out = env.dispatch(call.tool, call.args)
-        k.tasks[tid].prov.register_output(call.tool, out, spec.output_trust, spec.output_conf)
+        k.register_output(tid, call, out)
         outputs.append(out)
     action = materialize(sc.action, outputs)
     t0 = time.perf_counter()

@@ -13,10 +13,25 @@ import math
 import re
 import time
 
+from . import changelog
+from .addresses import domain_of, parse_recipients
 from .environment import INTERNAL_DOMAIN, MAIL_RECALL_S, PAYMENT_HOLD_S, Environment
 from .manifest import ToolSpec
 from .models import Effect, Label, Reversibility, TaskContext, ToolCall
 from .sql import classify
+
+STAGE_BUDGET_S = 0.25          # a statement that can't be staged in this time is too expensive to run (A8)
+TOO_EXPENSIVE = f"too expensive to stage (over {STAGE_BUDGET_S * 1000:.0f} ms)"
+
+
+def _budget(conn, seconds: float = STAGE_BUDGET_S) -> None:
+    deadline = time.perf_counter() + seconds
+    conn.set_progress_handler(lambda: 1 if time.perf_counter() > deadline else 0, 2000)
+
+
+def is_internal(addr: str) -> bool:
+    d = domain_of(addr)
+    return d == INTERNAL_DOMAIN or d.endswith("." + INTERNAL_DOMAIN)
 
 # Safeguards that run an action through a window the gateway can still cancel: the effect is reversible until it
 # closes (Phase 3). The text says what happens to the action.
@@ -49,8 +64,8 @@ class ConsequenceEngine:
         elif tool in ("files.write", "files.delete"):
             eff = self._stage_file(tool, str(a.get("path", "")), a.get("content"), prod)
         elif tool == "mail.send":
-            to = [x.strip() for x in str(a.get("to", "")).split(",") if x.strip()]
-            ext = [x for x in to if not x.lower().endswith("@" + INTERNAL_DOMAIN)]
+            to = parse_recipients(a.get("to", ""), a.get("cc", ""), a.get("bcc", ""))
+            ext = [x for x in to if not is_internal(x)]
             pii = sum(labels[k].pii_entities for k in spec.data_args if k in labels)
             conf = max((labels[k].conf.rank for k in spec.data_args if k in labels), default=0)
             raw = len(ext) * 1.0 + pii * 0.5 + (2.0 if conf >= 2 and ext else 0.0)
@@ -153,13 +168,22 @@ class ConsequenceEngine:
         before = self.env.table_counts(clone)
         sq = classify(clone, sql)
         ddl = sq["ddl"]
+        changes: list[dict] = []
         try:
+            if not ddl and sq["tables_written"]:      # row-level diff: which rows and columns really change (A5)
+                changelog.install(clone, sq["tables_written"])
+            _budget(clone)
             cur = clone.execute(sql)
+            clone.set_progress_handler(None, 0)
             rows = max(cur.rowcount, 0)
             after = self.env.table_counts(clone)
+            changes = changelog.collect(clone) if not ddl and sq["tables_written"] else []
             err = None
         except Exception as e:  # invalid SQL never reaches production
-            rows, after, err = 0, before, str(e)
+            clone.set_progress_handler(None, 0)
+            rows, after = 0, before
+            err = TOO_EXPENSIVE if "interrupt" in str(e).lower() else str(e)
+        rows_changed, columns_changed = changelog.summarize(changes)
         dropped = [t for t in before if t not in after]
         lost = sum(before[t] for t in dropped)
         rows_total = rows + lost
@@ -176,6 +200,7 @@ class ConsequenceEngine:
                       {"rows_affected": rows_total, "rows_deleted": deleted, "tables": tables, "no_where": no_where,
                        "ddl": ddl, "writes": sq["writes"], "sql_ops": sq["ops"], "tables_written": sq["tables_written"],
                        "pii_rows": pii_rows, "error": err,
+                       "rows_changed": rows_changed, "columns_changed": columns_changed,
                        "before": before, "after": after},
                       harm_from(raw), summary, safeguard="snapshot+undo")
 
@@ -184,10 +209,12 @@ class ConsequenceEngine:
         sq = classify(clone, sql)
         clone.execute("PRAGMA query_only = ON")      # a "read" that writes fails here, not in production
         try:
+            _budget(clone)
             n = len(clone.execute(sql).fetchmany(10000))
             err = None
         except Exception as e:
-            n, err = 0, str(e)
+            n, err = 0, (TOO_EXPENSIVE if "interrupt" in str(e).lower() else str(e))
+        clone.set_progress_handler(None, 0)
         clone.close()
         pii = n if "customers" in sq["tables"] else 0
         return Effect("sandbox", Reversibility.IDEMPOTENT,

@@ -113,7 +113,8 @@ def test_payment_is_cancelled_if_the_bank_account_changed_while_a_human_approved
     d = steps[-1]
     assert d.verdict == Verdict.ESCALATE
     gw.env.db.execute("UPDATE vendors SET iban = 'GB33BUKB20201555555555' WHERE id = 'V002'")  # not via the agent
-    out = gw.resolve_hitl(d.hitl_id, "cfo@infycorp.com", approve=True)
+    gw.resolve_hitl(d.hitl_id, "cfo@infycorp.com", approve=True, approver_role="cfo")
+    out = gw.resolve_hitl(d.hitl_id, "fd@infycorp.com", approve=True, approver_role="finance_director")
     assert "cancelled" in out["result"] and "GB33BUKB20201555555555" in out["result"]
     gw.env.settle_due(later(PAYMENT_HOLD_S))
     assert gw.env.ledger == [] and status(gw, "INV-3040") == ("approved", "P-3040")
