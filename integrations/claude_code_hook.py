@@ -62,6 +62,21 @@ def decide(event: dict, opts) -> dict:
         return json.loads(r.read())
 
 
+def state_request(prompt: str, conversation: str, opts) -> None:
+    """--mcp: Claude uses KAVACH's own tools at <url>/mcp, which can't see what you typed. This hook, on your side
+    and not the model's, hands each prompt to KAVACH (the session Claude's calls use). Prompts from the same Claude
+    Code conversation add up, so an address you typed two messages ago still counts as yours."""
+    headers = {"Content-Type": "application/json"}
+    if os.environ.get("KAVACH_TOKEN"):
+        headers["Authorization"] = "Bearer " + os.environ["KAVACH_TOKEN"]
+    meta = {"kavach/userRequest": prompt, "kavach/user": os.environ.get("KAVACH_USER", os.environ.get("USER", "")),
+            "kavach/role": opts.role, "kavach/conversation": conversation}
+    body = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"_meta": meta}}
+    req = urllib.request.Request(f"{opts.url.rstrip('/')}/mcp", data=json.dumps(body).encode(), headers=headers)
+    urllib.request.urlopen(req, timeout=opts.timeout).read()   # if it fails, Claude's calls run with no request:
+                                                                # KAVACH then asks a person (R40), never allows more
+
+
 def handle(event: dict, opts) -> dict:
     name = event.get("hook_event_name")
     session = event.get("session_id", "default")
@@ -69,6 +84,8 @@ def handle(event: dict, opts) -> dict:
         st = load(session)
         st["prompt"] = event.get("prompt", "")
         save(session, st)
+        if opts.mcp:
+            state_request(st["prompt"], session, opts)
         return {}
     if name == "PostToolUse":
         st = load(session)
@@ -101,6 +118,8 @@ def main(argv=None) -> int:
     ap.add_argument("--role", default=os.environ.get("KAVACH_ROLE", "claude_code"))
     ap.add_argument("--on-error", choices=("ask", "deny"), default=os.environ.get("KAVACH_ON_ERROR", "ask"))
     ap.add_argument("--timeout", type=float, default=8.0)
+    ap.add_argument("--mcp", action="store_true", help="also state each prompt to KAVACH's /mcp (Claude uses "
+                                                       "KAVACH's own tools there; see integrations/claude_demo/)")
     opts = ap.parse_args(argv)
     out = handle(json.loads(sys.stdin.read() or "{}"), opts)
     if out:

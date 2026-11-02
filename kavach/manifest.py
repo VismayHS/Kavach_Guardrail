@@ -58,7 +58,8 @@ EFFECT_MODELS = {
     "email": ("to", "cc", "bcc", "subject", "body"),
     "transfer": ("to_account", "amount", "memo"), "refund": ("invoice_id", "amount"),
     "web_fetch": ("url",),
-    "ap_propose": ("invoice_id",), "ap_release": ("invoice_id",), "invoice_read": ("invoice_id",),
+    "ap_propose": ("invoice_id",), "ap_release": ("invoice_id", "to_account", "amount"),
+    "invoice_read": ("invoice_id",), "vendor_read": ("vendor_id",),
     "bank_change": ("vendor_id", "iban"),
     "ledger_post": ("doc_type", "amount", "gl_account", "text"),
     "shell": ("command",),
@@ -68,7 +69,7 @@ LEGACY_MODELS = {"crm.execute": "sql_write", "crm.query": "sql_read", "files.wri
                  "files.delete": "file_delete", "files.read": "file_read", "mail.send": "email",
                  "payments.transfer": "transfer", "payments.refund": "refund", "web.fetch": "web_fetch",
                  "payment.propose": "ap_propose", "payment.release": "ap_release", "invoice.read": "invoice_read",
-                 "vendor.update_bank": "bank_change", "sap.post": "ledger_post"}
+                 "vendor.update_bank": "bank_change", "sap.post": "ledger_post", "vendor.read": "vendor_read"}
 
 
 def model_of(spec: ToolSpec | None) -> str | None:
@@ -128,9 +129,16 @@ def default_manifest() -> dict[str, ToolSpec]:
         ToolSpec("payment.propose", "Propose payment of an approved invoice.", {"invoice_id": "str"}, ["invoice_id"],
                  effect="write", sink="internal", reversibility=R.REVERSIBLE, control_args=["invoice_id"],
                  staging="sqlite", safeguard="snapshot+undo"),
-        ToolSpec("payment.release", "Release the proposed payment for an invoice to the vendor's bank account.",
-                 {"invoice_id": "str"}, ["invoice_id"], effect="payment", sink="external",
-                 reversibility=R.IRREVERSIBLE, control_args=["invoice_id"], safeguard="hold"),
+        ToolSpec("vendor.read", "Read a vendor's record from the vendor master: name, bank account on record, and "
+                 "whether that account is verified.", {"vendor_id": "str"}, ["vendor_id"], effect="read", sink="none",
+                 reversibility=R.IDEMPOTENT, output_trust="derived", output_conf=Conf.CONFIDENTIAL, staging="sqlite"),
+        # to_account and amount are what the agent says it means to pay; R41 checks them against the records, and
+        # the money only ever goes to the account on record (so they are claims, not control arguments)
+        ToolSpec("payment.release", "Release the proposed payment for an invoice. Give the account and amount you "
+                 "intend to pay: KAVACH pays only the vendor's account on record, for the invoice's amount, and blocks "
+                 "anything else. A person may need to approve, and the money waits in a hold before it reaches the bank.",
+                 {"invoice_id": "str", "to_account": "str", "amount": "float"}, ["invoice_id"], effect="payment",
+                 sink="external", reversibility=R.IRREVERSIBLE, control_args=["invoice_id"], safeguard="hold"),
         ToolSpec("vendor.update_bank", "Change a vendor's bank account (IBAN).", {"vendor_id": "str", "iban": "str"},
                  ["vendor_id", "iban"], effect="write", sink="internal", reversibility=R.REVERSIBLE,
                  control_args=["vendor_id", "iban"], staging="sqlite", safeguard="snapshot+undo"),

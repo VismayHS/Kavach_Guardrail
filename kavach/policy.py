@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import yaml
 
 from .addresses import domain_of, parse_recipients
-from .finance import iban_check, name_similarity
+from .finance import iban_check, looks_like_iban, name_similarity, same_account, same_amount
 from .intent import BREADTH
 from .lookalike import Lookalike, registered
 from .manifest import ToolRegistry, ToolSpec, arg, argname, model_of
@@ -415,13 +415,36 @@ class PolicyEngine:
         m = model_of(spec)
         if m == "ap_release" and "amount" in e:
             inv, amt, cur = e["invoice_id"], e["amount"], e["currency"]
+            # R41 first, so it is the stated reason: the account and amount the agent names must be the invoice's
+            # own. The money only ever goes to the account on record, and a mismatch is refused, not escalated:
+            # an approval click must never be able to send it somewhere else.
+            given_acct, given_amt = arg(spec, call.args, "to_account"), arg(spec, call.args, "amount")
+            who = f"{e['vendor_name']} ({e['vendor_id']})"
+            if not str(e.get("iban") or "").strip():
+                add("R41", "DENY", f"{who} has no bank account on record, so {inv} can't be paid; AP must add a "
+                    "verified one first.", vendor=e["vendor_id"])
+            elif not same_account(given_acct, e["iban"]):
+                add("R41", "DENY", f"{given_acct!r} is not the account on record for {who}, which is {e['iban']}. "
+                    f"KAVACH pays {inv} only to that account; new bank details need verification by AP, not an "
+                    "approval.", given=given_acct, on_record=e["iban"])
+            elif not same_amount(given_amt, amt):
+                add("R41", "DENY", f"{given_amt} is not {inv}'s amount: the invoice says {cur} {amt:,.2f}.",
+                    given=given_amt, on_record=amt)
+            else:
+                add("R41", "PASS", f"Paying {inv}'s own record: {e['iban']}, {cur} {amt:,.2f}.")
             if e["sanctioned"]:
                 add("R21", "DENY", f"{e['vendor_name']} is on the sanctions watch list; payments are blocked.",
                     vendor=e["vendor_id"])
             elif not e["bank_verified"]:
                 add("R21", "REQUIRE_APPROVAL", f"{e['vendor_name']}'s bank account has not been independently verified.",
                     vendor=e["vendor_id"])
-            if e["proposal_id"] is None:
+            if e["status"] == "held":                      # the first payment hasn't even left: cancel it, don't add one
+                add("R19", "DENY", f"{inv} is already waiting in its hold; releasing it again would pay it twice. "
+                    "Cancel the waiting payment instead if it needs to change.", status="held")
+            elif e["status"] == "paid":                    # sometimes right (the first one bounced): a person decides
+                add("R19", "REQUIRE_APPROVAL", f"Warning: {inv} was already paid ({cur} {amt:,.0f} to {e['iban']}). "
+                    "Approve only if that payment failed or was returned; otherwise it is paid twice.", status="paid")
+            elif e["proposal_id"] is None:
                 add("R19", "REQUIRE_APPROVAL", f"No payment proposal exists for {inv}; releasing it would skip the "
                     "proposer/releaser split.")
             elif e["proposed_by"] == ctx.principal.user_id or e["proposal_task"] == ctx.task_id:
@@ -445,7 +468,7 @@ class PolicyEngine:
                 add("R21", "DENY", f"{e['vendor_name']} matches sanctions list entry '{hit['match']}' "
                     f"(similarity {hit['score']}); payments are blocked.", vendor=e["vendor_id"], screening=hit)
             ok, why = iban_check(e.get("iban", ""))
-            if not ok:
+            if looks_like_iban(e.get("iban", "")) and not ok:      # other formats (Indian a/c + IFSC) aren't IBANs
                 add("R30", "DENY", f"The vendor's bank account on record is not a valid IBAN ({why}); fix the vendor "
                     "master before paying.", iban=e.get("iban"))
         if m == "bank_change":

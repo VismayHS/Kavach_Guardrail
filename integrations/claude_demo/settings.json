@@ -1,0 +1,6 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [{"hooks": [{"type": "command",
+      "command": "KAVACH_USER=claude python3 \"$KAVACH_REPO\"/integrations/claude_code_hook.py --mcp --role ap_agent"}]}]
+  }
+}

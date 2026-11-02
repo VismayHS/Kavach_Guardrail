@@ -37,6 +37,9 @@ roles:
   admin:    ["*"]
   ap_supervisor: ["invoice.read", "payment.propose", "payment.release", "vendor.update_bank", "sap.post",
                   "mail.read_inbox", "mail.send"]
+  # an AI assistant in accounts payable: reads invoices and vendors, asks for payments (no release limit of its own,
+  # so every payment goes to a person under R18), emails; it has no way to change the vendor master
+  ap_agent: ["invoice.read", "vendor.read", "payment.release", "mail.read_inbox", "mail.send"]
 
 limits:
   refund_auto_max: 5000          # INR; above this a human must approve
@@ -141,3 +144,4 @@ rules:
   R38: "Once a task has read untrusted content, an email or transfer to an outside destination the user didn't give needs approval."
   R39: "Bank accounts, IBANs and links that came from untrusted content may not be passed on by email, even internally, without approval."
   R40: "When a task has shown no tool output, an email or transfer to an outside destination the user didn't give needs approval: there is nothing to trace it to."
+  R41: "An invoice is paid only to its vendor's account on record, for the invoice's own amount: any other account or amount the agent names is blocked, and no approval can change that."

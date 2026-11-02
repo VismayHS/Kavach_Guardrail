@@ -128,13 +128,25 @@ class Store:
             else:
                 c.execute(insert(holds).values(id=h["id"], receipt=receipt, **vals))
 
+    def move_hold(self, h: dict, frm: tuple, to: str) -> str | None:
+        """Move a hold to `to` only if the database still has it in one of `frm`, so of two workers (or a Cancel and
+        a sweep) exactly one wins. Returns the status the database has now; None if it has never seen this hold."""
+        with self.lock, self.engine.begin() as c:
+            moved = c.execute(update(holds).where(holds.c.id == h["id"], holds.c.status.in_(frm))
+                              .values(status=to, data=_dump({**h, "status": to}))).rowcount
+            if moved:
+                return to
+            row = c.execute(select(holds.c.status).where(holds.c.id == h["id"])).first()
+            return row.status if row else None
+
     def link_hold(self, hold_id: str, receipt: str) -> None:
         with self.lock, self.engine.begin() as c:
             c.execute(update(holds).where(holds.c.id == hold_id).values(receipt=receipt))
 
     def load_holds(self) -> list[tuple[dict, str | None]]:
         with self.engine.connect() as c:
-            return [(json.loads(r.data), r.receipt) for r in c.execute(select(holds.c.data, holds.c.receipt))]
+            return [({**json.loads(r.data), "status": r.status}, r.receipt)
+                    for r in c.execute(select(holds.c.data, holds.c.status, holds.c.receipt))]
 
     # ---------------------------------------------------------------- tool pins
     def save_pin(self, name: str, h: str) -> None:
@@ -206,7 +218,7 @@ def attach(gw, store: Store) -> dict:
         if name in gw.registry.specs:
             gw.registry.pins[name] = h
     by_id = {h["id"]: h for h in env.holds}
-    n_held = 0
+    n_held, cut_off = 0, []
     for h, receipt in store.load_holds():
         if h["id"] in by_id:
             continue
@@ -215,7 +227,10 @@ def attach(gw, store: Store) -> dict:
             n_held += 1
             if receipt:
                 gw.recall[receipt] = (env.epoch, h["id"])
+        elif h["status"] == "dispatching":          # the last process died while handing it over
+            cut_off.append((h, receipt))
     restored["holds_waiting"] = n_held
+    env.claim = store.move_hold
     def on_receipt(rec: dict) -> None:
         store.append_receipt(rec)
         store.write_checkpoint(gw.receipts.checkpoint_for(rec))     # after the receipt itself is durable
@@ -238,4 +253,13 @@ def attach(gw, store: Store) -> dict:
                             "reason": "KAVACH restarted while this approval was waiting; the agent's context was not "
                                       "kept, so the approval is closed (denied). The agent can ask again."})
     restored["approvals_closed"] = len(stale)
+    for h, receipt in cut_off:                       # it may or may not have arrived: say so, never send it again
+        if env._move(h, "dispatching", "unknown"):
+            where = "the mail server" if h.get("kind") == "mail" else "the bank"
+            gw.receipts.append({"type": "window-closed", "hold": h["id"], "kind": h.get("kind"), "outcome": "unknown",
+                                "receipt": receipt, "task_id": gw._task_of(receipt),
+                                "reason": f"KAVACH stopped while handing this to {where}, so whether it arrived is "
+                                          f"unknown. It is not sent again; look for {h['id']} at {where}."})
+    if cut_off:
+        restored["holds_cut_off"] = len(cut_off)
     return restored

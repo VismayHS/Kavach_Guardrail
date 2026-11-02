@@ -14,11 +14,18 @@ Each message carries X-Kavach-Outbox (the outbox id), so a mail log can be match
 """
 from __future__ import annotations
 
+import json
 import os
 import smtplib
+import urllib.error
+import urllib.request
 from email.message import EmailMessage
 
 from .addresses import parse_recipients
+
+
+class DeliveryUncertain(Exception):
+    """The connection broke after the message was handed to the mail server: it may or may not have arrived."""
 
 
 class SmtpMailer:
@@ -50,17 +57,55 @@ class SmtpMailer:
         return m
 
     def send(self, msg: dict) -> dict:
-        """Deliver one outbox message. Returns what the mail server accepted; raises on failure (the caller records
-        the error on the outbox entry; the decision and its receipt stand)."""
+        """Deliver one outbox message. Returns what the mail server accepted. Raises on failure (the caller records
+        it; the decision and its receipt stand): DeliveryUncertain if the connection broke after the message was
+        handed over (it may have arrived), any other error if the server never took it."""
         m = self.message(msg)
         rcpts = parse_recipients(msg.get("to", ""), msg.get("cc", ""), msg.get("bcc", ""))
         if not rcpts:
             raise ValueError("no recipient address")
-        with self._smtp(self.host, self.port, timeout=self.timeout) as s:
+        with self._smtp(self.host, self.port, timeout=self.timeout) as s:       # an error up to here: nothing sent
             if self.starttls:
                 s.starttls()
             if self.user:
                 s.login(self.user, self.password or "")
-            refused = s.send_message(m, from_addr=self.sender, to_addrs=rcpts)
+            try:
+                refused = s.send_message(m, from_addr=self.sender, to_addrs=rcpts)
+            except (smtplib.SMTPResponseException, smtplib.SMTPRecipientsRefused, ConnectionRefusedError):
+                raise                                  # the server said no, or never let us in: it didn't take it
+            except OSError as e:                       # timeout or dropped connection mid-send: we can't know
+                raise DeliveryUncertain(f"{type(e).__name__}: {e}") from e
         self.sent += 1
         return {"via": f"smtp://{self.host}:{self.port}", "to": rcpts, "refused": sorted(refused or {})}
+
+
+class SandboxBank:
+    """Payments KAVACH lets go go to a bank API: the demo's scripts/sandbox_bank.py, its own service with its own page,
+    the way Mailpit is for email.   KAVACH_BANK_URL=http://127.0.0.1:8030
+
+    Each transfer carries the hold id as its idempotency key, so the bank books a retry of the same payment once."""
+
+    def __init__(self, url: str, timeout: float = 10.0):
+        self.url, self.timeout = url.rstrip("/"), timeout
+
+    @classmethod
+    def from_env(cls, environ=None) -> "SandboxBank | None":
+        env = os.environ if environ is None else environ
+        return cls(env["KAVACH_BANK_URL"]) if env.get("KAVACH_BANK_URL") else None
+
+    def pay(self, tx: dict) -> dict:
+        body = json.dumps({"id": tx.get("hold") or tx["id"], "to_account": tx["to"], "amount": tx["amount"],
+                           "currency": tx.get("currency") or "INR", "memo": str(tx.get("invoice") or tx.get("memo") or "")})
+        req = urllib.request.Request(self.url + "/transfers", data=body.encode(),
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError:
+            raise                                      # the bank answered no: nothing was booked
+        except urllib.error.URLError as e:
+            if isinstance(e.reason, ConnectionRefusedError):
+                raise                                  # never reached the bank
+            raise DeliveryUncertain(f"{type(e.reason).__name__}: {e.reason}") from e
+        except OSError as e:                           # the answer never came: it may be booked
+            raise DeliveryUncertain(f"{type(e).__name__}: {e}") from e

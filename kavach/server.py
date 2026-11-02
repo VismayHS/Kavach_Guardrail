@@ -33,12 +33,12 @@ from pathlib import Path
 import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import auth
-from .environment import Environment
+from .environment import MAIL_RECALL_S, PAYMENT_HOLD_S, Environment
 from .gateway import Kavach
 from .models import ToolCall
 from .policy import PolicyEngine
@@ -50,8 +50,9 @@ PROFILE = check_profile()           # KAVACH_PROFILE=prod refuses to start witho
 # canary records (R28) are planted in the server's world unless KAVACH_CANARIES=0
 _canaries = None if os.environ.get("KAVACH_CANARIES") == "0" else PolicyEngine().cfg.get("canaries")
 env = Environment(tempfile.mkdtemp(prefix="kavach-"), canaries=_canaries)
-from .connectors import SmtpMailer  # noqa: E402
+from .connectors import SandboxBank, SmtpMailer  # noqa: E402
 env.mailer = SmtpMailer.from_env()   # E7: with KAVACH_SMTP_HOST, emails KAVACH lets go really leave (after their window)
+env.bank = SandboxBank.from_env()   # with KAVACH_BANK_URL, payments KAVACH lets go reach that bank (after their hold)
 gw = Kavach(env)
 if PROFILE.require_tool_hash:
     gw.policy.cfg["require_tool_hash"] = True
@@ -114,6 +115,7 @@ app.add_middleware(CORSMiddleware, allow_origins=_origins,
                    allow_methods=["GET", "POST", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type"],
                    allow_credentials=False)
 _mcp_task: dict[tuple[str, str], str] = {}
+_mcp_conv: dict[tuple[str, str], str | None] = {}      # which conversation (e.g. Claude Code session) owns it
 _sessions: dict[tuple[str, str], tuple[str, set[str]]] = {}     # (user, session id) -> (task id, context seen)
 AUTH_SECRET = os.environ.get(auth.SECRET_ENV)     # unset = dev mode (role from the request, receipts say so)
 # Which environment this server guards is deployment config. A caller saying "dev" would switch off the production
@@ -577,6 +579,23 @@ def settle(advance_s: float = 0.0, who: dict | None = Depends(caller)):
     return {"settled": gw.settle(time.time() + max(0.0, advance_s))}
 
 
+@app.post("/api/stage/reset")
+def stage_reset(who: dict | None = Depends(caller)):
+    """The live demo page's Start over: a fresh demo company (anything still waiting is discarded, never sent) and
+    approvals still open are closed. Dev profile only, like fast-forward; the receipt chain is append-only and keeps
+    everything, with a demo-reset receipt marking where the new run starts."""
+    if not PROFILE.fast_forward or (who is not None and who["role"] != "admin"):
+        raise HTTPException(403, "only an admin, in the dev profile, can reset the demo")
+    closed = [hid for hid, it in gw.hitl.items.items() if it["status"] == "pending"]
+    for hid in closed:
+        gw.hitl.items[hid].update(status="closed", resolved=time.time(), approver="demo-reset")
+        gw.pending_calls.pop(hid, None)
+    gw.recall.clear()
+    env.reset()
+    rec = gw.receipts.append({"type": "demo-reset", "approvals_closed": closed})
+    return {"reset": True, "approvals_closed": closed, "seq": rec["seq"]}
+
+
 @app.get("/api/receipts")
 def receipts(limit: int = 50, after: int | None = None, who: dict | None = Depends(caller)):
     """The last `limit` receipts, or (for polling UIs) every receipt with seq > `after`, oldest first. With auth on, a
@@ -687,6 +706,8 @@ def state():
         "SELECT * FROM sap_documents WHERE status = 'parked'"))]
     return {"tables": env.table_counts(), "outbox": env.outbox[-5:], "ledger": env.ledger[-5:],
             "waiting": [{**h, "receipt": receipt_of.get(h["id"])} for h in env.holds if h["status"] == "held"],
+            "stopped": [h for h in env.holds if h["status"] == "cancelled"][-5:],
+            "hold_s": {"mail": MAIL_RECALL_S, "payment": PAYMENT_HOLD_S},
             "parked": parked, "drafts": env.drafts[-5:],
             "risk_model": gw.risk.source, "c_block": gw.cfg.c_block, "policy": gw.policy.version,
             "qualcomm_llm": gw.judge.llm.enabled, "judge_models": list(gw.judge.llm.picked or [gw.judge.llm.model])}
@@ -827,10 +848,15 @@ def bench_file(name: str):
 
 
 # ---------------------------------------------------------------- MCP-style JSON-RPC front door
+MCP_TOOLS = {t for t in os.environ.get("KAVACH_MCP_TOOLS", "").split(",") if t}   # empty: every tool
+
+
 @app.post("/mcp")
 def mcp(rpc: dict, who: dict | None = Depends(caller)):
     """Minimal MCP JSON-RPC: initialize, tools/list, tools/call. Every tools/call goes through the gateway.
     The user's request is passed once via params._meta['kavach/userRequest'] (session-scoped)."""
+    if "id" not in rpc:                            # a notification (e.g. notifications/initialized): no reply
+        return Response(status_code=202)
     mid, method, params = rpc.get("id"), rpc.get("method"), rpc.get("params", {}) or {}
     meta = params.get("_meta", {}) or {}
     session = (who["sub"] if who else "", meta.get("kavach/session", "default"))   # a caller can't reuse another's session
@@ -839,17 +865,24 @@ def mcp(rpc: dict, who: dict | None = Depends(caller)):
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32001, "message":
                     "only the orchestrator may initialize a session (it states the user's request)"}}
         user, role, authed = _identity(who, meta.get("kavach/user", "mcp-user"), meta.get("kavach/role", "support"))
-        tid, _ = gw.start_task(user, role, meta.get("kavach/userRequest", ""), SERVER_ENV, authenticated=authed,
-                               tenant=_tenant_of(who))
-        _mcp_task[session] = tid
+        conv, request = meta.get("kavach/conversation"), meta.get("kavach/userRequest", "")
+        if conv and _mcp_conv.get(session) == conv and _mcp_task.get(session) in gw.tasks:
+            gw.add_request(_mcp_task[session], request)      # a later turn: what the user typed before still counts
+        else:
+            tid, _ = gw.start_task(user, role, request, SERVER_ENV, authenticated=authed, tenant=_tenant_of(who))
+            _mcp_task[session], _mcp_conv[session] = tid, conv
         return {"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": "2025-06-18",
                 "serverInfo": {"name": "kavach-gateway", "version": "0.1"}, "capabilities": {"tools": {}}}}
     if method == "tools/list":
-        return {"jsonrpc": "2.0", "id": mid, "result": {"tools": gw.registry.mcp_tools_list()}}
+        return {"jsonrpc": "2.0", "id": mid, "result": {"tools": [
+            t for t in gw.registry.mcp_tools_list() if not MCP_TOOLS or t["name"] in MCP_TOOLS]}}
     if method == "tools/call":
         tid = _mcp_task.get(session)
         if tid is None:
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32002, "message": "call initialize first"}}
+        if MCP_TOOLS and params.get("name") not in MCP_TOOLS:
+            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message":
+                    f"{params.get('name')} is not offered on this server (KAVACH_MCP_TOOLS)"}}
         call = ToolCall(params.get("name", ""), params.get("arguments", {}) or {},
                         tool_def_hash=meta.get("kavach/definitionHash"))
         d = gw.run(tid, call)

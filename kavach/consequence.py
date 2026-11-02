@@ -35,8 +35,12 @@ def is_internal(addr: str) -> bool:
 
 # Safeguards that run an action through a window the gateway can still cancel: the effect is reversible until it
 # closes (Phase 3). The text says what happens to the action.
-WINDOW_TEXT = {"hold": f"held {PAYMENT_HOLD_S / 60:.0f} min before it reaches the bank; cancel until then",
-               "recall-window": f"queued {MAIL_RECALL_S / 60:.0f} min before it leaves; recall until then",
+def wait_text(s: float) -> str:
+    return f"{s:.0f} s" if s < 60 else f"{s / 60:.0f} min"
+
+
+WINDOW_TEXT = {"hold": f"held {wait_text(PAYMENT_HOLD_S)} before it reaches the bank; cancel until then",
+               "recall-window": f"queued {wait_text(MAIL_RECALL_S)} before it leaves; recall until then",
                "park": "parked in SAP; nothing is booked until a person posts it"}
 INVOICE_REF = re.compile(r"\binvoice\s*(?:no\.?|number)?\s*#?\s*(\d+)\b", re.I)    # "invoice 2339", "invoice #12"
 
@@ -105,6 +109,9 @@ class ConsequenceEngine:
         elif m == "invoice_read":
             eff = Effect("static", rev, {"invoice_id": A("invoice_id")}, 0.0,
                          f"Read invoice {A('invoice_id')} into the agent context.")
+        elif m == "vendor_read":
+            eff = Effect("static", rev, {"vendor_id": A("vendor_id")}, 0.0,
+                         f"Read vendor {A('vendor_id')}'s record into the agent context.")
         elif m == "ledger_post":
             amt = float(A("amount", 0) or 0)
             eff = Effect("predicted", rev, {"amount": amt, "gl_account": A("gl_account"), "doc_type": A("doc_type")},

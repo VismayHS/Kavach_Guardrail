@@ -34,6 +34,28 @@ DEMO_SANCTIONS = [  # stand-ins: the repository's synthetic sanctioned vendor an
 ]
 
 
+def looks_like_iban(account: str) -> bool:
+    """IBAN-shaped (two letters, two digits, then letters/digits). Other formats, e.g. an Indian account number with
+    its IFSC or a sandbox TEST-ACCT-001, aren't IBANs and aren't judged as one."""
+    return bool(re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]{8,30}", re.sub(r"\s", "", str(account or "")).upper()))
+
+
+def same_account(given, on_record) -> bool:
+    """R41: the account the agent named is the one on record (spaces and case ignored); naming none is fine."""
+    norm = lambda a: re.sub(r"\s", "", str(a or "")).upper()
+    return given is None or (bool(norm(on_record)) and norm(given) == norm(on_record))
+
+
+def same_amount(given, on_record) -> bool:
+    """R41: the amount the agent named is the invoice's (to the paisa / cent); naming none is fine."""
+    if given is None:
+        return True
+    try:
+        return abs(float(given) - float(on_record)) < 0.005
+    except (TypeError, ValueError):
+        return False
+
+
 def iban_check(iban: str) -> tuple[bool, str]:
     """(valid, why). Spaces and case are ignored; country length and mod-97 must both hold."""
     s = re.sub(r"\s", "", str(iban or "")).upper()
