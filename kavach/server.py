@@ -61,6 +61,11 @@ try:
                                                    os.environ["KAVACH_SIEM_URL"], os.environ.get("KAVACH_SIEM_TOKEN")))
 except ImportError:
     pass
+if os.environ.get("KAVACH_SLACK_WEBHOOK") or os.environ.get("KAVACH_TEAMS_WEBHOOK"):   # F8: approval cards
+    from .notify import ApprovalNotifier
+    gw.receipts.listeners.append(ApprovalNotifier(gw, os.environ.get("KAVACH_SLACK_WEBHOOK"),
+                                                  os.environ.get("KAVACH_TEAMS_WEBHOOK"),
+                                                  os.environ.get("KAVACH_CONSOLE_URL", "")))
 if os.environ.get("KAVACH_PROBE") == "1":          # C3: scan untrusted content with the CPU classifier
     from .injection_probe import InjectionProbe
     _probe = InjectionProbe()
@@ -244,6 +249,12 @@ def hitl_pending():
     return gw.hitl.pending()
 
 
+@app.get("/api/hitl/stats", dependencies=[Depends(caller)])
+def hitl_stats():
+    """Approval fatigue: per approver, decisions, approvals, median time to decide, fast approvals, approve streaks."""
+    return gw.hitl.stats()
+
+
 @app.post("/api/hitl/{hid}")
 def hitl_resolve(hid: str, body: HitlIn, who: dict | None = Depends(caller)):
     approver = who["sub"] if who else body.approver     # four-eyes needs a verified approver identity
@@ -308,6 +319,16 @@ def receipts_export():
     python -m kavach.receipts verify export.jsonl --pubkey kavach_signing.pub.pem"""
     return StreamingResponse(gw.receipts.export_lines(), media_type="application/x-ndjson",
                              headers={"Content-Disposition": "attachment; filename=kavach-receipts.jsonl"})
+
+
+@app.get("/api/receipts/{rid}/explain", dependencies=[Depends(caller)])
+def receipt_explain(rid: str, lang: str = "en"):
+    """The decision on a receipt, explained for an approver (lang=en or hi)."""
+    rec = gw.receipts.get(rid)
+    if rec is None or rec["body"].get("type") != "decision":
+        raise HTTPException(404, f"no decision receipt {rid}")
+    text, source = gw.explainer.explain(rec["body"]["decision"], lang)
+    return {"receipt": rid, "lang": lang, "explanation": text, "source": source}
 
 
 @app.post("/api/receipts/anchor")

@@ -47,6 +47,12 @@ limits:
   pii_external_max: 1            # max PII records that may leave the company without approval
   url_payload_max: 200           # query+fragment characters a URL to an unknown host may carry
 
+# Approvals (F8): how long a request waits (seconds) before it goes one step up the chain; after the last step it
+# expires, denied. An empty chain means expiry is the first deadline.
+approvals:
+  sla_s: 300
+  chain: [team_lead, ops_manager]
+
 change_freeze: false             # when true: no writes to prod (Replit incident lesson)
 require_tool_hash: false         # when true: calls must present the pinned tool definition hash (MCP clients)
 

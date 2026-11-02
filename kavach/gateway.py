@@ -107,7 +107,9 @@ class Kavach:
         except ImportError:
             signer = None
         self.receipts = ReceiptLog(signer=signer)
-        self.hitl = ApprovalQueue()
+        appr = self.policy.cfg.get("approvals") or {}
+        self.hitl = ApprovalQueue(timeout_s=float(appr.get("sla_s", 300)), chain=appr.get("chain"))
+        self.hitl.on_event.append(lambda ev: self.receipts.append(ev))
         self.tasks: dict[str, Task] = {}
         self.undo: dict[str, dict] = {}       # receipt id -> snapshot
         self.recall: dict[str, tuple[int, str]] = {}   # receipt -> (world epoch, held payment / email / SAP doc)
