@@ -63,3 +63,28 @@ def test_fatigue_game(monkeypatch):
     assert bad["bad"] and bad["verdict"] == "DENY" and bad["reason"].startswith("[R1]")
     others = [v for k, v in g["reveal"].items() if k != g["answer"]]
     assert sum(v["verdict"].startswith("ALLOW") for v in others) >= 10                # routine work mostly flows
+
+
+def test_health_and_readiness(monkeypatch):
+    c = client(monkeypatch)
+    assert c.get("/healthz").json() == {"ok": True}
+    r = c.get("/readyz").json()
+    assert r["ready"] and r["chain_valid"] and r["risk_model"].startswith("trained")
+
+
+def test_json_decision_logs(caplog):
+    import json
+    import logging
+    import tempfile
+
+    from kavach.environment import Environment
+    from kavach.gateway import GatewayConfig, Kavach
+    from kavach.logs import JsonFormatter, decision_logger
+    from kavach.models import ToolCall
+    k = Kavach(Environment(tempfile.mkdtemp()), GatewayConfig(use_llm_judge=False))
+    k.receipts.listeners.append(decision_logger)
+    with caplog.at_level(logging.INFO, logger="kavach"):
+        tid, _ = k.start_task("asha", "support", "The invoices table looks broken, fix it.")
+        k.check(tid, ToolCall("crm.execute", {"sql": "DROP TABLE invoices"}))
+    line = json.loads(JsonFormatter().format(caplog.records[-1]))
+    assert line["verdict"] == "DENY" and "R4" in line["rules"] and "DROP TABLE" not in json.dumps(line)

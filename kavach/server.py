@@ -52,6 +52,10 @@ env = Environment(tempfile.mkdtemp(prefix="kavach-"), canaries=_canaries)
 gw = Kavach(env)
 if PROFILE.require_tool_hash:
     gw.policy.cfg["require_tool_hash"] = True
+if os.environ.get("KAVACH_LOG_JSON") == "1":          # F11: structured logs, a line per decision (no arguments)
+    from .logs import decision_logger, setup as _setup_logs
+    _setup_logs(json_logs=True, level=os.environ.get("KAVACH_LOG_LEVEL", "INFO"))
+    gw.receipts.listeners.append(decision_logger)
 if os.environ.get("KAVACH_MANIFESTS"):             # E3: more tools, e.g. kavach/manifests/claude_code.yaml
     from .manifest import register_manifests
     register_manifests(gw.registry, gw.policy.cfg["roles"],
@@ -168,6 +172,22 @@ class _Static(StaticFiles):
 
 
 app.mount("/static", _Static(directory=ROOT / "static"))
+
+
+@app.get("/healthz")
+def healthz():
+    """Liveness: the process answers."""
+    return {"ok": True}
+
+
+@app.get("/readyz")
+def readyz():
+    """Readiness: the policy is loaded, the risk model is trained and the receipt chain verifies."""
+    chain = gw.receipts.verify()
+    ready = bool(gw.policy.version) and gw.risk.source.startswith("trained") and chain["valid"]
+    body = {"ready": ready, "policy": gw.policy.version, "risk_model": gw.risk.source, "chain_valid": chain["valid"],
+            "profile": PROFILE.name}
+    return body if ready else JSONResponse(body, 503)
 
 
 @app.get("/")
