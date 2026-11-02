@@ -5,7 +5,9 @@
 
 What is kept:
   * the receipt chain, append-only, written before the decision returns. It is verified when loaded, so a row
-    edited in the database makes /readyz fail instead of being trusted.
+    edited in the database makes /readyz fail instead of being trusted. Its signed checkpoint (count + head) goes to
+    a separate file, so deleting the newest rows is caught too: `<db>.checkpoint.json` beside a SQLite file, or
+    KAVACH_CHECKPOINT_FILE (needed for Postgres; in production, write-once storage apart from the database).
   * kill-switch pauses: a restart never silently un-pauses an agent.
   * undo windows (E6): held payments and queued emails, with what they will send and when they go, and which
     receipt can take each back, so Undo still works after a restart and nothing goes out early or twice.
@@ -20,7 +22,9 @@ agent asks again. The demo company (CRM, files, inbox) is a simulator and is see
 from __future__ import annotations
 
 import json
+import os
 import threading
+from pathlib import Path
 
 from sqlalchemy import (Boolean, Column, Float, Integer, MetaData, String, Table, Text, create_engine, insert, select,
                         update)
@@ -50,12 +54,37 @@ def _dump(x) -> str:
 
 
 class Store:
-    def __init__(self, url: str):
+    def __init__(self, url: str, checkpoint: str | os.PathLike | None = None):
         kw = {"connect_args": {"check_same_thread": False}} if url.startswith("sqlite") else {"pool_pre_ping": True}
         self.engine = create_engine(url, **kw)
         md.create_all(self.engine)
         self.lock = threading.Lock()
         self.url = url
+        db_file = self.engine.url.database if url.startswith("sqlite") else None
+        where = checkpoint or os.environ.get("KAVACH_CHECKPOINT_FILE") or (
+            f"{db_file}.checkpoint.json" if db_file and db_file != ":memory:" else None)
+        self.checkpoint_path = Path(where) if where else None
+
+    # ---------------------------------------------------------------- the receipt chain's signed checkpoint
+    def read_checkpoint(self) -> dict | None:
+        if self.checkpoint_path is None:
+            return None
+        try:
+            return json.loads(self.checkpoint_path.read_text())
+        except FileNotFoundError:
+            return None
+
+    def write_checkpoint(self, cp: dict) -> None:
+        """Atomic, and only forward: a slower thread never moves the checkpoint back."""
+        if self.checkpoint_path is None:
+            return
+        with self.lock:
+            old = self.read_checkpoint()
+            if old is not None and int(old.get("count", 0)) >= cp["count"]:
+                return
+            tmp = self.checkpoint_path.with_name(self.checkpoint_path.name + ".tmp")
+            tmp.write_text(json.dumps(cp))
+            os.replace(tmp, self.checkpoint_path)
 
     # ---------------------------------------------------------------- receipts
     def append_receipt(self, rec: dict) -> None:
@@ -160,6 +189,9 @@ def attach(gw, store: Store) -> dict:
     gw.receipts.known_keys.update(store.load_keys())
     items = store.load_receipts()
     gw.receipts.items[:] = items
+    if store.checkpoint_path is not None:
+        gw.receipts.checkpoint = store.read_checkpoint()
+        gw.receipts.checkpoint_missing = bool(items) and gw.receipts.checkpoint is None
     chain = gw.receipts.verify()
     restored = {"receipts": len(items), "chain_valid": chain["valid"]}
     for k in store.active_kills():
@@ -186,6 +218,7 @@ def attach(gw, store: Store) -> dict:
     restored["holds_waiting"] = n_held
     def on_receipt(rec: dict) -> None:
         store.append_receipt(rec)
+        store.write_checkpoint(gw.receipts.checkpoint_for(rec))     # after the receipt itself is durable
         b = rec["body"]
         if b.get("type") == "kill":
             store.save_kill(gw.kills.get(b["id"]) or {k: b[k] for k in ("id", "scope", "target", "by", "reason", "at")},
