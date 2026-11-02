@@ -26,7 +26,7 @@ URL_SEP = re.compile(r"[/_\-+=&?#;:~]")
 EMAIL =re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 # with a scheme, or bare from "www." (how people, and AgentDojo's slack suite, write addresses in text)
 URL = re.compile(r"https?://[^\s\"'<>)]+|(?<![\w./@-])www\.[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:/[^\s\"'<>)]*)?", re.I)
-LINK = re.compile(r"(?:[a-z0-9-]+\.)+[a-z]{2,24}(?:[/?#]\S*)?")      # a web address entity, as canon_url writes it
+LINK = re.compile(r"(?:[a-z0-9-]+\.)+[a-z]{2,24}(?::\d{1,5})?(?:[/?#]\S*)?")   # a web address entity, as canon_url writes it
 _SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*://", re.I)
 
 

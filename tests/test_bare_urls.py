@@ -73,3 +73,9 @@ def test_an_address_glued_to_the_next_sentence_is_the_address():
     p = ProvenanceTracker()
     p.register_user("Post the hobbies to our website www.our-company.com.They sent them to Bob.")
     assert p.label("www.our-company.com", is_control=True).trust == Trust.TRUSTED
+
+
+def test_an_address_with_a_port_is_a_link():
+    from kavach.provenance import is_link
+    ents = entities("Re-verify at https://secure-systems-252.com:8443/login today.")
+    assert "secure-systems-252.com:8443/login" in ents and is_link("secure-systems-252.com:8443/login")
