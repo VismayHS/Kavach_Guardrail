@@ -259,7 +259,8 @@ class PolicyEngine:
             if v is None or str(v) == "":
                 continue
             lab = labels.get(a)
-            if not (lab and lab.trust == Trust.TRUSTED) and str(v) not in ctx.user_request:
+            typed = re.search(rf"(?<![\w-]){re.escape(str(v))}(?![\w-])", ctx.user_request)   # as a whole value
+            if not (lab and lab.trust == Trust.TRUSTED) and not typed:
                 add("R41", "REQUIRE_APPROVAL", f"'{a}' is for the user to choose, and this value isn't in their "
                     "request.", arg=a)
 

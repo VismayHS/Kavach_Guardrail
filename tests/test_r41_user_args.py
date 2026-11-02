@@ -48,3 +48,9 @@ def test_a_password_the_agent_made_up_goes_to_a_person():
 def test_user_args_survive_the_manifest_file_format():
     s = gw().registry.get("account.set_password")
     assert spec_from_dict(s.name, spec_to_dict(s)).user_args == ["password"]
+
+
+def test_a_value_hidden_inside_a_word_of_the_request_is_not_typed():
+    """'pass' is inside 'password', but the user didn't type it as a value."""
+    d, g = r41(gw(), "Please update my password, it's been a while.", "pass")
+    assert d.verdict == Verdict.ESCALATE and g is not None, d.reason
