@@ -116,7 +116,8 @@ def to_agentos(call: ToolCall) -> tuple[str, dict]:
 AGENTOS_DEFAULT: dict = {}                                   # no hitl: section -> built-in shell patterns only
 AGENTOS_HARDENED = {"hitl": {                               # what HITL_DESIGN_GUIDE.md shows an operator adding
     "sql_patterns": [r"\b(DELETE|UPDATE|DROP|TRUNCATE|ALTER|INSERT)\b"],
-    "dangerous_tools": ["mail.send", "payments.transfer", "payments.refund"],
+    "dangerous_tools": ["mail.send", "payments.transfer", "payments.refund", "payment.propose", "payment.release",
+                        "vendor.update_bank", "sap.post"],     # every outbound or finance tool in the manifest
 }}
 
 
@@ -239,11 +240,11 @@ def report(res: dict) -> str:
     s0 = res["seed0"]
     lines = ["# Infosys open-source guardrails vs KAVACH", "",
              "Infosys code is loaded from a clone of `Infosys/Infosys-Agentic-Foundry` at run time "
-             "(`python bench/infosys_compare.py <clone>`). Same 740-scenario synthetic suite, same held-out "
+             "(`python bench/infosys_compare.py <clone>`). Same synthetic suite, same held-out "
              "test split, same metrics as `RESULTS.md`. RAI moderation classifiers are not run (Git LFS "
              "weights); they get a perfect oracle on whatever text the proxy actually sends them, so that row "
              "is an upper bound.", "",
-             "## Seed 0 test split (222 scenarios)", "",
+             f"## Seed 0 test split ({s0['KAVACH (full)']['n']} scenarios)", "",
              "| System | " + " | ".join(h for _, h in keys) + " |",
              "|---|" + "---|" * len(keys)]
     for name, m in s0.items():
