@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import re
 import time
 
@@ -66,7 +67,13 @@ def sequential_tool_calls(messages: list[dict]) -> list[dict]:
 
 class QualcommCloudAI:
     def __init__(self, endpoint: str | None = None, api_key: str | None = None,
-                 model: str | None = None, timeout: float = 8.0):
+                 model: str | None = None, timeout: float = 8.0, max_wait_s: float = 4.0):
+        """max_wait_s: how long, in total, to wait out rate limits (429), server errors and timeouts before giving
+        up. Small for the judge and the explainer (they sit on the decision path and can only add strictness, so
+        giving up is safe); long for an agent, which should wait as long as the service asks rather than fail."""
+        self.max_wait_s = max_wait_s
+        self.rate_limited = 0
+        self.retries = 0
         self.endpoint = (endpoint or _env("IMAGINE_API_ENDPOINT", "IMAGINE_ENDPOINT_URL", "INFERENCE_CLOUD_ENDPOINT")
                          ).rstrip("/")
         self.api_key = api_key or _env("IMAGINE_API_KEY", "INFERENCE_CLOUD_API_KEY")
@@ -80,14 +87,39 @@ class QualcommCloudAI:
         return bool(self.endpoint and self.api_key and httpx is not None)
 
     def _post(self, path: str, body: dict) -> dict:
-        t0 = time.perf_counter()
-        r = httpx.post(f"{self.endpoint}/{path}", json=body, timeout=self.timeout,
-                       headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json",
-                                "User-Agent": "kavach-guardrail/0.1"})
-        if r.status_code >= 400:                # keep the service's own message: "500" alone hid the cause once
-            raise httpx.HTTPStatusError(f"{r.status_code} from {path}: {r.text[:300]}", request=r.request, response=r)
-        self.last_latency_ms = round((time.perf_counter() - t0) * 1000, 1)
-        return r.json()
+        """POST with retries: a 429 waits as long as the service asks ("Please wait 19.00 seconds" or Retry-After),
+        5xx and network errors back off exponentially, all with jitter, within max_wait_s in total."""
+        deadline, attempt = time.monotonic() + self.max_wait_s, 0
+        while True:
+            t0 = time.perf_counter()
+            try:
+                r = httpx.post(f"{self.endpoint}/{path}", json=body, timeout=self.timeout,
+                               headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json",
+                                        "User-Agent": "kavach-guardrail/0.1"})
+            except (httpx.TimeoutException, httpx.TransportError) as e:
+                err, wait = e, min(30.0, 2.0 ** attempt)
+            else:
+                if r.status_code < 400:
+                    self.last_latency_ms = round((time.perf_counter() - t0) * 1000, 1)
+                    return r.json()
+                # keep the service's own message: "500" alone hid the cause once
+                err = httpx.HTTPStatusError(f"{r.status_code} from {path}: {r.text[:300]}", request=r.request,
+                                            response=r)
+                if r.status_code != 429 and r.status_code < 500:
+                    raise err
+                wait = min(30.0, 2.0 ** attempt)
+                if r.status_code == 429:
+                    self.rate_limited += 1
+                    asked = re.search(r"wait ([\d.]+) seconds", r.text or "")
+                    hdr = r.headers.get("retry-after", "")
+                    wait = max(wait, float(asked.group(1)) + 1.0 if asked else
+                               float(hdr) if hdr.replace(".", "", 1).isdigit() else 0.0)
+            attempt += 1
+            wait += random.uniform(0, 1.5)
+            if time.monotonic() + wait > deadline:
+                raise err
+            self.retries += 1
+            time.sleep(wait)
 
     def chat(self, messages: list[dict], max_tokens: int = 256, temperature: float = 0.0,
              tools: list[dict] | None = None, model: str | None = None) -> dict:
