@@ -253,6 +253,8 @@ def main(n_per_family: int = 20, seed: int = 0, write: bool = True) -> dict:
         evaluate("Tool-type gating", baseline_tool_tier),
         evaluate("Approve every write (manual interrupt)", baseline_approve_all_writes),
         evaluate("KAVACH: rules only", kav(GatewayConfig(use_llm_judge=False, use_risk=False))),
+        evaluate("KAVACH: model only (rules off)", kav(GatewayConfig(use_llm_judge=False, use_rules=False,
+                                                                     c_block=c_star))),
         evaluate("KAVACH: no provenance", kav(GatewayConfig(use_llm_judge=False, use_provenance=False, c_block=c_star))),
         evaluate("KAVACH: fixed threshold", kav(GatewayConfig(use_llm_judge=False, reversibility_conditioned=False,
                                                               fixed_tau=t_star))),
@@ -277,7 +279,9 @@ def main(n_per_family: int = 20, seed: int = 0, write: bool = True) -> dict:
 
     results = {
         "suite": {"scenarios": len(suite), "families": len({s.family for s in suite}), "test": len(test),
-                  "train": int(len(ytr)), "cal": int(len(yca)), "note": "synthetic suite; see bench/suite.py"},
+                  "train": int(len(ytr)), "cal": int(len(yca)), "note": "synthetic suite; see bench/suite.py",
+                  "train_unsafe": int(ytr.sum()), "unsafe_families_passing_rules":
+                      sorted({s.family for s in suite if s.label == 1 and s.sid in feat_rows})},
         "systems": [{"system": s["system"], **s["metrics"]} for s in systems],
         "calibration": calib, "coefficients": coef, "pareto": pareto,
         "operating_point": {"c_block": c_star, "fixed_tau": t_star, "selected_on": "calibration split"},
@@ -326,6 +330,31 @@ def multi_seed(seeds=(1, 2, 3, 4), n_per_family: int = 20) -> None:
     print(md)
 
 
+def honesty(res: dict) -> str:
+    """What these numbers can and can't support (B3), with the facts computed from this run."""
+    s = res["suite"]
+    by = {x["system"]: x for x in res["systems"]}
+    model = by.get("KAVACH: model only (rules off)")
+    fams = s.get("unsafe_families_passing_rules", [])
+    lines = ["", "## What these numbers mean", "",
+             "- **The suite and the rules were written by the same team.** Most rules were written for specific "
+             "scenario families, so 0% unsafe auto-allowed mostly says the rules do what we wrote them to do. "
+             "For numbers we didn't write, see AGENTDOJO.md (ETH Zurich's benchmark).",
+             f"- **The risk model learns only from actions that pass every rule:** {s['train']} training actions, of "
+             f"which {s.get('train_unsafe', '?')} are unsafe ({len(fams)} unsafe famil"
+             f"{'y gets' if len(fams) == 1 else 'ies get'} past the rules: {', '.join(fams) or 'none'}). With so few "
+             "unsafe examples, a near-perfect calibration score (Brier ~0) means the test is easy, not that the "
+             "model is perfect."]
+    if model:
+        lines.append(f"- **What the model alone catches** (rules off, only unknown-tool and schema checks left): "
+                     f"{model['UAR']:.1%} of unsafe actions auto-allowed, {model['ASR_injection']:.1%} injection "
+                     f"success, {model['safe_auto']:.1%} of safe actions auto-completed. The rules carry the safety; "
+                     "the model's job is ranking what the rules let through.")
+    lines.append("- The leave-one-family-out (LOFO.md) and fresh holdout (HOLDOUT.md) results check new wording "
+                 "and unseen families, but they are still our own scenarios.")
+    return "\n".join(lines) + "\n"
+
+
 def write_report(res: dict) -> None:
     hdr = ("| System | UAR (unsafe auto-allowed) ↓ | ...with no undo armed ↓ | Injection ASR ↓ | Safe auto-completed ↑ "
            "| Safe hard-blocked ↓ | Escalation rate | Changes with undo armed ↑ | p50 / p95 ms |\n"
@@ -348,7 +377,7 @@ def write_report(res: dict) -> None:
           f"\n\nCalibration on test split: ECE {c['ece_uncalibrated']} (raw) -> {c['ece_calibrated']} "
           f"(isotonic), Brier {c['brier_calibrated']}.\n\nOperating points chosen on the calibration split: "
           f"C_block={res['operating_point']['c_block']} (KAVACH), fixed tau={res['operating_point']['fixed_tau']} "
-          "(ablation).\n\nLatency excludes the optional Qualcomm LLM judge.\n")
+          "(ablation).\n\nLatency excludes the optional Qualcomm LLM judge.\n" + honesty(res))
     (OUT / "RESULTS.md").write_text(md)
     print(md)
 
