@@ -49,6 +49,8 @@ PROFILE = check_profile()           # KAVACH_PROFILE=prod refuses to start witho
 # canary records (R28) are planted in the server's world unless KAVACH_CANARIES=0
 _canaries = None if os.environ.get("KAVACH_CANARIES") == "0" else PolicyEngine().cfg.get("canaries")
 env = Environment(tempfile.mkdtemp(prefix="kavach-"), canaries=_canaries)
+from .connectors import SmtpMailer  # noqa: E402
+env.mailer = SmtpMailer.from_env()   # E7: with KAVACH_SMTP_HOST, emails KAVACH lets go really leave (after their window)
 gw = Kavach(env)
 if PROFILE.require_tool_hash:
     gw.policy.cfg["require_tool_hash"] = True
