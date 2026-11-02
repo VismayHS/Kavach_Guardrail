@@ -453,3 +453,11 @@ dialog::backdrop { background: rgba(28, 36, 51, .35); }
   .vx-stamp[data-tone="running"]::after, .vx-press, .vx-land, .skel, .spin { animation: none; }
   * { transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* live agent: replay button next to Run, and the "answer doesn't match the receipts" callout */
+.composer-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.col-end .callout { margin: 0 0 12px; }
+.callout.warn { border-color: color-mix(in srgb, var(--vx-fail) 40%, transparent); border-left-color: var(--vx-fail); background: var(--vx-fail-wash); }
+.callout.warn .callout-icon { background: var(--vx-fail); }
+.callout.warn .callout-title { color: var(--vx-fail); }
+@media (max-width: 640px) { .composer-actions { width: 100%; } .composer-actions .btn { flex: 1 1 auto; } }

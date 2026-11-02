@@ -252,7 +252,8 @@ async function pageAgent(id) {
         <div class="acting"><span class="label" id="role-l">Acting as</span>
           <div class="seg" role="radiogroup" aria-labelledby="role-l">${AGENT_ROLES.map(r => `<label><input type="radio" name="role" value="${r}"${S.draft.role === r ? ' checked' : ''}><span>${roleName(r)}</span></label>`).join('')}</div>
         </div>
-        <button class="btn primary" type="submit" id="run-btn"${on ? '' : ' disabled'}>${icon('play')}Run both agents</button>
+        <span class="composer-actions"><button class="btn" type="button" data-act="replay" title="Replays a real run recorded earlier, step by step. Labelled as a recording.">${icon('rotate-ccw')}Replay a recorded run</button>
+        <button class="btn primary" type="submit" id="run-btn"${on ? '' : ' disabled'}>${icon('play')}Run both agents</button></span>
       </div>
       <div class="examples"><span>Or try</span>${EXAMPLES.map((e, i) => `<button type="button" class="chip" data-act="example" data-i="${i}">${esc(e[1])}</button>`).join('')}</div>
     </form>
@@ -272,13 +273,17 @@ const stepHtml = (t, animate) => {
     : `${why(t.reason, t.verdict)}${t.verdict === 'ESCALATE' ? ' <span class="meta">Nobody approves in this view, so it does not run.</span>' : ''}`;
   return `<li><div class="step"><div class="step-head">${verdictStamp(t.verdict, { cls })}<span class="step-name">${esc(toolName(t.tool))}</span><code class="tool">${esc(t.tool)}</code></div>${argList(t.args)}${reason ? `<p class="step-why">${reason}</p>` : ''}</div></li>`;
 };
+const CLAIMS = /\b(i(?:'ve| have)?\s+(?:sent|emailed|forwarded|transferred|paid|shared|exported|deleted))|\b(has|have) been (sent|emailed|forwarded|transferred|paid|shared|exported)\b/i;
 function colEnd(r) {
   const final = r.trace.find(t => 'final' in t)?.final;
   const o = r.outcome;
   if (!o) return '';
+  const stoppedStep = r.trace.find(t => t.verdict === 'DENY' || t.verdict === 'ESCALATE');
+  const nothingLeft = !o.emails_out.length && !o.payments.length;
+  const lied = final && stoppedStep && nothingLeft && CLAIMS.test(String(final));
   const left = [...o.emails_out.map(e => `Email to <strong>${esc(e.to)}</strong> <span class="meta">${e.chars.toLocaleString()} characters</span>`),
     ...o.payments.map(p => `Payment of <strong>${esc(Number(p.amount).toLocaleString())}</strong> to ${esc(p.to)}`)];
-  return `<div class="tag">
+  return `${lied ? `<div class="callout warn"><span class="callout-icon">${icon('triangle-alert')}</span><div class="callout-text"><div class="callout-title">The agent's answer doesn't match what happened</div><p>It says it did something KAVACH stopped. Nothing left the company: the receipt${stoppedStep.receipt ? ` <code>${esc(stoppedStep.receipt)}</code>` : ''} records the ${esc(toolName(stoppedStep.tool).toLowerCase())} as ${stoppedStep.verdict === 'DENY' ? 'blocked' : 'waiting for a person'}. The agent lied; the receipt didn't.</p></div></div>` : ''}<div class="tag">
     ${field("Agent's answer", final ? `<div class="answer">${esc(String(final).replace(/\*\*/g, ''))}</div>` : '', { empty: 'The agent gave no answer.' })}
     ${field('What really left the company', left.length ? `<div class="left-list">${left.map(x => `<span>${x}</span>`).join('')}</div>` : '', { empty: 'Nothing left the company.', note: o.waiting ? `${plural(o.waiting, 'item')} still waiting in an undo window, so it can be taken back.` : '' })}
   </div>`;
@@ -323,7 +328,7 @@ function paintRun(s, animate) {
   const model = s.unguarded.outcome?.model || s.guarded.outcome?.model;
   const meta = $('#run-meta');
   meta.hidden = false;
-  meta.innerHTML = `<span>${done ? `Finished in ${s.seconds} seconds` : `Working for ${s.seconds} seconds, usually about a minute`}</span><span>Acting as ${esc(roleName(s.role))}</span>${model ? `<span>${esc(model)} on Qualcomm Cloud AI</span>` : ''}${tip("AI agents don't behave the same way every run, so the same request can go differently next time.")}`;
+  meta.innerHTML = s.recorded ? `<span>${stamp('queued', 'Recording')} Replay of a real run recorded ${esc(s.recorded.at)}${s.recorded.seconds ? `, which took ${s.recorded.seconds} seconds live` : ''}</span><span>Acting as ${esc(roleName(s.role))}</span>${s.recorded.model ? `<span>${esc(s.recorded.model)} on Qualcomm Cloud AI</span>` : ''}` : `<span>${done ? `Finished in ${s.seconds} seconds` : `Working for ${s.seconds} seconds, usually about a minute`}</span><span>Acting as ${esc(roleName(s.role))}</span>${model ? `<span>${esc(model)} on Qualcomm Cloud AI</span>` : ''}${tip("AI agents don't behave the same way every run, so the same request can go differently next time.")}`;
   const btn = $('#run-btn');
   if (btn) { btn.disabled = !done; btn.innerHTML = done ? `${icon('play')}Run both agents` : `${icon('loader-circle', 'spin')}Running`; }
   if (done && !$('#outcome').innerHTML) { $('#outcome').innerHTML = outcomeHtml(s); chrome().catch(() => {}); }
@@ -1043,6 +1048,14 @@ const ACT = {
   autorun(a) { if (!S.results[a.dataset.id] || S.page !== 'scenarios') S.autoRun = a.dataset.id; else S.autoRun = a.dataset.id; },
   'run-scenario'(b) { flip(b, true); runScenario(b.dataset.id); },
   'run-side'(b) { flip(b, true); runSide(); },
+  async replay(b) {
+    flip(b, true);
+    try {
+      const r = await post('/api/agent/replay');
+      S.draftFor = null; S.shown = {};
+      location.hash = `#/agent/${r.run_id}`;
+    } catch (e) { $('#run-error').innerHTML = `<div class="notice err flash" style="margin-top:16px">${esc(e.message)}</div>`; flip(b, false); }
+  },
   async undo(b) {
     flip(b, true);
     const rid = b.dataset.r;
