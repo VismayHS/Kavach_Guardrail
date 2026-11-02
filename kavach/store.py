@@ -44,6 +44,7 @@ models = Table("kavach_risk_models", md, Column("id", Integer, primary_key=True,
                Column("data", Text, nullable=False))
 labels = Table("kavach_feedback", md, Column("id", Integer, primary_key=True, autoincrement=True),
                Column("data", Text, nullable=False))
+meta = Table("kavach_meta", md, Column("key", String(64), primary_key=True), Column("value", Text, nullable=False))
 
 FINAL_APPROVAL = {"human-approved", "human-denied", "human-approved-draft", "human-approved-execution",
                   "approval-expired", "approval-closed-restart"}
@@ -85,6 +86,19 @@ class Store:
             tmp = self.checkpoint_path.with_name(self.checkpoint_path.name + ".tmp")
             tmp.write_text(json.dumps(cp))
             os.replace(tmp, self.checkpoint_path)
+
+    # ---------------------------------------------------------------- facts about the store itself
+    def get_meta(self, key: str) -> str | None:
+        with self.engine.connect() as c:
+            r = c.execute(select(meta.c.value).where(meta.c.key == key)).first()
+            return r.value if r else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        with self.lock, self.engine.begin() as c:
+            if c.execute(select(meta.c.key).where(meta.c.key == key)).first():
+                c.execute(update(meta).where(meta.c.key == key).values(value=value))
+            else:
+                c.execute(insert(meta).values(key=key, value=value))
 
     # ---------------------------------------------------------------- receipts
     def append_receipt(self, rec: dict) -> None:
@@ -201,9 +215,15 @@ def attach(gw, store: Store) -> dict:
     gw.receipts.known_keys.update(store.load_keys())
     items = store.load_receipts()
     gw.receipts.items[:] = items
+    legacy = False
     if store.checkpoint_path is not None:
         gw.receipts.checkpoint = store.read_checkpoint()
-        gw.receipts.checkpoint_missing = bool(items) and gw.receipts.checkpoint is None
+        # a store that has ever had a checkpoint says so in its own table: then a missing file was removed. One
+        # written before checkpoints existed has receipts and no such mark: it is adopted (receipted below), not
+        # reported as tampered with, which was a false CHAIN BROKEN on every older demo database.
+        had = store.get_meta("checkpointed") is not None
+        legacy = bool(items) and gw.receipts.checkpoint is None and not had
+        gw.receipts.checkpoint_missing = bool(items) and gw.receipts.checkpoint is None and had
     chain = gw.receipts.verify()
     restored = {"receipts": len(items), "chain_valid": chain["valid"]}
     for k in store.active_kills():
@@ -231,9 +251,14 @@ def attach(gw, store: Store) -> dict:
             cut_off.append((h, receipt))
     restored["holds_waiting"] = n_held
     env.claim = store.move_hold
+    marked = [store.checkpoint_path is not None and store.get_meta("checkpointed") is not None]
+
     def on_receipt(rec: dict) -> None:
         store.append_receipt(rec)
         store.write_checkpoint(gw.receipts.checkpoint_for(rec))     # after the receipt itself is durable
+        if store.checkpoint_path is not None and not marked[0]:
+            store.set_meta("checkpointed", str(rec["seq"]))           # from here on, a missing file means removed
+            marked[0] = True
         b = rec["body"]
         if b.get("type") == "kill":
             store.save_kill(gw.kills.get(b["id"]) or {k: b[k] for k in ("id", "scope", "target", "by", "reason", "at")},
@@ -254,6 +279,12 @@ def attach(gw, store: Store) -> dict:
                             "reason": "KAVACH restarted while this approval was waiting; the agent's context was not "
                                       "kept, so the approval is closed (denied). The agent can ask again."})
     restored["approvals_closed"] = len(stale)
+    if legacy and chain["valid"]:
+        gw.receipts.append({"type": "checkpoint-started", "covers_from": len(items) + 1,
+                            "reason": f"This store's {len(items)} receipts were written before signed checkpoints "
+                                      "existed. The hash chain still covers them (edits break it); from here on, a "
+                                      "checkpoint also catches receipts cut off the end."})
+        restored["checkpoint_started"] = True
     for h, receipt in cut_off:                       # it may or may not have arrived: say so, never send it again
         if env._move(h, "dispatching", "unknown"):
             where = "the mail server" if h.get("kind") == "mail" else "the bank"
