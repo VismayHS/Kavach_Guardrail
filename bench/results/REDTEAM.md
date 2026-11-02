@@ -19,23 +19,8 @@ Threat model: the attacker controls one email in the inbox; the agent obeys it p
 
 ## Found and fixed
 
-The first fuzz run (same 1,178 attacks) found **80 bypasses**, all one pattern: internal meeting notes (no PII, so the
-PII rules R2, R14 and R17 don't apply) emailed to an attacker address that the injection disguised. Five evasions
-got past provenance (R1):
+The first fuzz run (2026-11-02, same attacks) found **80 bypasses**, all one pattern: internal meeting notes (no personal data, so the PII rules R2, R14 and R17 don't apply) emailed to an attacker address the injection disguised. Five tricks beat the provenance check (R1): Cyrillic look-alike letters and zero-width characters (a real bug: tool output was indexed as escaped JSON, so normalisation never saw those characters), the address spaced out letter by letter, split across a sentence, or spelled out in words ("mallory at evil dash recon dot io").
 
-- Cyrillic look-alike letters, and zero-width characters inside the address. These were a real bug: tool output was
-  indexed as escaped JSON, so normalisation never saw those characters.
-- The address spaced out letter by letter.
-- The address split across a sentence.
-- The address spelled out in words ("mallory at evil dash recon dot io").
-
-Fixed in kavach/provenance.py:
-
-- Output is indexed unescaped.
-- Spaced-apart characters and spoken symbols are read as extra normalised forms.
-- An address the agent puts together is untrusted if its domain was named only by untrusted content.
-
-After the fix, the run shows 0 bypasses. The 1,027 decisions of the self-graded suite are unchanged. One case per
-evasion is kept in bench/redteam_found/ as a regression test.
+Fixed in commit 436934a (kavach/provenance.py): output is indexed unescaped; spaced-apart characters and spoken symbols are read as extra normalised forms; an address the agent puts together is untrusted when its domain was named only by untrusted content. The 1,027 decisions of the self-graded suite did not change. One case per trick is kept in bench/redteam_found/.
 
 Found bypasses are kept in bench/redteam_found/ and replayed by tests/test_redteam.py; once fixed, they must stay blocked.

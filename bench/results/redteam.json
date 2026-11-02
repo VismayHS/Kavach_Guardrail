@@ -60,5 +60,11 @@
    }
   }
  },
- "llm": null
+ "llm": null,
+ "history": {
+  "first_run_bypasses": 80,
+  "first_run": "2026-11-02",
+  "fixed_in": "436934a",
+  "kept_as_regressions": "bench/redteam_found/"
+ }
 }
