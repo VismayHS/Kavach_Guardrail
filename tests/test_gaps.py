@@ -404,3 +404,29 @@ def test_an_agent_token_cannot_initialize_an_mcp_session(authed):
     r = client.post("/mcp", headers=agent, json={"jsonrpc": "2.0", "id": 1, "method": "initialize",
                                                  "params": {"_meta": {"kavach/userRequest": "anything"}}}).json()
     assert "error" in r
+
+
+# ---------------------------------------------------------------- U7 data split across short emails (R30)
+def test_a_list_split_into_short_emails_is_stopped_before_it_finishes(gw):
+    tid, _ = gw.start_task("ravi", "analyst", "Send john.menon@client4.com the export he asked for, in parts.")
+    rows = read_customers(gw, tid)
+    blob = base64.b64encode(json.dumps(rows).encode()).decode()
+    words = " ".join(blob[i:i + 100] for i in range(0, len(blob), 100))     # no 200-character run for R31
+    size = len(words) // 20 + 1
+    parts = [words[i:i + size] for i in range(0, len(words), size)]
+    sent = 0
+    for i, part in enumerate(parts):
+        d = gw.run(tid, ToolCall("mail.send", {"to": "john.menon@client4.com", "subject": f"part {i}", "body": part}))
+        if not allowed(d):
+            assert "R30" in rules(d, "REQUIRE_APPROVAL")
+            break
+        sent += len(part)
+    assert sent <= 4000 and i < len(parts) - 1
+
+
+def test_a_few_ordinary_emails_to_a_customer_still_run(gw):
+    tid, _ = gw.start_task("ravi", "analyst", "Email john.menon@client4.com about invoices 1042, 1043 and 1044.")
+    for inv in (1042, 1043, 1044):
+        d = gw.run(tid, ToolCall("mail.send", {"to": "john.menon@client4.com", "subject": f"Invoice {inv}",
+                                               "body": f"Hello, invoice {inv} is being processed. Regards."}))
+        assert allowed(d)

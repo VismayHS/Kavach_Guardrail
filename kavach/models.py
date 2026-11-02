@@ -89,6 +89,7 @@ class TaskContext:
     rows_changed: int = 0                               # rows this task's SQL has changed so far (R30)
     money_moved: dict[str, float] = field(default_factory=dict)   # currency -> total this task has paid out (R30)
     actions_run: set[str] = field(default_factory=set)  # digests of the outbound calls this task already ran (R30)
+    outbound_chars: int = 0                             # characters this task has emailed to outside addresses (R30)
     plan: list[dict] | None = None
     plan_findings: list[dict] = field(default_factory=list)
 

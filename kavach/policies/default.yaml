@@ -25,6 +25,7 @@ limits:
   task_money_approval: 10000     # INR one task may move in transfers and refunds without approval
   outbound_chars_max: 2000       # characters an email to an outside address may carry without approval
   encoded_token_min: 200         # an unbroken run this long in an outside email looks like encoded data
+  task_outbound_chars_max: 4000  # characters one task may send to outside addresses in total (data split into parts)
 
 change_freeze: false             # when true: no writes to prod (Replit incident lesson)
 require_tool_hash: false         # when true: calls must present the pinned tool definition hash (MCP clients)
@@ -77,7 +78,7 @@ rules:
   R24: "An email about an invoice the user named goes to that invoice's customer, an internal address, or an address the user gave; anyone else needs approval."
   # R25-R28 are reserved by the Phase 5 roadmap.
   R29: "Raw SQL may not change the tables the finance rules read (vendors, invoices, POs, receipts, proposals, SAP documents); only the finance tools may."
-  R30: "One task's totals count: rows changed across statements, money moved across payments, and repeats of the same payment or email need approval."
+  R30: "One task's totals count: rows changed across statements, money moved across payments, characters emailed outside, and repeats of the same payment or email need approval."
   R31: "An email to an outside address that is very long or carries a long encoded run needs approval, whatever its content appears to be."
   R32: "Once a task has read untrusted content, an email or transfer to an outside destination the user didn't give needs approval."
   R33: "Bank accounts, IBANs and links that came from untrusted content may not be passed on by email, even internally, without approval."

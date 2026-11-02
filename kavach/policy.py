@@ -133,6 +133,12 @@ class PolicyEngine:
                 "content; payment details and links from outside need a person to check them before staff act on them.",
                 values=st["untrusted_details"])
 
+        # R30 one task's characters to outside addresses: a list split into short emails adds up
+        if call.tool == "mail.send" and st.get("task_outbound_chars", 0) > self.cfg["limits"]["task_outbound_chars_max"]:
+            add("R30", "REQUIRE_APPROVAL", f"This task would have emailed {st['task_outbound_chars']:,} characters to "
+                f"outside addresses in total (limit {self.cfg['limits']['task_outbound_chars_max']:,}); data may be "
+                "leaving in parts.", chars=st["task_outbound_chars"])
+
         # R32 instructions in untrusted content can name a destination in a form value matching can't trace
         # ("payouts [at] fin-desk [dot] io"): after untrusted content, an outside destination must come from the user
         if call.tool in ("mail.send", "payments.transfer") and st.get("untrusted_seen") \

@@ -144,6 +144,7 @@ class Kavach:
                   "repeat": self._action_key(call) in ctx.actions_run,
                   "task_rows": ctx.rows_changed + (effect.magnitude.get("rows_affected", 0) if effect else 0),
                   "task_money": self._money_after(ctx, call, effect),
+                  "task_outbound_chars": ctx.outbound_chars + self._outbound_chars(call, effect),
                   "outputs_seen": task.prov.n_outputs,
                   "untrusted_details": task.prov.untrusted_details(
                       f"{call.args.get('subject', '')} {call.args.get('body', '')}") if call.tool == "mail.send" else []}
@@ -217,9 +218,17 @@ class Kavach:
             totals[money[0]] = totals.get(money[0], 0.0) + money[1]
         return totals
 
+    @staticmethod
+    def _outbound_chars(call: ToolCall, effect: Effect | None) -> int:
+        """Characters an email carries to outside addresses (0 for internal mail and other tools)."""
+        if call.tool != "mail.send" or effect is None or not effect.magnitude.get("external_recipients"):
+            return 0
+        return len(f"{call.args.get('subject', '')} {call.args.get('body', '')}")
+
     def _count_action(self, ctx: TaskContext, call: ToolCall, effect: Effect | None) -> None:
         ctx.actions_run.add(self._action_key(call))
         ctx.money_moved = self._money_after(ctx, call, effect)
+        ctx.outbound_chars += self._outbound_chars(call, effect)
         if call.tool == "crm.execute" and effect is not None:
             ctx.rows_changed += effect.magnitude.get("rows_affected", 0) or 0
 
@@ -230,6 +239,7 @@ class Kavach:
             return
         ctx, call, effect = entry
         ctx.actions_run.discard(self._action_key(call))
+        ctx.outbound_chars = max(0, ctx.outbound_chars - self._outbound_chars(call, effect))
         money = self._money_of(call, effect)
         if money:
             ctx.money_moved[money[0]] = max(0.0, ctx.money_moved.get(money[0], 0.0) - money[1])
