@@ -95,6 +95,25 @@ def caller(authorization: str | None = Header(None)) -> dict | None:
         raise HTTPException(401, f"invalid token: {e}")
 
 
+def _tenant_of(who: dict | None) -> str:
+    return (who or {}).get("tenant", "default")
+
+
+def _sees(who: dict | None, tenant: str | None) -> bool:
+    """F10 tenant isolation: with auth on, a caller sees only its own tenant (admin sees all); dev mode sees all."""
+    return who is None or who.get("role") == "admin" or (tenant or "default") == _tenant_of(who)
+
+
+def _task_tenant(task_id: str | None) -> str | None:
+    t = gw.tasks.get(task_id) if task_id else None
+    return t.ctx.principal.tenant if t else None
+
+
+def _rec_tenant(rec: dict) -> str | None:
+    b = rec["body"]
+    return b.get("tenant") or _task_tenant(b.get("task_id"))
+
+
 def _identity(who: dict | None, user: str, role: str) -> tuple[str, str, bool]:
     return (who["sub"], who["role"], True) if who else (user, role, False)
 
@@ -142,7 +161,7 @@ def check(body: CheckIn, who: dict | None = Depends(caller)):
         tid, seen = _sessions[key]
         gw.add_request(tid, body.user_request)
     else:
-        tid, _ = gw.start_task(user, role, body.user_request, body.env, authenticated=authed)
+        tid, _ = gw.start_task(user, role, body.user_request, body.env, authenticated=authed, tenant=_tenant_of(who))
         seen: set[str] = set()
         if key:
             _sessions[key] = (tid, seen)
@@ -163,7 +182,8 @@ def check(body: CheckIn, who: dict | None = Depends(caller)):
 @app.post("/api/v1/plan")
 def plan(body: PlanIn, who: dict | None = Depends(caller)):
     user, role, authed = _identity(who, body.user_id, body.role)
-    _, report = gw.start_task(user, role, body.user_request, plan=body.plan, authenticated=authed)
+    _, report = gw.start_task(user, role, body.user_request, plan=body.plan, authenticated=authed,
+                              tenant=_tenant_of(who))
     return report
 
 
@@ -258,17 +278,17 @@ def policy_replay(body: ReplayIn, who: dict | None = Depends(caller)):
     return replay(gw, draft, body.task_ids)
 
 
-@app.get("/api/tasks", dependencies=[Depends(caller)])
-def tasks(limit: int = 50):
+@app.get("/api/tasks")
+def tasks(limit: int = 50, who: dict | None = Depends(caller)):
     """Recent sessions (newest first) with their Rule-of-Two legs, for a session list in a UI."""
-    ids = list(gw.tasks)[-max(1, limit):][::-1]
+    ids = [t for t in gw.tasks if _sees(who, _task_tenant(t))][-max(1, limit):][::-1]
     return [{k: v for k, v in gw.task_summary(t).items() if k != "receipts"} for t in ids]
 
 
-@app.get("/api/tasks/{task_id}", dependencies=[Depends(caller)])
-def task(task_id: str):
+@app.get("/api/tasks/{task_id}")
+def task(task_id: str, who: dict | None = Depends(caller)):
     """One session: request, principal, Rule-of-Two meter, harm budget, denials, hostile sources, every receipt."""
-    if task_id not in gw.tasks:
+    if task_id not in gw.tasks or not _sees(who, _task_tenant(task_id)):
         raise HTTPException(404, f"no task {task_id}")
     return gw.task_summary(task_id)
 
@@ -282,9 +302,9 @@ def fatigue_game(seed: int = 7):
     return game(seed)
 
 
-@app.get("/api/hitl", dependencies=[Depends(caller)])
-def hitl_pending():
-    return gw.hitl.pending()
+@app.get("/api/hitl")
+def hitl_pending(who: dict | None = Depends(caller)):
+    return [i for i in gw.hitl.pending() if _sees(who, _task_tenant(i["task_id"]))]
 
 
 @app.get("/api/hitl/stats", dependencies=[Depends(caller)])
@@ -295,6 +315,9 @@ def hitl_stats():
 
 @app.post("/api/hitl/{hid}")
 def hitl_resolve(hid: str, body: HitlIn, who: dict | None = Depends(caller)):
+    item = gw.hitl.items.get(hid)
+    if item is not None and not _sees(who, _task_tenant(item["task_id"])):
+        raise HTTPException(403, "this approval belongs to another tenant")
     approver = who["sub"] if who else body.approver     # four-eyes needs a verified approver identity
     role = who["role"] if who else body.approver_role   # and quorum a verified role (N4)
     try:
@@ -319,12 +342,13 @@ def settle(advance_s: float = 0.0, who: dict | None = Depends(caller)):
     return {"settled": env.settle_due(time.time() + max(0.0, advance_s))}
 
 
-@app.get("/api/receipts", dependencies=[Depends(caller)])
-def receipts(limit: int = 50, after: int | None = None):
-    """The last `limit` receipts, or (for polling UIs) every receipt with seq > `after`, oldest first."""
-    if after is not None:
-        return gw.receipts.items[max(0, after):][:max(1, limit)]
-    return gw.receipts.items[-limit:]
+@app.get("/api/receipts")
+def receipts(limit: int = 50, after: int | None = None, who: dict | None = Depends(caller)):
+    """The last `limit` receipts, or (for polling UIs) every receipt with seq > `after`, oldest first. With auth on, a
+    caller sees its own tenant's receipts (verify the whole chain with /api/receipts/export as admin)."""
+    items = gw.receipts.items[max(0, after):] if after is not None else gw.receipts.items
+    mine = [r for r in items if _sees(who, _rec_tenant(r))]
+    return mine[:max(1, limit)] if after is not None else mine[-limit:]
 
 
 @app.get("/api/events", dependencies=[Depends(caller)])
@@ -351,10 +375,12 @@ def verify():
     return gw.receipts.verify()
 
 
-@app.get("/api/receipts/export", dependencies=[Depends(caller)])
-def receipts_export():
+@app.get("/api/receipts/export")
+def receipts_export(who: dict | None = Depends(caller)):
     """The whole chain as JSONL (a header with the public key, then every receipt), for an auditor:
     python -m kavach.receipts verify export.jsonl --pubkey kavach_signing.pub.pem"""
+    if who is not None and who["role"] != "admin":     # the chain only verifies whole: no per-tenant exports
+        raise HTTPException(403, "the export is the whole chain; ask an admin")
     return StreamingResponse(gw.receipts.export_lines(), media_type="application/x-ndjson",
                              headers={"Content-Disposition": "attachment; filename=kavach-receipts.jsonl"})
 
