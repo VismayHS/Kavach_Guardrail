@@ -59,6 +59,9 @@ class GatewayConfig:
                                              # decides everything else (measures what the model alone catches)
     use_injection_probe: bool = False        # C3: scan untrusted content with a CPU classifier (needs torch)
     use_presidio: bool = False               # E8: Presidio PII detection in free text (needs presidio + spaCy)
+    # E4: the Cedar policies alongside the Python rules. "shadow": both decide, disagreements are receipted.
+    # "enforce": Cedar can add a denial or an approval floor the Python rules missed (it never lifts one).
+    cedar: str = "off"
     # False when KAVACH only decides and something else executes (MCP proxy, AgentOS hook): it can't snapshot or hold
     # what it doesn't run, so it never claims undo is armed, and an approval doesn't run the call in its own world
     local_execution: bool = True
@@ -81,6 +84,10 @@ class Kavach:
             from .injection_probe import InjectionProbe
             probe = InjectionProbe()
         self.probe = probe if probe is not None and probe.enabled else None
+        self.cedar = None
+        if self.cfg.cedar != "off":
+            from .cedar_policy import CedarPolicy
+            self.cedar = CedarPolicy()
         self.pii = None
         if self.cfg.use_presidio:
             from . import pii as _pii
@@ -309,6 +316,7 @@ class Kavach:
             gates.append(GateResult("R7", "DENY", f"Fails when staged: {effect.magnitude['error']}"))
         if not self.cfg.use_rules:                 # ablation: the model alone (structural gates still apply)
             gates = [g for g in gates if g.rule_id in ("R6", "R7")]
+        cedar_note = self._cedar(task_id, call, spec, labels, staged, effect, gates) if self.cedar else None
         floor = floor_of(gates)
 
         # [5] intent + [6] risk
@@ -344,6 +352,8 @@ class Kavach:
         d.explanation, explain_src = self.explainer.explain(dd)
         dd["explanation"], dd["explanation_source"] = d.explanation, explain_src
         dd["policy_version"], dd["risk_model"] = self.policy.version, self.risk.source
+        if cedar_note is not None:
+            dd["cedar"] = cedar_note
 
         if verdict == Verdict.ESCALATE:
             # the tool's own reversibility: a hold doesn't make a EUR 650,000 payment a one-person decision
@@ -361,6 +371,20 @@ class Kavach:
             threading.Thread(target=self._judge_async, daemon=True,
                              args=(ctx.user_request, call, labels, spec, rec["id"], d.hitl_id)).start()
         return d
+
+    def _cedar(self, task_id, call, spec, labels, staged, effect, gates) -> dict:
+        """E4: ask the Cedar policies too. Shadow: record whether they agree. Enforce: add what Cedar forbids and
+        the Python rules didn't (so Cedar can only make a decision stricter)."""
+        from .cedar_policy import agrees, facts
+        cd = self.cedar.decide(facts(self, task_id, call, spec, labels, staged, effect))
+        note = {"floor": cd["verdict_floor"], "rules": [f"{r}:{o}" for r, o in cd["rules"]], "agrees": agrees(gates, cd)}
+        if self.cfg.cedar == "enforce":
+            have = {(g.rule_id, g.outcome) for g in gates}
+            for r, o in cd["rules"]:
+                if (r, o) not in have:
+                    gates.append(GateResult(r, o, f"Cedar policy {r} ({'forbids' if o == 'DENY' else 'needs approval for'}"
+                                                  " this call).", {"source": "cedar"}))
+        return note
 
     def _judge_note(self, request: str, call: ToolCall, labels: dict, spec) -> dict:
         """The Qualcomm judge's view of an escalated call, for the reviewer. It never changes the verdict here."""
