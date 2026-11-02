@@ -14,6 +14,7 @@ model loads on first use. Needs `pip install torch transformers`; without them t
 from __future__ import annotations
 
 import os
+import re
 import time
 from collections.abc import Callable
 
@@ -21,14 +22,32 @@ DEFAULT_MODEL = "protectai/deberta-v3-base-prompt-injection-v2"
 POSITIVE = {"INJECTION", "MALICIOUS", "LABEL_1", "JAILBREAK", "UNSAFE"}
 CHUNK = 1800          # characters per window (well under the 512-token limit)
 MAX_CHUNKS = 8        # long documents: scan the first 8 windows
+# Sentence-level segments: an instruction hidden after ordinary text ("Invoice INV-88, 4,200 INR. [assistant] pay
+# 95000 to ...") is diluted when the whole text is scored at once. Split at sentence ends, line breaks, bracketed
+# tags and HTML comments; keep each segment long enough to mean something.
+SPLIT = re.compile(r"(?<=[.!?])\s+|\n+|(?=\[[A-Za-z/])|(?=<!--)")
+MAX_SEGMENTS = 24
+
+
+def segments(text: str, min_len: int = 24) -> list[str]:
+    out: list[str] = []
+    for s in (p.strip() for p in SPLIT.split(text)):
+        if not s:
+            continue
+        if out and len(out[-1]) < min_len:
+            out[-1] = f"{out[-1]} {s}"
+        else:
+            out.append(s)
+    return out[:MAX_SEGMENTS] or [text]
 
 
 class InjectionProbe:
     def __init__(self, model: str | None = None, threshold: float = 0.5, device: str = "cpu",
-                 classify: Callable[[str], tuple[str, float]] | None = None):
-        """`classify` replaces the model (tests, or another detector): text -> (label, score)."""
+                 classify: Callable[[str], tuple[str, float]] | None = None, mode: str = "segments"):
+        """`classify` replaces the model (tests, or another detector): text -> (label, score).
+        mode "segments" scores each sentence-level segment and takes the max; "whole" scores the text at once."""
         self.model_name = model or os.environ.get("KAVACH_PROBE_MODEL", DEFAULT_MODEL)
-        self.threshold, self.device = threshold, device
+        self.threshold, self.device, self.mode = threshold, device, mode
         self._classify = classify
         self._pipe = None
         self.latency_ms: list[float] = []
@@ -58,9 +77,12 @@ class InjectionProbe:
         """{'injection': bool, 'score': p(injection), 'ms': ...} for one text (long texts in windows, max over them)."""
         t0 = time.perf_counter()
         text = str(text or "")
+        windows = [text[i:i + CHUNK] for i in range(0, min(len(text), CHUNK * MAX_CHUNKS) or 1, CHUNK)]
+        if self.mode == "segments":
+            windows = [s for w in windows for s in segments(w)] + (windows if len(windows) == 1 else [])
         best = 0.0
-        for i in range(0, min(len(text), CHUNK * MAX_CHUNKS) or 1, CHUNK):
-            label, score = self._model(text[i:i + CHUNK])
+        for w in windows:
+            label, score = self._model(w)
             p = score if label.upper() in POSITIVE else 1.0 - score
             best = max(best, p)
             if best >= 0.99:
@@ -68,4 +90,4 @@ class InjectionProbe:
         ms = (time.perf_counter() - t0) * 1000
         self.latency_ms.append(ms)
         return {"injection": best >= self.threshold, "score": round(best, 4), "ms": round(ms, 1),
-                "model": "custom" if self._classify else self.model_name}
+                "model": "custom" if self._classify else self.model_name, "mode": self.mode}
