@@ -224,8 +224,12 @@ def demo_claude():
 @check("demo: Prometheus, Grafana, alerts")
 def demo_observability():
     import json
-    t = json.loads(_get("http://127.0.0.1:9090/api/v1/targets")[2])["data"]["activeTargets"]
-    up = [x["labels"].get("where") for x in t if x["health"] == "up"]
+    for _ in range(8):                  # a KAVACH that just started is marked up at Prometheus's next scrape (5 s)
+        t = json.loads(_get("http://127.0.0.1:9090/api/v1/targets")[2])["data"]["activeTargets"]
+        up = [x["labels"].get("where") for x in t if x["health"] == "up"]
+        if "host" in up:
+            break
+        time.sleep(2)
     rules = sum(len(g["rules"]) for g in json.loads(_get("http://127.0.0.1:9090/api/v1/rules")[2])["data"]["groups"])
     g = json.loads(_get("http://127.0.0.1:3000/api/health")[2])
     return "host" in up, f"KAVACH scraped: {up or 'none'}; {rules} alert rules; Grafana {g.get('database')}"

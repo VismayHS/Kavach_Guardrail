@@ -181,7 +181,7 @@ switch. The email left waiting from before the crash never leaves (`PAUSE OK`).
 |---|---|
 | Claude refuses or does something else | Say what it did. Show the SCRIPTED button for that story; for the invoice, `scripts/demo_replay.py`. |
 | `claude` not signed in / no network | Use the Live demo buttons (SCRIPTED) for all three stories. They need no model. |
-| QUALCOMM AI OFF | The demo still works: the judge's note is missing from the approval card. `.env` missing or the network is down. Decisions don't change. |
+| QUALCOMM AI OFF, or preflight fails "Qualcomm endpoint warm-up" | Run preflight again (the endpoint sometimes times out once). If it persists, the demo still works: the judge's note is missing from the approval card. `.env` missing or the network is down. Decisions don't change. |
 | Port 8000 busy at `demo_up.sh` | `scripts/demo_reset.sh` stops an earlier KAVACH. The compose KAVACH is stopped automatically. |
 | Inbox panel says "Can't reach Mailpit" | `docker compose up -d mailpit` (or `brew install mailpit`). Then reload the console. |
 | Top bar says CHAIN BROKEN | The database was edited or the checkpoint removed. `/readyz` says which (`chain_reason`). For a clean demo: `scripts/demo_reset.sh` then `scripts/demo_up.sh`. Older databases are adopted automatically. |
