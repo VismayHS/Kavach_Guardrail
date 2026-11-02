@@ -68,6 +68,10 @@ class GatewayConfig:
     # False when KAVACH only decides and something else executes (MCP proxy, AgentOS hook): it can't snapshot or hold
     # what it doesn't run, so it never claims undo is armed, and an approval doesn't run the call in its own world
     local_execution: bool = True
+    # E11 conformal risk control: with a value (e.g. 0.05), the model auto-allows an action that can lose something
+    # only if p_hi is also below the conformal cutoff for that alpha, so at most alpha of unsafe actions that pass
+    # the rules are auto-allowed (finite-sample, under exchangeability with the calibration split). None = off.
+    conformal_alpha: float | None = None
 
 
 @dataclass
@@ -541,6 +545,12 @@ class Kavach:
             return Verdict.ESCALATE, (f"Task harm budget exceeded ({root_spent + risk.euh:.3f} > "
                                       f"{self.cfg.harm_budget}); possible split attack."), None
         if risk.p_hi < risk.tau:
+            lam = self.risk.conformal_lambda(self.cfg.conformal_alpha) \
+                if self.cfg.conformal_alpha and risk.tau < 1.0 else None
+            if lam is not None and risk.p_hi >= lam:
+                return Verdict.ESCALATE, (f"Conformal cap: p(harm) upper bound {risk.p_hi:.3f} is at or above "
+                                          f"{lam:.3f}, the cutoff that keeps auto-allowed unsafe actions at or below "
+                                          f"{self.cfg.conformal_alpha:.0%}; a person decides."), None
             return self._allow(spec, effect, f"p(harm) upper bound {risk.p_hi:.2f} < tau {risk.tau:.3f}.")
         if risk.p_lo >= risk.tau and risk.p_harm >= 0.5:
             # only deterministic rules may block outright; a confident model verdict goes to a human
