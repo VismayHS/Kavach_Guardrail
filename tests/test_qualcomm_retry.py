@@ -40,3 +40,17 @@ def test_client_errors_are_not_retried(monkeypatch):
     with pytest.raises(httpx.HTTPStatusError):
         c.chat_text([{"role": "user", "content": "hi"}])
     assert slept == []
+
+
+def test_a_hung_connection_is_retried_at_once(monkeypatch):
+    seq, slept = [httpx.ConnectTimeout("hung"), Resp(200)], []
+
+    def post(*a, **k):
+        x = seq.pop(0)
+        if isinstance(x, Exception):
+            raise x
+        return x
+    monkeypatch.setattr(qualcomm.httpx, "post", post)
+    monkeypatch.setattr(qualcomm.time, "sleep", lambda s: slept.append(s))
+    c = qualcomm.QualcommCloudAI(endpoint="http://x", api_key="k", max_wait_s=30)
+    assert c.chat_text([{"role": "user", "content": "hi"}]) == "OK" and slept and slept[0] < 2.1

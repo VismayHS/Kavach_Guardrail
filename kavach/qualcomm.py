@@ -93,9 +93,14 @@ class QualcommCloudAI:
         while True:
             t0 = time.perf_counter()
             try:
-                r = httpx.post(f"{self.endpoint}/{path}", json=body, timeout=self.timeout,
+                # connecting gets its own short limit: the service sometimes hangs at connect, and a fresh
+                # connection is cheap, while the full timeout is for the model writing a long answer
+                r = httpx.post(f"{self.endpoint}/{path}", json=body,
+                               timeout=httpx.Timeout(self.timeout, connect=min(10.0, self.timeout)),
                                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json",
                                         "User-Agent": "kavach-guardrail/0.1"})
+            except (httpx.ConnectTimeout, httpx.ConnectError) as e:
+                err, wait = e, 0.5                           # never connected: try again almost at once
             except (httpx.TimeoutException, httpx.TransportError) as e:
                 err, wait = e, min(30.0, 2.0 ** attempt)
             else:
