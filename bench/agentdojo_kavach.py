@@ -36,6 +36,7 @@ from agentdojo.agent_pipeline.agent_pipeline import load_system_message  # noqa:
 from agentdojo.agent_pipeline.base_pipeline_element import BasePipelineElement  # noqa: E402
 from agentdojo.agent_pipeline.tool_execution import is_string_list, tool_result_to_str  # noqa: E402
 from agentdojo.functions_runtime import EmptyEnv, Env, FunctionCall, FunctionsRuntime  # noqa: E402
+from agentdojo.logging import Logger  # noqa: E402
 from agentdojo.models import MODEL_NAMES  # noqa: E402
 from agentdojo.types import (ChatAssistantMessage, ChatMessage, ChatToolResultMessage,  # noqa: E402
                              get_text_content_as_str, text_content_block_from_string)
@@ -305,6 +306,21 @@ def make_pipeline(suite, defense: str, llm: QualcommLLM) -> tuple[AgentPipeline,
 
 
 # ------------------------------------------------------------------ running
+class QuietLogger(Logger):
+    """AgentDojo's trace logger writes each run's JSON log under `logdir` (which makes runs resumable); this
+    delegate prints nothing, unlike AgentDojo's console logger."""
+
+    def __init__(self, logdir: Path):
+        logdir.mkdir(parents=True, exist_ok=True)
+        self.logdir, self.messages = str(logdir), []
+
+    def log(self, messages=None, *args, **kwargs):
+        self.messages = messages or []
+
+    def log_error(self, *args, **kwargs):
+        pass
+
+
 def _suite(name: str):
     from agentdojo.task_suite.load_suites import get_suite
     return get_suite(BENCHMARK_VERSION, name)
@@ -327,8 +343,9 @@ def smoke(n: int = 5, suite_name: str = "banking") -> dict:
     pipeline, _ = make_pipeline(suite, "none", llm)
     tasks = list(suite.user_tasks)[:n]
     t0 = time.time()
-    res = benchmark_suite_without_injections(pipeline, suite, logdir=RUNS / "smoke", force_rerun=True,
-                                             user_tasks=tasks, benchmark_version=BENCHMARK_VERSION)
+    with QuietLogger(RUNS / "smoke"):
+        res = benchmark_suite_without_injections(pipeline, suite, logdir=RUNS / "smoke", force_rerun=True,
+                                                 user_tasks=tasks, benchmark_version=BENCHMARK_VERSION)
     out = {"suite": suite_name, "model": llm.model, "tasks": tasks, "seconds": round(time.time() - t0, 1),
            "replies": dict(llm.replies), "llm_calls": sum(llm.replies.values()),
            "llm_latency_p50_ms": sorted(llm.latency_ms)[len(llm.latency_ms) // 2] if llm.latency_ms else None,
@@ -366,12 +383,13 @@ def run(defense: str, suite_name: str = "banking", attack: str = "important_inst
     pipeline, kav = make_pipeline(suite, defense, llm)
     logdir = RUNS / suite_name
     t0 = time.time()
-    benign = benchmark_suite_without_injections(pipeline, suite, logdir=logdir, force_rerun=force,
-                                                user_tasks=user_tasks, benchmark_version=BENCHMARK_VERSION)
-    attacked = benchmark_suite_with_injections(pipeline, suite, load_attack(attack, suite, pipeline), logdir=logdir,
-                                               force_rerun=force, user_tasks=user_tasks,
-                                               injection_tasks=injection_tasks, verbose=False,
-                                               benchmark_version=BENCHMARK_VERSION)
+    with QuietLogger(logdir):
+        benign = benchmark_suite_without_injections(pipeline, suite, logdir=logdir, force_rerun=force,
+                                                    user_tasks=user_tasks, benchmark_version=BENCHMARK_VERSION)
+        attacked = benchmark_suite_with_injections(pipeline, suite, load_attack(attack, suite, pipeline),
+                                                   logdir=logdir, force_rerun=force, user_tasks=user_tasks,
+                                                   injection_tasks=injection_tasks, verbose=False,
+                                                   benchmark_version=BENCHMARK_VERSION)
     b, a = _summary(benign), _summary(attacked)
     out = {"suite": suite_name, "defense": defense, "attack": attack, "model": llm.model,
            "agentdojo": BENCHMARK_VERSION, "seconds": round(time.time() - t0, 1),
