@@ -174,6 +174,41 @@ def demo(name: str, reset: bool = True):
                       "waiting": sum(h["status"] == "held" for h in env.holds)}}
 
 
+class KillIn(BaseModel):
+    scope: str = "global"            # global | user | role | task
+    target: str | None = None
+    reason: str = ""
+
+
+def _operator(who: dict | None) -> str:
+    """Pausing and resuming agents is for admins (when auth is on)."""
+    if who is not None and who["role"] != "admin":
+        raise HTTPException(403, "only an admin can pause or resume agents")
+    return who["sub"] if who else "operator"
+
+
+@app.post("/api/kill")
+def kill(body: KillIn, who: dict | None = Depends(caller)):
+    """Kill switch: pause everything, one user, one role or one task, now."""
+    try:
+        return gw.kill(body.scope, body.target, _operator(who), body.reason)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/api/kill", dependencies=[Depends(caller)])
+def kills():
+    return list(gw.kills.values())
+
+
+@app.delete("/api/kill/{kill_id}")
+def resume(kill_id: str, who: dict | None = Depends(caller)):
+    try:
+        return gw.resume(kill_id, _operator(who))
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+
+
 @app.get("/api/tasks", dependencies=[Depends(caller)])
 def tasks(limit: int = 50):
     """Recent sessions (newest first) with their Rule-of-Two legs, for a session list in a UI."""
