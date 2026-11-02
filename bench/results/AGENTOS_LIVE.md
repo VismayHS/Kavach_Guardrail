@@ -3,7 +3,7 @@
 Run on 2 Nov 2026 against **Topaz AgentOS 1.0.0** (Infosys Agentic Foundry, commit `49fe687`), installed locally with its sample tenant `company` and agent `enterprise_agent`, Redis, and KAVACH (Qualcomm judge on). KAVACH is wired in as two blocking PreToolUse hooks that run before the tenant's own hooks (`integrations/agentos_hook.py`), and each tool call goes through AgentOS's own governance code (`govern_tool_call` → `HookRunner`), with the shell commands from AgentOS's security testing guide:
 
 ```bash
-<agentos>/venv/bin/python integrations/agentos_live_test.py <agentos>/Topaz_AgentOS http://127.0.0.1:8010
+<agentos>/venv/bin/python integrations/agentos_live_check.py <agentos>/Topaz_AgentOS http://127.0.0.1:8010
 ```
 
 | Tool call (shell → their finance API) | KAVACH | AgentOS outcome |

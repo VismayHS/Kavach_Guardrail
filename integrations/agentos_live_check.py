@@ -4,7 +4,7 @@
 Needs an AgentOS checkout with its venv, kavach_hook.py copied into the tenant's shared/hooks and the hooks added
 to the agent's config.yaml (see integrations/agentos_hook.py), Redis, and KAVACH running. Run with AgentOS's python:
 
-    <agentos>/venv/bin/python integrations/agentos_live_test.py <agentos>/Topaz_AgentOS [http://127.0.0.1:8010]
+    <agentos>/venv/bin/python integrations/agentos_live_check.py <agentos>/Topaz_AgentOS [http://127.0.0.1:8010]
 
 Only the agent object is a stand-in (the few attributes govern_tool_call reads); the hook runner, hook config,
 their own hooks and the governance logic are AgentOS's. Verified 2 Nov 2026 on Topaz AgentOS 1.0.0 (49fe687).

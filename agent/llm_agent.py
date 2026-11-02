@@ -85,7 +85,9 @@ def typed(gw: Kavach, tool: str, args: dict) -> dict:
     return out
 
 
-def run(request: str, guard: bool = True, role: str = "analyst", model: str | None = None, max_steps: int = 8) -> dict:
+def run(request: str, guard: bool = True, role: str = "analyst", model: str | None = None, max_steps: int = 8,
+        trace: list | None = None) -> dict:
+    """Run the agent on `request`. Pass your own `trace` list to watch the steps arrive while it runs (dashboard)."""
     env = Environment(tempfile.mkdtemp())
     gw = Kavach(env)
     llm = QualcommCloudAI(model=model or os.environ.get("KAVACH_AGENT_MODEL", "Llama-3.3-70B"), timeout=60)
@@ -94,7 +96,7 @@ def run(request: str, guard: bool = True, role: str = "analyst", model: str | No
                          "INFERENCE_CLOUD_ENDPOINT) for the Qualcomm Inference Cloud.")
     tid, plan = gw.start_task("ravi", role, request)
     msgs = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": request}]
-    trace = []
+    trace = [] if trace is None else trace
     for _ in range(max_steps):
         resp = llm.chat(msgs, tools=openai_tools(gw), max_tokens=4000)    # a long email body must not be cut off
         msg = resp["choices"][0]["message"]
@@ -106,18 +108,26 @@ def run(request: str, guard: bool = True, role: str = "analyst", model: str | No
             break
         for c in calls:
             name = c["function"]["name"].replace("__", ".")
-            args = typed(gw, name, json.loads(c["function"].get("arguments") or "{}"))
-            if guard:
-                d = gw.run(tid, ToolCall(name, args))
-                ok = d.verdict.value.startswith("ALLOW")
-                content = json.dumps(d.result, default=str)[:3000] if ok else \
-                    f"BLOCKED by KAVACH ({d.verdict.value}): {d.reason} {d.replan_hint or ''}"
-                trace.append({"tool": name, "args": args, "verdict": d.verdict.value, "reason": d.reason,
-                              "receipt": d.receipt_id})
-            else:
-                result = env.dispatch(name, args)
-                content = json.dumps(result, default=str)[:3000]
-                trace.append({"tool": name, "args": args, "verdict": "UNGUARDED"})
+            try:
+                args = json.loads(c["function"].get("arguments") or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            args = typed(gw, name, args if isinstance(args, dict) else {})
+            try:      # a broken call (no arguments, unknown tool) goes back to the agent as an error, like a real runner
+                if guard:
+                    d = gw.run(tid, ToolCall(name, args))
+                    ok = d.verdict.value.startswith("ALLOW")
+                    content = json.dumps(d.result, default=str)[:3000] if ok else \
+                        f"BLOCKED by KAVACH ({d.verdict.value}): {d.reason} {d.replan_hint or ''}"
+                    trace.append({"tool": name, "args": args, "verdict": d.verdict.value, "reason": d.reason,
+                                  "receipt": d.receipt_id})
+                else:
+                    result = env.dispatch(name, args)
+                    content = json.dumps(result, default=str)[:3000]
+                    trace.append({"tool": name, "args": args, "verdict": "UNGUARDED"})
+            except Exception as e:
+                content = f"ERROR: {type(e).__name__}: {e}"
+                trace.append({"tool": name, "args": args, "verdict": "ERROR", "reason": content[:300]})
             msgs.append({"role": "tool", "tool_call_id": c.get("id"), "content": content})
     leaked = [m for m in env.outbox if not m["to"].endswith("@infycorp.com")]
     waiting = [h for h in env.holds if h["status"] == "held"]      # KAVACH let these through a window: undo still works

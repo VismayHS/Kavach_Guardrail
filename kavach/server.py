@@ -13,6 +13,8 @@ Endpoints
   GET  /api/receipts            receipt chain;      GET /api/receipts/verify
   GET  /api/metrics             latest benchmark results
   GET  /api/autonomy            changes that ran without a human this session, priced at AgentOS's $35-75 per exception
+  POST /api/agent/run           plain-English request -> a real LLM agent runs it twice, without and with KAVACH
+  GET  /api/agent/run/{id}      steps so far for both runs (poll until both are done)
 """
 from __future__ import annotations
 
@@ -20,7 +22,9 @@ import hashlib
 import json
 import os
 import tempfile
+import threading
 import time
+import uuid
 from pathlib import Path
 
 import jwt
@@ -73,6 +77,11 @@ class CheckIn(BaseModel):
     tool_description: str = ""      # for a tool KAVACH doesn't know: its MCP description, schema and annotations
     tool_schema: dict | None = None
     tool_annotations: dict | None = None
+
+
+class AgentRunIn(BaseModel):
+    request: str
+    role: str = "analyst"
 
 
 class PlanIn(BaseModel):
@@ -213,6 +222,61 @@ def state():
             "waiting": [h for h in env.holds if h["status"] == "held"], "parked": parked, "drafts": env.drafts[-5:],
             "risk_model": gw.risk.source, "c_block": gw.cfg.c_block, "policy": gw.policy.version,
             "qualcomm_llm": gw.judge.llm.enabled, "judge_models": list(gw.judge.llm.picked or [gw.judge.llm.model])}
+
+
+# ---------------------------------------------------------------- type a request: a real agent, without and with KAVACH
+_agent_runs: dict[str, dict] = {}
+_agent_slots = threading.Semaphore(2)        # one request = two runs side by side; a second request waits its turn
+AGENT_ROLES = ("analyst", "support", "finance", "ap_supervisor")
+
+
+def _agent_worker(slot: dict, request: str, guard: bool, role: str) -> None:
+    from agent import llm_agent
+    with _agent_slots:
+        try:
+            out = llm_agent.run(request, guard=guard, role=role, trace=slot["trace"])
+            slot["outcome"] = {"emails_out": [{"to": m["to"], "subject": m["subject"], "chars": len(m["body"])}
+                                              for m in out["external_emails_sent"]],
+                               "payments": out["payments"], "waiting": len(out["waiting_held_or_queued"]),
+                               "model": out["model"]}
+        except (Exception, SystemExit) as e:          # SystemExit: run() exits when the model isn't configured
+            slot["error"] = f"{type(e).__name__}: {e}"
+        finally:
+            slot["done"] = True
+
+
+@app.post("/api/agent/run")
+def agent_run(body: AgentRunIn, who: dict | None = Depends(caller)):
+    """A real LLM agent (Qualcomm Cloud AI) works on any plain-English request, once without KAVACH and once with it,
+    each on its own fresh copy of the demo company. Needs the Qualcomm key in the server's environment."""
+    from agent import llm_agent
+    if not llm_agent.QualcommCloudAI().enabled:
+        raise HTTPException(503, "No Qualcomm key: start the server with --env-file pointing at a file with "
+                                 "INFERENCE_CLOUD_API_KEY and INFERENCE_CLOUD_ENDPOINT.")
+    request = body.request.strip()[:2000]
+    if not request:
+        raise HTTPException(400, "Type a request first.")
+    _, role, _ = _identity(who, "web-user", body.role if body.role in AGENT_ROLES else "analyst")
+    rid = uuid.uuid4().hex[:10]
+    runs = {"request": request, "role": role, "started": time.time(),
+            "unguarded": {"trace": [], "done": False}, "guarded": {"trace": [], "done": False}}
+    while len(_agent_runs) >= 20:                     # keep the last 20 requests
+        _agent_runs.pop(next(iter(_agent_runs)))
+    _agent_runs[rid] = runs
+    for guard in (False, True):
+        threading.Thread(target=_agent_worker, args=(runs["guarded" if guard else "unguarded"], request, guard, role),
+                         daemon=True).start()
+    return {"run_id": rid, "role": role}
+
+
+@app.get("/api/agent/run/{rid}", dependencies=[Depends(caller)])
+def agent_run_status(rid: str):
+    runs = _agent_runs.get(rid)
+    if runs is None:
+        raise HTTPException(404, "unknown run")
+    view = lambda r: {**{k: v for k, v in r.items() if k != "trace"}, "trace": list(r["trace"])}  # noqa: E731
+    return {"request": runs["request"], "role": runs["role"], "seconds": round(time.time() - runs["started"]),
+            "unguarded": view(runs["unguarded"]), "guarded": view(runs["guarded"])}
 
 
 @app.get("/api/autonomy", dependencies=[Depends(caller)])

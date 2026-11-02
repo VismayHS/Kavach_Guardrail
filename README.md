@@ -15,7 +15,7 @@ It then **allows** the call, **allows it with undo armed**, **escalates it to a 
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                       # 101 tests
+python -m pytest -q                       # 102 tests
 python -m bench.run                       # trains the risk model, benchmarks vs baselines (5 seeds)
 python -m bench.lofo                      # each family judged by a model trained without it
 python -m bench.holdout                   # families written after the rules, never trained on
@@ -33,6 +33,8 @@ python -m agent.llm_agent "Summarise my unread emails."               # live age
 python -m agent.llm_agent "Summarise my unread emails." --no-guard    # same agent, unguarded
 python -m bench.judge_eval                                    # judge on vs off: verdict changes and latency
 ```
+
+With the key set, the dashboard's **Type any request** box takes plain English: a real agent (Llama-3.3-70B on Qualcomm Cloud AI) works on it twice, without and with KAVACH, each on a fresh copy of the demo company, and both columns fill in live (`POST /api/agent/run`). About a minute per request; models don't behave the same every time.
 
 The intent judge runs in two stages: the smallest model in `GET /models` triages every state-changing call (told to flag when in doubt), and only flagged calls go to the largest. Verdicts are cached. `KAVACH_JUDGE_MODEL` / `KAVACH_JUDGE_STRONG_MODEL` override the choice. The judge can only lower a call's alignment, never lift a rule. It asks for plain-text answers (`FLAG`/`PASS`, `ALIGNMENT:`/`REASON:`) because the Inference Cloud turns JSON answers into an empty tool call; thinking models (DeepSeek-R1, QwQ) are never picked.
 
@@ -69,7 +71,7 @@ deliverables/  KAVACH_Solution_Deck.pptx (filled Hack-AI-Thon template + appendi
 
 ## Plugging into Infosys Topaz AgentOS
 
-`integrations/agentos_hook.py` runs KAVACH as AgentOS `PostToolUse` / `PreToolUse` hooks: DENY blocks the call, ESCALATE becomes an AgentOS approval request carrying KAVACH's explanation, everything else runs. Copy it into the tenant tree (`enterprise_root/tenants/<tenant>/shared/hooks/kavach_hook.py`), set `mode: blocking` and `fail_policy: closed`, and pass `--role` / `--url` as arguments (AgentOS passes hooks only `IAF_*` variables). The config snippet is in the file header. Verified on 2 Nov 2026 against Topaz AgentOS 1.0.0 through its own governance code: [`bench/results/AGENTOS_LIVE.md`](bench/results/AGENTOS_LIVE.md) (`integrations/agentos_live_test.py`).
+`integrations/agentos_hook.py` runs KAVACH as AgentOS `PostToolUse` / `PreToolUse` hooks: DENY blocks the call, ESCALATE becomes an AgentOS approval request carrying KAVACH's explanation, everything else runs. Copy it into the tenant tree (`enterprise_root/tenants/<tenant>/shared/hooks/kavach_hook.py`), set `mode: blocking` and `fail_policy: closed`, and pass `--role` / `--url` as arguments (AgentOS passes hooks only `IAF_*` variables). The config snippet is in the file header. Verified on 2 Nov 2026 against Topaz AgentOS 1.0.0 through its own governance code: [`bench/results/AGENTOS_LIVE.md`](bench/results/AGENTOS_LIVE.md) (`integrations/agentos_live_check.py`).
 
 We read and ran Infosys's own guardrails (PromptGuard, RAI moderation proxy, AgentOS pre-tool gate) on our suite:
 
