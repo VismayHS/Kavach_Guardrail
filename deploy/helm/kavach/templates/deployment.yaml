@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kavach.fullname" . }}
+  labels: {{- include "kavach.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy: {type: Recreate}   # one writer for the receipt chain at a time
+  selector:
+    matchLabels: {{- include "kavach.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "kavach.selector" . | nindent 8 }}
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
+    spec:
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: kavach
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - {name: http, containerPort: 8000}
+          env:
+            - {name: KAVACH_PROFILE, value: {{ .Values.profile | quote }}}
+            - name: KAVACH_AUTH_SECRET
+              valueFrom: {secretKeyRef: {name: {{ include "kavach.secretName" . }}, key: auth-secret, optional: true}}
+            - name: KAVACH_RECEIPT_KEY
+              valueFrom: {secretKeyRef: {name: {{ include "kavach.secretName" . }}, key: receipt-key, optional: true}}
+            {{- if or .Values.secrets.existingSecret .Values.secrets.signingKeyPem }}
+            - {name: KAVACH_SIGNING_KEY, value: /var/run/kavach/signing.pem}
+            {{- end }}
+            - name: INFERENCE_CLOUD_API_KEY
+              valueFrom: {secretKeyRef: {name: {{ include "kavach.secretName" . }}, key: inference-api-key, optional: true}}
+            - name: INFERENCE_CLOUD_ENDPOINT
+              valueFrom: {secretKeyRef: {name: {{ include "kavach.secretName" . }}, key: inference-endpoint, optional: true}}
+            {{- if .Values.persistence.enabled }}
+            - {name: KAVACH_DB_URL, value: "sqlite:////data/kavach.db"}
+            {{- end }}
+            {{- range $k, $v := .Values.env }}
+            - {name: {{ $k }}, value: {{ $v | quote }}}
+            {{- end }}
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            failureThreshold: 30
+            periodSeconds: 2
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            {{- if or .Values.secrets.existingSecret .Values.secrets.signingKeyPem }}
+            - {name: keys, mountPath: /var/run/kavach, readOnly: true}
+            {{- end }}
+            {{- if .Values.persistence.enabled }}
+            - {name: data, mountPath: /data}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if or .Values.secrets.existingSecret .Values.secrets.signingKeyPem }}
+        - name: keys
+          secret:
+            secretName: {{ include "kavach.secretName" . }}
+            items: [{key: signing.pem, path: signing.pem}]
+            defaultMode: 0400
+        {{- end }}
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim: {claimName: {{ include "kavach.fullname" . }}}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

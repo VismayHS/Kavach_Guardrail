@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kavach.fullname" . }}
+  labels: {{- include "kavach.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - {name: http, port: {{ .Values.service.port }}, targetPort: http}
+  selector: {{- include "kavach.selector" . | nindent 4 }}
