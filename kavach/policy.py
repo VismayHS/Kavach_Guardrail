@@ -280,6 +280,14 @@ class PolicyEngine:
             if any(s in p for s in self.cfg["sensitive_paths"]):
                 add("R9", "DENY", f"'{p}' is a credential file; reading it into an agent context is blocked.")
 
+        # R32 raw credentials in the arguments: a key passed through the agent (use {{secret:NAME}} instead)
+        from .secret_broker import raw_credentials
+        creds = raw_credentials(call.args)
+        if creds:
+            add("R32", "DENY", f"The arguments carry a raw credential ({', '.join(creds)}). Keys must never pass "
+                "through an agent: reference it as {{secret:NAME}} and the secrets broker supplies it at execution.",
+                kinds=creds)
+
         # R28 canary records (last, so a provenance rule stays the stated reason and the canary is extra evidence)
         self._canary_rule(call, spec, add)
         return out
