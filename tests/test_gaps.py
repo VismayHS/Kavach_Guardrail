@@ -203,7 +203,8 @@ def test_context_from_an_unknown_tool_counts_as_untrusted(api):
 
 # ---------------------------------------------------------------- intent: whole words, and questions don't authorise
 @pytest.mark.parametrize("request_text", ["What's the update on invoice 1042?",
-                                          "Show me the settlement status of invoice 1042."])
+                                          "Show me the settlement status of invoice 1042.",
+                                          "Has invoice 1042 for john.menon@client4.com been updated?"])
 def test_a_question_does_not_authorise_a_write(gw, request_text):
     tid, _ = gw.start_task("asha", "support", request_text)
     d = gw.check(tid, ToolCall("crm.execute", {"sql": "UPDATE invoices SET status = 'paid' WHERE id = 1042"}))

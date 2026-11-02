@@ -75,8 +75,9 @@ READ_INTENT = re.compile(r"^\s*(what|which|how|when|who|is|are|does|do|can you (
 STATE_CHANGING = {"crm.execute", "mail.send", "files.write", "files.delete", "payments.transfer", "payments.refund",
                   "payment.propose", "payment.release", "vendor.update_bank", "sap.post"}
 # A question asks for information even when it contains an action word: "What's the update on invoice 1042?"
-QUESTION = re.compile(r"^\s*(what|which|when|who|why|where|how|is|are|was|were|does|did|do|has|have)\b[^.!]*\?\s*$",
-                      re.I)
+# A dot inside a token (an address, a decimal) doesn't end the sentence.
+QUESTION = re.compile(r"^\s*(what|which|when|who|why|where|how|is|are|was|were|does|did|do|has|have)\b"
+                      r"(?:[^.!?]|\.(?=\S))*\?\s*$", re.I)
 _FORMS = r"(?:s|es|d|ed|ing|ment|ments|ise|ize|ised|ized|ising|izing|y|ies)?"
 
 
