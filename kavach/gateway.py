@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import threading
 import time
 import uuid
@@ -28,7 +29,7 @@ from .models import (Conf, Decision, Effect, GateResult, Label, Principal, Rever
                      Trust, Verdict)
 from .plan import validate_plan
 from .policy import PolicyEngine, floor_of
-from .provenance import ProvenanceTracker
+from .provenance import URL, ProvenanceTracker, canon_url
 from .receipts import ReceiptLog
 from .risk import RiskModel, featurize
 
@@ -219,8 +220,16 @@ class Kavach:
     def _user_named(self, task_id: str, call: ToolCall) -> bool:
         """The user pointed at exactly what this call read: a file name, URL or id they typed ("pay the bill
         'bill-december-2023.txt'"). Its content is still untrusted; R1 then asks a person instead of refusing."""
-        req = self.tasks[task_id].ctx.user_request.lower()
-        return any(isinstance(v, str) and len(v.strip()) >= 6 and v.strip().lower() in req for v in call.args.values())
+        req = self.tasks[task_id].ctx.user_request
+        low, typed_urls = req.lower(), {canon_url(u) for u in URL.findall(req)}
+        for v in call.args.values():
+            s = v.strip() if isinstance(v, str) else ""
+            if len(s) >= 6 and (s.lower() in low or canon_url(s) in typed_urls):
+                return True
+            # a proper name, as the user wrote it ("it's in Bob's inbox"): short, so it must match a whole word
+            if 3 <= len(s) < 6 and s[:1].isupper() and re.search(rf"(?<![\w-]){re.escape(s)}(?![\w-])", req):
+                return True
+        return False
 
     def _scan_pii(self, task_id: str, tool: str, output) -> None:
         """E8: personal data inside free text (a page, a document) makes the task private, and its traceable

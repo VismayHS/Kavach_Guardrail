@@ -63,7 +63,7 @@ forbid(principal, action, resource) when { context.outbound && context.carries_c
 
 // ---------------------------------------------------------------- approval floors (a person decides)
 @id("R1")
-forbid(principal, action == Action::"auto_execute", resource) when { context.ingress && context.untrusted_control };
+forbid(principal, action == Action::"auto_execute", resource) when { context.ingress && context.refused_control };
 
 @id("R1")
 forbid(principal, action == Action::"auto_execute", resource)

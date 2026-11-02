@@ -156,6 +156,12 @@ class PolicyEngine:
                 elif lab and lab.trust == Trust.UNTRUSTED and spec.effect != "ingress":
                     add("R1", "DENY", f"'{a}' = {call.args.get(a)!r} came from untrusted content "
                         f"({', '.join(lab.sources)}), not from the user.", arg=a, sources=lab.sources)
+                elif lab and lab.trust == Trust.UNTRUSTED and spec.effect == "ingress" and lab.delegated:
+                    # reading what a source the user pointed at links to is part of reading it; what comes back is
+                    # untrusted too, so it can't choose a destination (R1), and R13/R25 still judge the URL itself
+                    add("R1", "PASS", f"Follows a link read from {', '.join(lab.sources)}, which the user pointed at; "
+                        "what it returns is untrusted like everything read.", arg=a, sources=lab.sources,
+                        delegated=True)
                 elif lab and lab.trust == Trust.UNTRUSTED and spec.effect == "ingress":
                     add("R1", "REQUIRE_APPROVAL", f"URL {call.args.get(a)!r} was supplied by untrusted content.",
                         arg=a, sources=lab.sources)
