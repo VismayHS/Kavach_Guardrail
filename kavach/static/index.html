@@ -59,6 +59,12 @@ img{max-width:100%;border-radius:8px;background:#fff}
       <div class="scen" id="scen"></div>
     </div>
     <div class="panel" style="margin-top:16px">
+      <h2>Identity</h2>
+      <div id="who" class="meta">dev mode (no token)</div>
+      <input id="token" placeholder="paste a bearer token (python -m kavach.auth mint user role)" style="width:100%;margin-top:6px;font:12px ui-monospace,monospace;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--code);color:var(--ink)">
+      <div class="btns" style="display:flex;gap:6px;margin-top:6px"><button onclick="setToken()">Use token</button><button onclick="clearToken()">Clear</button></div>
+    </div>
+    <div class="panel" style="margin-top:16px">
       <h2>Check any action (raw JSON)</h2>
       <textarea id="raw">{
   "user_request": "Summarise my unread emails.",
@@ -81,13 +87,29 @@ img{max-width:100%;border-radius:8px;background:#fff}
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-async function api(path, opts) { const r = await fetch(path, opts); return r.json(); }
+// With KAVACH_AUTH_SECRET set, every call carries a bearer token; user and role come from it, never from the page.
+const authHeaders = () => localStorage.kavachToken ? {Authorization: 'Bearer ' + localStorage.kavachToken} : {};
+async function api(path, opts = {}) {
+  const r = await fetch(path, {...opts, headers: {...(opts.headers || {}), ...authHeaders()}});
+  if (r.status === 401) { $('#who').textContent = 'auth is ON: paste a token below'; }
+  return r.json();
+}
 const post = (p, b) => api(p, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(b || {})});
+function showWho() {
+  const t = localStorage.kavachToken;
+  if (!t) { $('#who').textContent = 'dev mode (no token)'; return; }
+  try {  // display only: the server verifies the signature, the page just reads the claims
+    const c = JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    $('#who').innerHTML = `signed in as <b>${esc(c.sub)}</b> · role <b>${esc(c.role)}</b> · expires ${new Date(c.exp * 1000).toLocaleTimeString()}`;
+  } catch (e) { $('#who').textContent = 'token set (could not read it)'; }
+}
+function setToken() { localStorage.kavachToken = $('#token').value.trim(); $('#token').value = ''; showWho(); refresh(); }
+function clearToken() { delete localStorage.kavachToken; showWho(); refresh(); }
 
 async function init() {
   const sc = await api('/api/scenarios');
   $('#scen').innerHTML = sc.map(s => `<button onclick="runScenario('${s.id}')">${esc(s.title)}<small>${esc(s.request)}</small></button>`).join('');
-  refresh(); metrics();
+  showWho(); refresh(); metrics();
 }
 async function refresh() {
   const st = await api('/api/state');
