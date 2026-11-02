@@ -127,6 +127,8 @@ class Kavach:
         self.events: dict[str, list] = {}               # F9: what each task saw and asked, for replay (in memory)
         self.tenant_policies: dict = {}                 # F10: tenant -> its own PolicyEngine (or None: the default)
         self.max_event_tasks = 500
+        self.on_recall: list = []                       # callbacks(receipt, ref) when an undo window is armed (E6)
+        self.store = None                               # E5: kavach/store.py when KAVACH_DB_URL is set
 
     # ------------------------------------------------------------------ task lifecycle
     def start_task(self, user_id: str, role: str, request: str, env: str = "prod",
@@ -644,6 +646,11 @@ class Kavach:
         if not ref:
             return result                               # e.g. {"error": "no invoice"}: nothing is waiting
         self.recall[receipt_id] = (self.env.epoch, ref)
+        for cb in list(self.on_recall):
+            try:
+                cb(receipt_id, ref)
+            except Exception:
+                pass
         problem = self._outcome_mismatch(call, self.registry.get(call.tool), effect, result)
         if problem and self.env.cancel(ref):
             del self.recall[receipt_id]
