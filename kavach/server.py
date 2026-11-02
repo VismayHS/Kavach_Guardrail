@@ -25,6 +25,7 @@ from pathlib import Path
 
 import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -42,6 +43,13 @@ gw = Kavach(env)
 if PROFILE.require_tool_hash:
     gw.policy.cfg["require_tool_hash"] = True
 app = FastAPI(title="KAVACH guardrail", version="0.1")
+# A separate UI (another port or host) may call the API. Dev profile: any localhost port. Prod: only the origins in
+# KAVACH_CORS_ORIGINS (comma-separated). Tokens travel in the Authorization header, so no cookies are allowed.
+_origins = [o.strip() for o in os.environ.get("KAVACH_CORS_ORIGINS", "").split(",") if o.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=_origins,
+                   allow_origin_regex=None if PROFILE.prod else r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+                   allow_methods=["GET", "POST", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type"],
+                   allow_credentials=False)
 _mcp_task: dict[tuple[str, str], str] = {}
 _sessions: dict[tuple[str, str], tuple[str, set[str]]] = {}     # (user, session id) -> (task id, context seen)
 AUTH_SECRET = os.environ.get(auth.SECRET_ENV)     # unset = dev mode (role from the request, receipts say so)
