@@ -78,7 +78,11 @@ services:
 
   mailpit:
     image: axllent/mailpit:v1.27
-    ports: ["8025:8025"]
+    # SMTP too, so scripts/demo_up.sh (which reuses a Mailpit already on 8025) can hand it mail; CORS so the console's
+    # Live demo page can read the inbox straight from Mailpit
+    ports: ["8025:8025", "127.0.0.1:1025:1025"]
+    environment:
+      MP_API_CORS: "127.0.0.1:8000,localhost:8000"
     restart: unless-stopped
 
 volumes:

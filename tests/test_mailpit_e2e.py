@@ -23,14 +23,19 @@ def get(path: str):
 
 
 def mailpit_up() -> bool:
+    """Its API answers *and* its SMTP port takes mail (a Mailpit with only the web port published, as docker compose
+    had it, would make this test fail rather than skip)."""
+    import socket
     try:
         get("/api/v1/info")
+        socket.create_connection(("127.0.0.1", 1025), timeout=2).close()
         return True
     except OSError:
         return False
 
 
-pytestmark = pytest.mark.skipif(not mailpit_up(), reason=f"no Mailpit at {MAILPIT} (scripts/demo_up.sh starts one)")
+pytestmark = pytest.mark.skipif(not mailpit_up(), reason=f"no Mailpit at {MAILPIT} with SMTP on 1025 "
+                                "(scripts/demo_up.sh starts one)")
 
 
 def inbox(subject: str) -> list[dict]:
