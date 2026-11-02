@@ -13,3 +13,12 @@ def test_semantic_cases_are_balanced_and_left_to_meaning():
     out = semantic_eval.main(offline=True)
     assert out["rule_decided"] == []          # every case reaches the judge; a rule that decides one is reported
     assert "on" not in out["cases"][0]        # offline never pretends to have asked a model
+
+
+def test_live_logs_from_the_stand_in_never_land_next_to_real_ones(tmp_path, monkeypatch):
+    from agent import llm_agent
+    monkeypatch.setattr(llm_agent, "LIVE", tmp_path / "results" / "live")
+    out = {"guarded": True, "endpoint_host": "localhost", "messages": [], "trace": []}
+    assert "rehearsal" in llm_agent.save_log(out, "20261102T000000Z").parts
+    real = llm_agent.save_log({**out, "endpoint_host": "aisuite.cirrascale.com"}, "20261102T000000Z")
+    assert real.parent == tmp_path / "results" / "live" and real.name.endswith("-guarded.json")
