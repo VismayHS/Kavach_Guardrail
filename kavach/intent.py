@@ -112,7 +112,7 @@ class IntentJudge:
     CACHE_MAX = 2048
 
     def __init__(self, llm: QualcommCloudAI | None = None, use_llm: bool = True):
-        self.llm = llm or QualcommCloudAI()
+        self.llm = llm or QualcommCloudAI(component="judge")
         self.use_llm = use_llm
         self.cache: dict[str, dict] = {}
 

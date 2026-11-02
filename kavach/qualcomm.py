@@ -73,10 +73,12 @@ ANSWER_CHOICE = {"type": "function", "function": {"name": "answer"}}
 
 class QualcommCloudAI:
     def __init__(self, endpoint: str | None = None, api_key: str | None = None,
-                 model: str | None = None, timeout: float = 8.0, max_wait_s: float = 4.0):
+                 model: str | None = None, timeout: float = 8.0, max_wait_s: float = 4.0, component: str = "model"):
         """max_wait_s: how long, in total, to wait out rate limits (429), server errors and timeouts before giving
         up. Small for the judge and the explainer (they sit on the decision path and can only add strictness, so
-        giving up is safe); long for an agent, which should wait as long as the service asks rather than fail."""
+        giving up is safe); long for an agent, which should wait as long as the service asks rather than fail.
+        component: who is calling (judge, explainer, planner, agent...), for the usage and cost metrics."""
+        self.component = component
         self.max_wait_s = max_wait_s
         self.rate_limited = 0
         self.retries = 0
@@ -140,7 +142,16 @@ class QualcommCloudAI:
             body["tools"] = tools
         if tool_choice is not None:
             body["tool_choice"] = tool_choice
-        return self._post("chat/completions", body)
+        from .usage import METER                   # every call is counted: tokens from the reply's own usage field
+        before = self.retries
+        try:
+            out = self._post("chat/completions", body)
+        except Exception:
+            METER.record(self.component, body["model"], None, ok=False, retries=self.retries - before)
+            raise
+        METER.record(self.component, body["model"], out.get("usage") if isinstance(out, dict) else None, ok=True,
+                     retries=self.retries - before)
+        return out
 
     def chat_text(self, messages: list[dict], **kw) -> str:
         return self.chat(messages, **kw)["choices"][0]["message"].get("content") or ""

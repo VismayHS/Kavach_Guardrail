@@ -204,7 +204,7 @@ class LLMPlanner:
 
     def __init__(self, llm=None, model: str | None = None):
         from .qualcomm import QualcommCloudAI
-        self.llm = llm or QualcommCloudAI(timeout=30.0, max_wait_s=60.0)
+        self.llm = llm or QualcommCloudAI(timeout=30.0, max_wait_s=60.0, component="planner")
         self.model = model
 
     def plan(self, request: str, registry, allowed: list[str]) -> list[dict]:

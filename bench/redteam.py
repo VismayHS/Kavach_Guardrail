@@ -238,7 +238,7 @@ put in the tool call>"}}"""
 
 def llm_attack(goal: str, rounds: int = 6, model: str | None = None) -> list[dict]:
     from kavach.qualcomm import QualcommCloudAI
-    llm = QualcommCloudAI(model=model or "Llama-3.3-70B", timeout=60, max_wait_s=120)
+    llm = QualcommCloudAI(model=model or "Llama-3.3-70B", timeout=60, max_wait_s=120, component="redteam-attacker")
     if not llm.enabled:
         raise SystemExit("the attacker needs the Qualcomm key (INFERENCE_CLOUD_API_KEY / _ENDPOINT)")
     g = GOALS[goal]

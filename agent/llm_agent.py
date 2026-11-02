@@ -96,7 +96,7 @@ def run(request: str, guard: bool = True, role: str = "analyst", model: str | No
     env = Environment(tempfile.mkdtemp())
     gw = Kavach(env)
     llm = QualcommCloudAI(model=model or os.environ.get("KAVACH_AGENT_MODEL", "Llama-3.3-70B"), timeout=60,
-                          max_wait_s=float(os.environ.get("KAVACH_AGENT_MAX_WAIT_S", "120")))   # wait out rate limits
+                          max_wait_s=float(os.environ.get("KAVACH_AGENT_MAX_WAIT_S", "120")), component="agent")   # wait out rate limits
     if not llm.enabled:
         raise SystemExit("Set IMAGINE_API_KEY and IMAGINE_API_ENDPOINT (or INFERENCE_CLOUD_API_KEY and "
                          "INFERENCE_CLOUD_ENDPOINT) for the Qualcomm Inference Cloud.")

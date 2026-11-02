@@ -1,0 +1,9 @@
+{
+ "version": "2026-11-03.1",
+ "currency": "USD",
+ "unit": "per 1M tokens",
+ "note": "Estimates only. Qualcomm's Cloud AI Playground (Cirrascale Inference Cloud) publishes no per-token price: the playground is free with limited throughput, and paid access is priced after sign-in or as Cloud AI 100 servers by the month (searched 3 Nov 2026: cirrascale.com/inference-cloud-qualcomm, cirrascale.com/ai-innovation-cloud/inference). The Llama-3.3-70B row is a reference rate from other hosts' public list prices, NOT Qualcomm's, and not verified on those hosts' own pages. A model with no row is unpriced: its tokens are counted, its cost is unknown, never zero.",
+ "models": {
+  "Llama-3.3-70B": {"input": 0.25, "output": 0.75, "source": "reference: GMI Cloud list price for Llama 3.3 70B as quoted at gmicloud.ai (Nov 2026); other hosts quote 0.20 / 0.50", "qualcomm": false}
+ }
+}

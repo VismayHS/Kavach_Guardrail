@@ -54,7 +54,7 @@ def template(d: dict, lang: str = "en") -> str:
 
 class Explainer:
     def __init__(self, llm: QualcommCloudAI | None = None, use_llm: bool = False):
-        self.llm = llm or QualcommCloudAI()
+        self.llm = llm or QualcommCloudAI(component="explainer")
         self.use_llm = use_llm
 
     def explain(self, d: dict, lang: str = "en") -> tuple[str, str]:
