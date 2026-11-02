@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 .env
 *.env
+!.env.example
 !kavach/**/*.env.example
 .DS_Store
 bench/agentdojo_runs/
