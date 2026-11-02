@@ -126,7 +126,8 @@ def test_agent_arguments_get_the_declared_types():
 
 # ---------------------------------------------------------------- in the gateway: stricter, never looser
 def gateway(llm):
-    k = Kavach(Environment(tempfile.mkdtemp()), GatewayConfig(use_llm_judge=True))
+    # inline: the judge in the decision path (the default since Phase 5 is escalations-only, see test_judge_modes)
+    k = Kavach(Environment(tempfile.mkdtemp()), GatewayConfig(use_llm_judge=True, judge_mode="inline"))
     k.judge = IntentJudge(llm)
     return k
 

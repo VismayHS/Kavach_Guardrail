@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -41,6 +42,11 @@ class GatewayConfig:
     harm_budget: float = 0.15        # max cumulative expected unrecoverable harm per task
     circuit_breaker: int = 3         # denials in one task before the agent is paused
     use_llm_judge: bool = True
+    # Where the Qualcomm judge sits (C2). "inline": in the path of every state-changing call (it can turn an allow into
+    # an escalation, and every call waits for it). "escalations-only": only calls that already wait for a human are
+    # judged; the note goes on the approval card, the verdict never waits. "async": like escalations-only, but the
+    # verdict returns at once and the note arrives later as its own receipt.
+    judge_mode: str = "escalations-only"
     use_llm_explainer: bool = False
     reversibility_conditioned: bool = True   # ablation switch: False => fixed threshold
     fixed_tau: float = 0.3
@@ -169,9 +175,11 @@ class Kavach:
 
         # [5] intent + [6] risk
         risk = None
+        ambiguous = False
         if spec is not None and effect is not None:   # computed even when denied: features feed training data
             ambiguous = floor == "REQUIRE_APPROVAL" or spec.effect not in ("read", "ingress")
-            intent = self.judge.score(ctx.user_request, call.tool, call.args, labels, ambiguous, spec)
+            inline = self.cfg.judge_mode == "inline"
+            intent = self.judge.score(ctx.user_request, call.tool, call.args, labels, ambiguous and inline, spec)
             feats = featurize(spec, call.args, labels, effect, intent, ctx.env, ctx.user_request)
             risk = self.risk.assess(feats, effect, self.cfg.c_block, intent)
             if not self.cfg.reversibility_conditioned:
@@ -179,6 +187,10 @@ class Kavach:
 
         # [7] decision
         verdict, reason, hint = self._decide(ctx, spec, gates, floor, effect, risk)
+        later = (verdict == Verdict.ESCALATE and ambiguous and risk is not None and self.cfg.judge_mode != "inline"
+                 and self.judge.use_llm and self.judge.llm.enabled)
+        if later and self.cfg.judge_mode == "escalations-only":   # a human decides anyway: the note is for them
+            risk.intent["review"] = self._judge_note(ctx.user_request, call, labels, spec)
         if verdict == Verdict.DENY:
             ctx.denials += 1
         if risk and verdict in (Verdict.ALLOW, Verdict.ALLOW_WITH_SAFEGUARD):
@@ -204,7 +216,23 @@ class Kavach:
                                     "authenticated": ctx.principal.authenticated, "request": ctx.user_request,
                                     "decision": self._for_receipt(dd, task.prov)})
         d.receipt_id = rec["id"]
+        if later and self.cfg.judge_mode == "async":
+            threading.Thread(target=self._judge_async, daemon=True,
+                             args=(ctx.user_request, call, labels, spec, rec["id"], d.hitl_id)).start()
         return d
+
+    def _judge_note(self, request: str, call: ToolCall, labels: dict, spec) -> dict:
+        """The Qualcomm judge's view of an escalated call, for the reviewer. It never changes the verdict here."""
+        out = self.judge.score(request, call.tool, call.args, labels, True, spec)
+        return {k: out[k] for k in ("source", "alignment", "llm_alignment", "llm_reason", "models", "llm_latency_ms",
+                                    "llm_error") if k in out}
+
+    def _judge_async(self, request, call, labels, spec, receipt_id, hitl_id) -> None:
+        note = self._judge_note(request, call, labels, spec)
+        self.receipts.append({"type": "judge-note", "decision_receipt": receipt_id, "note": note})
+        item = self.hitl.items.get(hitl_id) if hitl_id else None
+        if item is not None:
+            item["decision"].setdefault("risk", {}).setdefault("intent", {})["review"] = note
 
     @staticmethod
     def _for_receipt(dd: dict, prov: ProvenanceTracker) -> dict:
