@@ -213,6 +213,7 @@ discarded, never sent.
 | Payments | **Simulated bank** (`scripts/sandbox_bank.py`), its own service and page; idempotent by hold id |
 | The company (CRM, invoices, vendors, inbox) | **Simulated**, made-up data, seeded at each start |
 | Qualcomm judge note on approvals | **Real** Llama on Qualcomm Cloud AI when `.env` has the key |
+| Live agent page (Llama-3.3-70B on Qualcomm, run without and with KAVACH) | **Real**, verified 3 Nov; takes minutes under rate limits. A malformed tool call from the model is re-asked, at most twice |
 | Recovery after `kill -9` | **Real** process kill and restart (`scripts/demo_recovery.py`) |
 | Alerts firing | **Real** Prometheus rules on real metrics (`scripts/alert_drill.py`); delivery to a person **not verified** |
 | Model cost | Tokens **measured** from the API; currency **estimated** (no published Qualcomm price) |

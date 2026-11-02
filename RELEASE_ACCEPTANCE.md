@@ -7,7 +7,7 @@ Status words:
 - **Simulated**: stands in for the real thing.
 - **Missing**: not done.
 
-All tests: `.venv/bin/python -m pytest -q` (520+ pass). Live stack: `scripts/demo_up.sh`, then
+All tests: `.venv/bin/python -m pytest -q` (530 pass, 1 skipped). Live stack: `scripts/demo_up.sh`, then
 `scripts/preflight.py --demo` (GO) and `scripts/demo_rehearse.py -n 3` (ALL PASSED). Checked 3 Nov 2026 on
 `build/phase-5`.
 
@@ -35,6 +35,7 @@ All tests: `.venv/bin/python -m pytest -q` (520+ pass). Live stack: `scripts/dem
 | 20 | Alerts | `deploy/alerts.yml` (14 rules) | Partial | promtool: 14 rules OK; `scripts/alert_drill.py` fires KavachDeliveryFailedOrUnknown and KavachDependencyDown | http://127.0.0.1:9090/alerts | Other rules not exercised; delivery to a person (Alertmanager) not set up |
 | 21 | Model cost | `kavach/model_prices.json` (versioned) | Partial | `tests/test_usage.py` | `/api/usage` | Qualcomm publishes no per-token price; the 70B rate is a labelled reference, 8B unpriced |
 | 22 | Comparison: no guardrail vs spotlighting vs KAVACH | `bench/compare.py` | Partial | `python -m bench.compare` | `bench/results/COMPARISON.md` | Live AgentDojo runs with KAVACH still in progress (paired subset); Slack spotlighting running |
+| 23a | Live agent page: Llama-3.3-70B on Qualcomm runs the request twice, without and with KAVACH | `agent/llm_agent.py`, `POST /api/agent/run` | Verified live | `tests/test_agent_repair.py`, `tests/test_phase4.py`; live rerun 3 Nov: both runs sent the summary, guarded through its 30 s window | console Live agent page | A malformed tool call from the model is re-asked (at most twice); each run takes minutes under rate limits |
 | 23 | Qualcomm judge on escalations (note on the approval card) | `intent.py` two-stage | Verified live | live: R18 escalation carried the judge's note | approval card | - |
 | 24 | Payments bank | `scripts/sandbox_bank.py` | Simulated | `tests/test_bank_e2e.py` | bank page | A real bank API is out of scope |
 | 25 | Shell actions | `kavach/shell.py` | Simulated (dry-run in Docker) | `tests/test_shell.py` | - | No general containment claim |
