@@ -39,6 +39,9 @@
   <symbol id="i-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
   <symbol id="i-timer-reset" viewBox="0 0 24 24"><path d="M10 2h4"/><path d="M12 14v-4"/><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/><path d="M9 17H4v5"/></symbol>
   <symbol id="i-triangle-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></symbol>
+  <symbol id="i-octagon-pause" viewBox="0 0 24 24"><path d="M10 15V9"/><path d="M14 15V9"/><path d="M2.586 16.726A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2h6.624a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586z"/></symbol>
+  <symbol id="i-mouse-pointer-click" viewBox="0 0 24 24"><path d="M14 4.1 12 6"/><path d="m5.1 8-2.9-.8"/><path d="m6 12-1.9 2"/><path d="M7.2 2.2 8 5.1"/><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></symbol>
   <symbol id="i-user-check" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
 </svg>
@@ -55,11 +58,14 @@
         <li><a class="rail-item" data-page="agent" href="#/agent"><svg class="i" aria-hidden="true"><use href="#i-bot"/></svg>Live agent</a></li>
         <li><a class="rail-item" data-page="scenarios" href="#/scenarios"><svg class="i" aria-hidden="true"><use href="#i-list-checks"/></svg>Scenarios</a></li>
         <li><a class="rail-item" data-page="check" href="#/check"><svg class="i" aria-hidden="true"><use href="#i-scan-search"/></svg>Check an action</a></li>
+        <li><a class="rail-item" data-page="game" href="#/game"><svg class="i" aria-hidden="true"><use href="#i-mouse-pointer-click"/></svg>Approval game</a></li>
       </ul></div>
       <div class="rail-group"><div class="rail-label">Oversight</div><ul>
         <li><a class="rail-item" data-page="approvals" href="#/approvals"><svg class="i" aria-hidden="true"><use href="#i-user-check"/></svg>Approvals<span class="rail-count" id="count-approvals">0</span></a></li>
         <li><a class="rail-item" data-page="windows" href="#/windows"><svg class="i" aria-hidden="true"><use href="#i-timer-reset"/></svg>Undo windows<span class="rail-count" id="count-windows">0</span></a></li>
         <li><a class="rail-item" data-page="receipts" href="#/receipts"><svg class="i" aria-hidden="true"><use href="#i-scroll-text"/></svg>Receipts<span class="rail-count" id="count-receipts">0</span></a></li>
+        <li><a class="rail-item" data-page="sessions" href="#/sessions"><svg class="i" aria-hidden="true"><use href="#i-activity"/></svg>Sessions</a></li>
+        <li><a class="rail-item" data-page="control" href="#/control"><svg class="i" aria-hidden="true"><use href="#i-octagon-pause"/></svg>Kill switch</a></li>
       </ul></div>
       <div class="rail-group"><div class="rail-label">Evidence</div><ul>
         <li><a class="rail-item" data-page="results" href="#/results"><svg class="i" aria-hidden="true"><use href="#i-chart-column"/></svg>Results</a></li>
@@ -75,6 +81,7 @@
       <a class="top-brand" href="#/agent"><svg class="brand-mark" aria-hidden="true"><use href="#mark"/></svg><span class="wordmark">KAVACH</span></a>
       <nav class="crumbs" id="crumbs" aria-label="Breadcrumb"></nav>
       <div class="top-right">
+        <a href="#/control" id="paused" hidden></a>
         <span class="hide-sm" id="qualcomm"></span>
         <a href="#/receipts" id="chain" aria-label="Receipt chain status"></a>
         <button class="icon-btn out" id="signin" type="button" data-act="signin" aria-label="Sign in" title="Sign in"><svg class="i" aria-hidden="true"><use href="#i-key-round"/></svg></button>

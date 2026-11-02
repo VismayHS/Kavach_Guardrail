@@ -665,6 +665,81 @@ async function pageReceipts() {
     ${table}</div>`;
 }
 
+
+// ---------------------------------------------------------------- sessions (one task = one request and everything it did)
+const legsStamp = r => stamp(r?.human_required ? 'possible' : r?.legs >= 2 ? 'lead' : 'skipped', `${r?.legs ?? 0} of 3`,
+  { title: 'Rule of Two: untrusted input, private data, goes outside' });
+async function pageSessions(id) {
+  if (id) return sessionPage(await api(`/api/tasks/${encodeURIComponent(id)}`));
+  const list = await api('/api/tasks?limit=100');
+  const rows = list.map(t => `<a class="row" href="#/sessions/${esc(t.task_id)}">${legsStamp(t.rule_of_two)}
+      <span class="row-main"><span class="row-title" style="display:block">${esc(t.request || '(no request)')}</span>
+      <span class="row-sub" style="display:block">${esc(t.user)} · ${esc(seatWord(t.role))}${t.tenant && t.tenant !== 'default' ? ` · ${esc(t.tenant)}` : ''} · ${plural(t.denials, 'block')}${t.hostile_sources?.length ? ` · ${plural(t.hostile_sources.length, 'flagged source')}` : ''}</span></span>${icon('chevron-right')}</a>`);
+  return `<div class="page narrow">${head('Sessions', 'One session is one request and everything the agent did for it. The Rule of Two counts what it has touched: untrusted input, private data, and actions that go outside. All three and a person decides.')}
+    ${rows.length ? `<div class="sheet rows">${rows.join('')}</div>` : emptyNote('No sessions yet', `Every scenario, check and agent call starts one. Try ${runLink('email_injection', 'the inbox attack')}.`)}</div>`;
+}
+function sessionPage(t) {
+  S.crumb = t.task_id;
+  const leg = (on, text) => stamp(on ? 'possible' : 'skipped', text);
+  const r = t.rule_of_two || {};
+  const spent = Math.min(100, (t.harm_spent / Math.max(1e-9, t.harm_budget)) * 100);
+  const rows = (t.receipts || []).map(x => `<div class="row">${x.verdict ? verdictStamp(x.verdict) : stamp('info', esc(x.type))}
+      <span class="row-main"><span class="row-title" style="display:block">${esc(x.tool ? toolName(x.tool) : x.type)}</span>
+      <span class="row-sub" style="display:block">${esc(plain(x.reason || ''))}</span></span><code class="tool">${esc(x.id)}</code></div>`);
+  return `<div class="page narrow">${head(t.request || 'Session', `${esc(t.user)} as ${esc(seatWord(t.role))}${t.authenticated ? ', signed in' : ''} · ${esc(t.env)}`)}
+    <section class="section">${sectionHead('Rule of Two', null, 'Any two are fine. All three in one task and a person decides (R14).')}
+      <p class="legs">${leg(r.untrusted_input, 'Read untrusted input')} ${leg(r.private_data, 'Holds private data')} ${leg(r.outbound_action, 'Went outside')} <span class="meta">${r.legs ?? 0} of 3</span></p></section>
+    <section class="section"><div class="tag">${field('Blocks so far', `${t.denials} of ${t.circuit_breaker} before the agent is paused`)}
+      ${field('Harm budget', `${spent.toFixed(0)}% used`, { tipText: 'Expected harm that could not be undone, summed over the session. Past the budget, everything goes to a person: it stops an attack split into many small steps.' })}
+      ${field('Flagged sources', (t.hostile_sources || []).map(esc).join(', '), { empty: 'None', mono: true })}</div></section>
+    <section class="section">${sectionHead('Everything it did', rows.length)}<div class="sheet rows">${rows.join('') || '<p class="hint">Nothing yet.</p>'}</div></section></div>`;
+}
+
+// ---------------------------------------------------------------- kill switch
+async function pageControl() {
+  const kills = await api('/api/kill');
+  const scopeWord = k => k.scope === 'global' ? 'Everything' : `${titleCase(k.scope)} ${k.target}`;
+  const active = kills.map(k => `<div class="row">${stamp('failed', 'Paused')}<span class="row-main"><span class="row-title" style="display:block">${esc(scopeWord(k))}</span>
+      <span class="row-sub" style="display:block">by ${esc(k.by)}${k.reason ? ` · ${esc(k.reason)}` : ''} · since ${esc(new Date(k.at * 1000).toLocaleTimeString())}</span></span>
+      <button class="btn" type="button" data-act="resume" data-id="${esc(k.id)}">${icon('play')}Resume</button></div>`);
+  return `<div class="page narrow">${head('Kill switch', 'Stop agents now. Nothing in scope runs, not even a read; payments and emails they left waiting are taken back; their open approvals are closed. Resuming is on the receipt chain too.')}
+    ${flash()}
+    <section class="section">${sectionHead('Paused now', kills.length)}${active.length ? `<div class="sheet rows">${active.join('')}</div>` : '<p class="hint">Nothing is paused.</p>'}</section>
+    <section class="section">${sectionHead('Pause', null, 'EU AI Act, Article 14(4)(e): a person can stop a high-risk system at any time.')}
+      <form class="panel" data-form="kill"><div class="labelled"><label for="k-scope">What</label>
+        <select class="input" id="k-scope"><option value="global">Every agent</option><option value="user">One user</option><option value="role">One role</option><option value="task">One session</option></select></div>
+        <div class="labelled"><label for="k-target">Which one</label><input class="input" id="k-target" placeholder="ravi, analyst or task-1a2b3c" autocomplete="off"></div>
+        <div class="labelled"><label for="k-reason">Why</label><input class="input" id="k-reason" placeholder="Investigating an alert" autocomplete="off"></div>
+        <div data-err></div>
+        <div class="d-actions"><button class="btn danger" type="submit">${icon('octagon-pause')}Pause now</button></div></form></section></div>`;
+}
+
+// ---------------------------------------------------------------- the approval game
+async function pageGame() {
+  if (!S.game) S.game = { data: await api('/api/demo/fatigue'), answers: {}, started: Date.now(), revealed: false };
+  const g = S.game, n = g.data.prompts.length, done = Object.keys(g.answers).length;
+  const card = pr => {
+    const a = g.answers[pr.id], rv = g.revealed ? g.data.reveal[pr.id] : null;
+    return `<div class="row${rv?.bad ? ' bad' : ''}"><span class="row-main"><span class="row-title" style="display:block">${esc(toolName(pr.tool))} <code class="tool">${esc(pr.tool)}</code></span>
+      <span class="row-sub" style="display:block">${Object.entries(pr.args).map(([k, v]) => `${esc(k)}: ${esc(v)}`).join(' · ')}</span>
+      ${rv ? `<span class="row-sub" style="display:block">${verdictStamp(rv.verdict)} ${esc(plain(rv.reason))}${rv.bad ? ` <b>${esc(Object.entries(rv.provenance).map(([k, v]) => `${k}: ${v}`).join('; '))}</b>` : ''}</span>` : ''}</span>
+      ${a ? stamp(a === 'approve' ? 'done' : 'failed', a === 'approve' ? 'You approved' : 'You denied')
+        : g.revealed ? '' : `<button class="btn sm" type="button" data-act="game" data-id="${pr.id}" data-a="approve">${icon('check')}Approve</button><button class="btn sm quiet" type="button" data-act="game" data-id="${pr.id}" data-a="deny">${icon('ban')}Deny</button>`}</div>`;
+  };
+  let verdict = '';
+  if (g.revealed) {
+    const bad = g.data.answer, mine = g.answers[bad];
+    const secs = Math.round(((g.finished || Date.now()) - g.started) / 1000);
+    verdict = `<div class="notice ${mine === 'deny' ? 'ok' : 'warn'}" role="status">${mine === 'deny' ? 'You caught it.' : mine === 'approve' ? 'You approved the exfiltration.' : 'You never answered the one that mattered.'}
+      ${plural(Object.values(g.answers).filter(x => x === 'approve').length, 'approval')} in ${secs} s. KAVACH blocked it without asking anyone: the recipient came from an email the agent read.</div>`;
+  }
+  return `<div class="page narrow">${head('Approval game', 'Fifteen requests from an agent, the way an approver sees them. Approve or deny each as fast as you would at work, then reveal what KAVACH saw. Most people approve almost everything.')}
+    ${verdict}
+    <div class="sheet rows">${g.data.prompts.map(card).join('')}</div>
+    <div class="d-actions" style="margin-top:16px">${g.revealed ? `<button class="btn" type="button" data-act="game-again">${icon('rotate-ccw')}Play again</button>`
+      : `<button class="btn primary" type="button" data-act="game-reveal"${done ? '' : ' disabled'}>${icon('shield-check')}Reveal KAVACH's view (${done} of ${n} answered)</button>`}</div></div>`;
+}
+
 // ---------------------------------------------------------------- results
 const REPORTS = [
   ['RESULTS.md', 'Full benchmark', 'Every system on the test scenarios, over five seeds'],
@@ -673,6 +748,9 @@ const REPORTS = [
   ['JUDGE.md', 'Qualcomm judge on and off', 'What the AI judge changes, and how long it takes'],
   ['LIVE_AGENT.md', 'A real agent attacked through its inbox', 'Llama on Qualcomm Cloud AI, with and without KAVACH'],
   ['AGENTOS_LIVE.md', 'Inside Infosys Topaz AgentOS', "KAVACH wired in through AgentOS's own hooks"],
+  ['AGENTDOJO.md', "ETH Zurich's AgentDojo", 'A benchmark nobody on the team wrote: attacks, utility, defenses'],
+  ['CEDAR.md', 'Rules as Cedar policies, with proofs', 'Ten safety properties proved; Cedar and Python agree on every decision'],
+  ['PROBE.md', 'The injection classifier', 'How often a CPU model spots injected instructions, and its false alarms'],
 ];
 function plotHtml(systems) {
   const names = [['No guardrail', 'No guardrail'], ['Static denylist (text match)', 'Static denylist'], ['Tool-type gating', 'Tool-type gating'], ['Approve every write (manual interrupt)', 'Approve every write'], ['KAVACH (full)', 'KAVACH']];
@@ -812,6 +890,9 @@ const ROUTES = {
   receipts: { title: 'Receipts', render: pageReceipts },
   results: { title: 'Results', render: pageResults },
   rules: { title: 'Rulebook', render: pageRules, after: afterRules },
+  sessions: { title: 'Sessions', render: pageSessions },
+  control: { title: 'Kill switch', render: pageControl },
+  game: { title: 'Approval game', render: pageGame },
 };
 const main = $('#main');
 let routeToken = 0;
@@ -864,6 +945,9 @@ async function chrome() {
     count('approvals', n); count('windows', w); count('receipts', chain.count ?? 0);
     $('#badge').hidden = !n; $('#badge').textContent = n > 99 ? '99+' : n;
     $('#bell').setAttribute('aria-label', n ? `${plural(n, 'approval')} waiting` : 'Approvals');
+    const kills = await api('/api/kill').catch(() => []);
+    $('#paused').hidden = !kills.length;
+    $('#paused').innerHTML = kills.length ? stamp('failed', kills.some(k => k.scope === 'global') ? 'All agents paused' : `${plural(kills.length, 'pause')} on`) : '';
     $('#qualcomm').innerHTML = st.qualcomm_llm ? stamp('done', 'Qualcomm AI on', { title: `Models: ${(st.judge_models || []).join(', ')}` }) : stamp('skipped', 'Qualcomm AI off', { title: 'Rules and the risk model still work. The live agent needs the key.' });
     $('#chain').innerHTML = chain.valid ? stamp('done', 'Chain OK', { title: `${chain.count} receipts check out` }) : stamp('failed', 'Chain broken');
     const sig = JSON.stringify([hitl.map(i => i.id), st.waiting.map(h => h.id), st.parked.map(p => p.id), st.drafts.length, st.outbox.length, st.ledger.length, chain.count]);
@@ -928,6 +1012,20 @@ const ACT = {
     chrome().catch(() => {});
   },
   decide(b) { decide(b); },
+  async resume(b) {
+    flip(b, true);
+    try { await api(`/api/kill/${b.dataset.id}`, { method: 'DELETE' }); S.flash = { tone: 'ok', html: 'Resumed. Agents in that scope can act again.' }; }
+    catch (e) { S.flash = { tone: 'err', html: esc(e.message) }; }
+    await chrome().catch(() => {});
+    route(true);
+  },
+  game(b) {
+    S.game.answers[b.dataset.id] = b.dataset.a;
+    if (Object.keys(S.game.answers).length === S.game.data.prompts.length) S.game.finished = Date.now();
+    route(true);
+  },
+  'game-reveal'() { S.game.revealed = true; S.game.finished = S.game.finished || Date.now(); route(true); },
+  'game-again'() { S.game = null; route(); },
   async hindi(b) {
     flip(b, true);
     const out = b.parentElement.querySelector('[data-hi]');
@@ -994,6 +1092,15 @@ const ACT = {
   },
 };
 const FORM = {
+  async kill(form) {
+    const scope = $('#k-scope').value, target = $('#k-target').value.trim(), reason = $('#k-reason').value.trim();
+    try {
+      const k = await post('/api/kill', { scope, target: scope === 'global' ? null : target, reason });
+      S.flash = { tone: 'warn', html: `Paused ${scope === 'global' ? 'every agent' : esc(`${scope} ${target}`)}. ${k.cancelled.length ? `${plural(k.cancelled.length, 'waiting item')} taken back. ` : ''}${k.approvals_closed.length ? `${plural(k.approvals_closed.length, 'approval')} closed.` : ''}` };
+      await chrome().catch(() => {});
+      route(true);
+    } catch (e) { $('[data-err]', form).innerHTML = `<div class="notice err" role="alert" style="margin-top:16px">${esc(e.message)}</div>`; }
+  },
   async agent() {
     const request = $('#q').value.trim();
     const role = $('input[name="role"]:checked')?.value || 'analyst';
