@@ -30,7 +30,7 @@ import uuid
 from pathlib import Path
 
 import jwt
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -287,6 +287,38 @@ def policy_replay(body: ReplayIn, who: dict | None = Depends(caller)):
     except Exception as e:
         raise HTTPException(422, f"draft policy doesn't load: {e}")
     return replay(gw, draft, body.task_ids)
+
+
+@app.get("/.well-known/jwks.json")
+def jwks():
+    """KAVACH's Ed25519 public key, for tools that verify delegated agent tokens (F1)."""
+    from .identity import jwks as _jwks
+    if gw.receipts.signer is None:
+        raise HTTPException(503, "no signing key")
+    return _jwks(gw.receipts.signer)
+
+
+@app.post("/oauth/token")
+async def token_exchange(request: Request):
+    """RFC 8693 token exchange: a user's token in, a short-lived, task-scoped delegated token for an agent out."""
+    from .identity import JWT_TYPE, TOKEN_EXCHANGE, exchange
+    form = dict(await request.form()) if "form" in request.headers.get("content-type", "") else await request.json()
+    if form.get("grant_type") != TOKEN_EXCHANGE:
+        raise HTTPException(400, "unsupported_grant_type")
+    if form.get("subject_token_type", JWT_TYPE) != JWT_TYPE or not form.get("subject_token"):
+        raise HTTPException(400, "invalid_request: subject_token (a KAVACH JWT) is required")
+    if not AUTH_SECRET:
+        raise HTTPException(400, "token exchange needs sign-in on (KAVACH_AUTH_SECRET)")
+    try:
+        claims = auth.verify(form["subject_token"], AUTH_SECRET)
+    except jwt.PyJWTError as e:
+        raise HTTPException(401, f"invalid_grant: {e}")
+    try:
+        return exchange(claims, gw.policy.cfg["roles"].get(claims["role"], []), form.get("scope", ""),
+                        form.get("audience", ""), form.get("resource", ""), form.get("actor", "agent"),
+                        min(int(form.get("expires_in", 300) or 300), 3600), gw.receipts.signer)
+    except PermissionError as e:
+        raise HTTPException(403, f"invalid_scope: {e}")
 
 
 @app.get("/api/tasks")
