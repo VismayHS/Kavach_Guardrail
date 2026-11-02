@@ -104,16 +104,24 @@ async function refresh() {
 }
 function hitlCard(i) {
   const d = i.decision, e = d.effect || {};
-  return `<div class="hitl"><div class="row"><b>${esc(d.call.tool)}</b><span class="meta">${i.four_eyes ? 'four-eyes' : ''}</span></div>
+  const seats = Object.entries(i.remaining || {});
+  const done = (i.approvals || []).map(a => `${esc(a.role)} ✓ (${esc(a.approver)})`).join(' · ');
+  const approve = seats.length
+    ? seats.map(([role]) => `<button class="primary" onclick="resolve('${i.id}',true,'execute','${esc(role)}')">Approve as ${esc(role.replace('_', ' '))}</button>`).join('')
+    : `<button class="primary" onclick="resolve('${i.id}',true,'execute')">Approve</button>`;
+  return `<div class="hitl"><div class="row"><b>${esc(d.call.tool)}</b><span class="meta">${i.four_eyes ? 'four-eyes' : ''}
+  ${Object.keys(i.quorum || {}).length ? ` · needs ${Object.entries(i.quorum).map(([r, n]) => `${n}× ${esc(r)}`).join(' + ')}` : ''}</span></div>
   <div class="meta">${esc(d.reason)}</div><pre>${esc(JSON.stringify(d.call.args, null, 1)).slice(0, 400)}</pre>
-  <div class="meta">Impact: ${esc(e.summary || '')}</div>
-  <div class="btns"><button class="primary" onclick="resolve('${i.id}',true,'execute')">Approve</button>
+  <div class="meta">Impact: ${esc(e.summary || '')}</div>${done ? `<div class="meta">Approved so far: ${done}</div>` : ''}
+  <div class="btns">${approve}
   ${d.call.tool === 'mail.send' ? `<button onclick="resolve('${i.id}',true,'safeguard')">Approve as draft</button>` : ''}
   <button onclick="resolve('${i.id}',false)">Deny</button></div></div>`;
 }
-async function resolve(id, approve, mode) {
-  const r = await post(`/api/hitl/${id}`, {approve, mode, approver: 'reviewer-1'});
+async function resolve(id, approve, mode, role) {
+  // dev mode: each role seat is a different demo person; with auth on, identity and role come from the token
+  const r = await post(`/api/hitl/${id}`, {approve, mode, approver: role ? `${role}-demo` : 'reviewer-1', approver_role: role || null});
   if (r.detail) alert(r.detail);
+  else if (r.pending_quorum) alert('Recorded. Still needed: ' + Object.entries(r.pending_quorum).map(([k, n]) => `${n}× ${k}`).join(', '));
   refresh();
 }
 function riskBar(r) {
