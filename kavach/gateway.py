@@ -643,7 +643,8 @@ class Kavach:
             return Verdict.ESCALATE, "Circuit breaker: repeated denials in this task; agent paused for review.", None
         if not self.cfg.use_risk or risk is None:   # rules-only ablation
             if floor == "REQUIRE_APPROVAL":
-                return Verdict.ESCALATE, "Policy requires approval.", None
+                g = next(g for g in gates if g.outcome == "REQUIRE_APPROVAL")
+                return Verdict.ESCALATE, f"[{g.rule_id}] {g.message}", None
             return self._allow(spec, effect, "Passed all deterministic gates.")
         if floor == "REQUIRE_APPROVAL":
             # policy says a human decides; the model only informs the reviewer (it never overrides policy)
