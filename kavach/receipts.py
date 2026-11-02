@@ -30,13 +30,28 @@ def _canon(d: dict) -> bytes:
     return json.dumps(d, sort_keys=True, separators=(",", ":"), default=str).encode()
 
 
+# Receipts that come before an effect: a decision (the call runs after it), a person's approval (the approved call runs
+# after it) and Send now. If the durable store can't take one of these, it is not kept and the caller gets
+# ReceiptWriteError, so nothing runs without its record. Receipts written after an effect (a window closing, an undo,
+# a kill) are about something that already happened: they stay in memory, and the log is marked degraded.
+FAIL_CLOSED = {"decision", "human-approved-execution", "released-early"}
+
+
+class ReceiptWriteError(RuntimeError):
+    """The durable store refused a receipt that must exist before its action runs; the action did not run."""
+
+
 class ReceiptLog:
     def __init__(self, key: bytes | None = None, signer=None):
         self.key = key or os.environ.get("KAVACH_RECEIPT_KEY", "demo-receipt-key").encode()
         self.signer = signer
         self.items: list[dict] = []
         self.lock = threading.Lock()
-        self.listeners: list = []          # callables(receipt) after each append (telemetry, SIEM, persistence)
+        self.listeners: list = []          # callables(receipt) after each append (telemetry, SIEM): best effort
+        self.durable: list = []            # callables(receipt) that make it durable (the store): run in order, and a
+                                           # failure is not swallowed (see FAIL_CLOSED)
+        self.write_failures = 0            # receipts the durable store refused
+        self.degraded: str | None = None   # the last such failure, for /readyz and the metrics
         self.known_keys: dict[str, str] = {}   # kid -> public PEM of keys that signed earlier receipts (rotation,
                                                # or a restart with a new key): old receipts verify with their own key
         self.checkpoint: dict | None = None    # {count, head, sig} of the newest receipt
@@ -51,8 +66,20 @@ class ReceiptLog:
             rec = {**core, "id": f"rcpt-{core['seq']:05d}", "hash": h, "sig": sig}
             if self.signer is not None:
                 rec["ed25519"] = {"kid": self.signer.key_id, "sig": self.signer.sign(h.encode())}
+            before = self.checkpoint
             self.items.append(rec)
             self.checkpoint = self.checkpoint_for(rec)
+            for fn in list(self.durable):          # inside the lock: the store sees receipts in chain order
+                try:
+                    fn(rec)
+                except Exception as e:
+                    self.write_failures += 1
+                    self.degraded = f"{type(e).__name__}: {e}"[:300]
+                    if body.get("type") in FAIL_CLOSED:
+                        self.items.pop()           # not kept: the chain stays as the store has it
+                        self.checkpoint = before
+                        raise ReceiptWriteError(f"the receipt store refused the {body.get('type')} receipt "
+                                                f"({type(e).__name__}); nothing ran") from e
         for fn in list(self.listeners):
             try:
                 fn(rec)

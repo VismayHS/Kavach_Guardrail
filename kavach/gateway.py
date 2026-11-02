@@ -588,10 +588,18 @@ class Kavach:
             dd["hitl_id"] = d.hitl_id
         # corr: the call's id, carried by every later receipt about it (approval, hold, release, delivery, undo), the
         # hold itself and the email's X-Kavach-Correlation header, so one id finds the whole story (GET /api/trace)
-        rec = self.receipts.append({"type": "decision", "task_id": task_id, "principal": ctx.principal.user_id,
-                                    "role": ctx.principal.role, "tenant": ctx.principal.tenant, "corr": call.call_id,
-                                    "authenticated": ctx.principal.authenticated, "request": ctx.user_request,
-                                    "decision": self._for_receipt(dd, task.prov)})
+        try:
+            rec = self.receipts.append({"type": "decision", "task_id": task_id, "principal": ctx.principal.user_id,
+                                        "role": ctx.principal.role, "tenant": ctx.principal.tenant,
+                                        "corr": call.call_id, "authenticated": ctx.principal.authenticated,
+                                        "request": ctx.user_request, "decision": self._for_receipt(dd, task.prov)})
+        except Exception:                          # no durable receipt: this decision never happened (fail closed)
+            if d.hitl_id:                          # nobody may approve a call whose decision isn't on record
+                self.hitl.items.pop(d.hitl_id, None)
+                self.pending_calls.pop(d.hitl_id, None)
+            if verdict in (Verdict.ALLOW, Verdict.ALLOW_WITH_SAFEGUARD):
+                tot.actions_run.discard(self._action_key(call))
+            raise
         d.receipt_id = rec["id"]
         if verdict in (Verdict.ALLOW, Verdict.ALLOW_WITH_SAFEGUARD):
             self.counted[d.receipt_id] = (tot, call, effect)
@@ -945,6 +953,10 @@ class Kavach:
             self.receipts.append({"type": "human-approved-draft", "task_id": task_id, "hitl": hid,
                                   "approver": approver, "corr": corr})
             return out
+        # the approval is receipted (durably, with a store) before anything runs: no effect without its record
+        rec = self.receipts.append({"type": "human-approved-execution", "task_id": task_id, "hitl": hid,
+                                    "approver": approver, "mode": mode, "corr": corr, "digest": item.get("digest"),
+                                    "approvals": approvals})
         self._count_action(self._totals(task_id), call, effect)   # an approved action still counts toward totals
         windowed = self._windowed(effect)                          # an approved payment still waits out its hold
         actor = {"user": approver, "task": task_id}
@@ -953,9 +965,6 @@ class Kavach:
         else:
             result, log = self._dispatch_undoable(call, effect, actor)
         self.register_output(task_id, call, result)
-        rec = self.receipts.append({"type": "human-approved-execution", "task_id": task_id, "hitl": hid,
-                                    "approver": approver, "mode": mode, "corr": corr, "digest": item.get("digest"),
-                                    "approvals": approvals})
         self.counted[rec["id"]] = (self._totals(task_id), call, effect)
         if windowed:
             result = self._arm_window(rec["id"], call, effect, result)
@@ -1052,14 +1061,17 @@ class Kavach:
             return {"released": False, "reason": f"this agent is paused by the kill switch ({stop['id']}); it was "
                                                  "cancelled instead"}
         h = next((x for x in self.env.holds if x["id"] == ref), None)
-        with self.env.lock:
-            if h is None or h["status"] != "held":
-                return {"released": False, "reason": f"{ref} is no longer waiting"}
-            h["settles_at"] = min(h["settles_at"], time.time())
-            self.env._held_changed(h)
+        if h is None or h["status"] != "held":
+            return {"released": False, "reason": f"{ref} is no longer waiting"}
+        # receipted first (a store that refuses it raises here and nothing changes), then the wait is cut short
         self.receipts.append({"type": "released-early", "receipt": receipt_id, "hold": ref, "kind": h.get("kind"),
                               "by": by, "task_id": self._task_of(receipt_id),
                               "corr": h.get("corr") or self._corr_of(receipt_id)})
+        with self.env.lock:
+            if h["status"] != "held":                 # cancelled in the meantime: it stays cancelled
+                return {"released": False, "reason": f"{ref} is no longer waiting"}
+            h["settles_at"] = min(h["settles_at"], time.time())
+            self.env._held_changed(h)
         self.settle()
         return {"released": h["status"] not in ("held", "cancelled"), "hold": ref, "outcome": h["status"]}
 

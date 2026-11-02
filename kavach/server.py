@@ -97,6 +97,13 @@ if os.environ.get("KAVACH_PROBE") == "1":          # C3: scan untrusted content 
     gw.probe = _probe if _probe.enabled else None
 app = FastAPI(title="KAVACH guardrail", version="0.1")
 SWEEPER = None
+from .receipts import ReceiptWriteError  # noqa: E402
+
+
+@app.exception_handler(ReceiptWriteError)
+def _no_record_no_action(_request, e: ReceiptWriteError):
+    """The receipt store refused a decision or approval receipt: the action did not run (fail closed)."""
+    return JSONResponse({"error": str(e), "executed": False}, status_code=503)
 
 
 @app.on_event("startup")
@@ -222,8 +229,10 @@ def healthz():
 def readyz():
     """Readiness: the policy is loaded, the risk model is trained and the receipt chain verifies."""
     chain = gw.receipts.verify()
-    ready = bool(gw.policy.version) and gw.risk.source.startswith("trained") and chain["valid"]
+    ready = bool(gw.policy.version) and gw.risk.source.startswith("trained") and chain["valid"] \
+        and not gw.receipts.degraded
     body = {"ready": ready, "policy": gw.policy.version, "risk_model": gw.risk.source, "chain_valid": chain["valid"],
+            "chain_reason": chain.get("reason"), "receipt_store_error": gw.receipts.degraded,
             "profile": PROFILE.name, "receipts": len(gw.receipts.items),
             "store": None if gw.store is None else {"backend": gw.store.engine.url.get_backend_name(),
                                                     "restored": STORE_STATUS},
@@ -947,7 +956,13 @@ def mcp(rpc: dict, who: dict | None = Depends(caller)):
                         tool_def_hash=meta.get("kavach/definitionHash"))
         if isinstance(meta.get("kavach/correlation"), str) and 0 < len(meta["kavach/correlation"]) <= 64:
             call.call_id = meta["kavach/correlation"]          # the caller's own trace id, if it has one
-        d = gw.run(tid, call)
+        try:
+            d = gw.run(tid, call)
+        except ReceiptWriteError as e:                          # no record, no action: tell the agent plainly
+            return {"jsonrpc": "2.0", "id": mid, "result": {
+                "content": [{"type": "text", "text": f"KAVACH could not record a decision for this call ({e}). It did "
+                             "not run. Tell the user; don't say it was done."}], "isError": True,
+                "_meta": {"kavach/verdict": "ERROR", "kavach/correlation": call.call_id}}}
         allowed = d.verdict.value.startswith("ALLOW")
         text = json.dumps(d.result, default=str)[:4000] if allowed else Kavach.agent_message(d)
         return {"jsonrpc": "2.0", "id": mid, "result": {

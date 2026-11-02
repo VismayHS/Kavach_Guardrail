@@ -240,8 +240,9 @@ def attach(gw, store: Store) -> dict:
                             True)
         elif b.get("type") == "resume":
             store.save_kill({"id": b["kill"]}, False)
-    # the store first: a receipt is durable before any exporter sees it, and before the decision returns
-    gw.receipts.listeners.insert(0, on_receipt)
+    # a receipt is durable before any exporter sees it and before the decision returns; if the database refuses a
+    # decision or approval receipt, that call fails and does not run (receipts.FAIL_CLOSED)
+    gw.receipts.durable.append(on_receipt)
     env.on_hold.append(lambda h: store.save_hold(h))
     gw.on_recall.append(lambda receipt, ref: store.link_hold(ref, receipt) if str(ref).startswith("hold-") else None)
     gw.registry.on_approve.append(store.save_pin)
