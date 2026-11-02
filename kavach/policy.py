@@ -238,11 +238,14 @@ class PolicyEngine:
                 "leaving in parts.", chars=st["task_outbound_chars"])
 
         # R38 instructions in untrusted content can name a destination in a form value matching can't trace
-        # ("payouts [at] fin-desk [dot] io"): after untrusted content, an outside destination must come from the user
-        if m in ("email", "transfer") and st.get("untrusted_seen") \
+        # ("payouts [at] fin-desk [dot] io"): after untrusted content, an outside destination must come from the user.
+        # Email and transfers, and any outbound tool whose manifest declares its destination (arg_map 'to').
+        r38_dest = argname(spec, DESTINATION[m]) if m in ("email", "transfer") else \
+            (spec.arg_map.get("to") if m is None and spec.sink == "external" else None)
+        if r38_dest and r38_dest in call.args and st.get("untrusted_seen") \
                 and not st.get("destination_given") and not self._internal_destination(call, spec, st) \
                 and not any(g.rule_id == "R1" and g.outcome == "DENY" for g in out):   # R1 already traced it
-            dest = argname(spec, DESTINATION[m])
+            dest = r38_dest
             add("R38", "REQUIRE_APPROVAL", f"This task read untrusted content, and '{dest}' = {call.args.get(dest)!r} "
                 "was not given by the user.", arg=dest)
 

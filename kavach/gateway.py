@@ -615,13 +615,15 @@ class Kavach:
         ctx.rows_changed = max(0, ctx.rows_changed - self._rows_of(call, effect))
 
     def _destination_given(self, task: Task, call: ToolCall) -> bool:
-        """R38/R40: every destination of an email or transfer was typed by the user (or is the sender they reply to)."""
+        """R38/R40: every destination of an email or transfer (or of a tool that declares one) was typed by the user,
+        or is the sender they reply to."""
         spec = self.registry.get(call.tool)
         m = model_of(spec)
-        dest = {"email": "to", "transfer": "to_account"}.get(m)
-        if dest is None:
+        role = {"email": "to", "transfer": "to_account"}.get(m) or ("to" if m is None and spec is not None
+                                                                    and "to" in spec.arg_map else None)
+        if role is None:
             return True
-        value = str(arg(spec, call.args, dest, "") or "")
+        value = str(arg(spec, call.args, role, "") or "")
         values = parse_recipients(value) if m == "email" else [value.strip()]
         return all(task.prov.given(v) for v in values if v)
 
