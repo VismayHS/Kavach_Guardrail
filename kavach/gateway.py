@@ -47,6 +47,7 @@ class GatewayConfig:
     use_consequence: bool = True             # ablation switch
     use_risk: bool = True                    # ablation switch: rules only
     use_windows: bool = True                 # ablation switch: False => payments, email, SAP go out at once
+    model_scores: bool = True                # ablation switch: False => p(harm) forced to 0; rules + intent gate decide
 
 
 @dataclass
@@ -156,6 +157,8 @@ class Kavach:
             intent = self.judge.score(ctx.user_request, call.tool, call.args, labels, ambiguous)
             feats = featurize(spec, call.args, labels, effect, intent, ctx.env, ctx.user_request)
             risk = self.risk.assess(feats, effect, self.cfg.c_block, intent)
+            if not self.cfg.model_scores:
+                risk.p_harm = risk.p_lo = risk.p_hi = risk.euh = 0.0
             if not self.cfg.reversibility_conditioned:
                 risk.tau = self.cfg.fixed_tau
 
