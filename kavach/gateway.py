@@ -210,8 +210,14 @@ class Kavach:
         trust, conf = self.output_label(call)
         spec = self.registry.get(call.tool)
         fields = spec.untrusted_fields if spec is not None else ()
-        self.tasks[task_id].prov.register_output(call.tool, output, trust, conf, fields,
-                                                 named=self._user_named(task_id, call))
+        prov = self.tasks[task_id].prov
+        shown = prov.n_outputs
+        prov.register_output(call.tool, output, trust, conf, fields, named=self._user_named(task_id, call))
+        if spec is not None and spec.effect not in ("read", "ingress"):
+            # the reply to the agent's own state change ("queued", "held", a row count) shows it nothing to trace a
+            # destination from: R40 keeps asking for one the user didn't give. Before, approving one email this way
+            # let every later email in the task go to any address the agent made up.
+            prov.n_outputs = shown
         if self.probe is not None and (trust == "untrusted" or fields):
             self._probe(task_id, call.tool, output, fields)
         if self.pii is not None and conf not in (Conf.PII, Conf.CONFIDENTIAL):
