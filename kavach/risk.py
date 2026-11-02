@@ -76,10 +76,10 @@ def featurize(spec: ToolSpec, args: dict, labels: dict[str, Label], effect: Effe
 
 
 class RiskModel:
-    def __init__(self, path: Path | None = None):
+    def __init__(self, path: Path | None = None, model: dict | None = None):
         path = path or MODEL_PATH
-        if path.exists():
-            d = json.loads(path.read_text())
+        if model is not None or path.exists():
+            d = model if model is not None else json.loads(path.read_text())
             self.W = np.array(d["coefs"])            # (n_boot, n_features)
             self.b = np.array(d["intercepts"])       # (n_boot,)
             self.iso_x = np.array(d["iso_x"])
@@ -88,6 +88,9 @@ class RiskModel:
             self.sd = np.array(d["sd"])
             self.source = f"trained ({d.get('n_train', '?')} labelled actions, {len(self.b)} bootstrap models)"
             self.meta = d.get("meta", {})
+            self.data = d.get("data") or {}          # the train / calibration / test rows (E11), when stored
+            self.sha = __import__("hashlib").sha256(json.dumps({k: d[k] for k in ("coefs", "intercepts", "iso_y")}
+                                                               ).encode()).hexdigest()[:12]
         else:
             w = np.array([PRIOR["coef"][f] for f in FEATURES])
             self.W, self.b = w[None, :], np.array([PRIOR["intercept"]])
@@ -95,6 +98,10 @@ class RiskModel:
             self.mu, self.sd = np.zeros(len(FEATURES)), np.ones(len(FEATURES))
             self.source = "prior (untrained)"
             self.meta = {}
+            self.data = {}
+            self.sha = "prior"
+        self._lam: dict[float, float] = {}
+        self.doc = d if (model is not None or path.exists()) else None    # the model file, for retraining
 
     def _calibrate(self, p: np.ndarray) -> np.ndarray:
         if self.iso_x is None:
@@ -102,7 +109,42 @@ class RiskModel:
         return np.interp(p, self.iso_x, self.iso_y)
 
     def predict(self, feats: dict) -> tuple[float, float, float]:
-        x = (np.array([feats[f] for f in FEATURES]) - self.mu) / self.sd
+        return self._predict_x(np.array([feats[f] for f in FEATURES]))
+
+    def scores(self, X) -> np.ndarray:
+        """p_hi (the score the gateway compares with tau) for each row of a feature matrix."""
+        return np.array([self._predict_x(np.asarray(x, dtype=float))[2] for x in X])
+
+    def conformal_scores(self) -> np.ndarray | None:
+        """E11: for each unsafe calibration action, the score at which the whole gateway would auto-allow it: p_hi
+        if the rules let it through and p_hi < tau, else +inf (a rule or tau stops it whatever the cutoff). Uses the
+        current weights, so a retrained model gets its own cutoff."""
+        cal = self.data.get("cal_system")
+        if not cal:
+            return None
+        out = []
+        for r in cal:
+            if r["y"] != 1:
+                continue
+            if r["floor"] != "PASS" or r["x"] is None:
+                out.append(np.inf)
+                continue
+            p_hi = self._predict_x(np.asarray(r["x"], dtype=float))[2]
+            out.append(p_hi if p_hi < r["tau"] else np.inf)
+        return np.array(out)
+
+    def conformal_lambda(self, alpha: float) -> float | None:
+        """E11: the conformal cutoff for this alpha (None when no calibration rows are stored)."""
+        if alpha not in self._lam:
+            s = self.conformal_scores()
+            if s is None:
+                return None
+            from .conformal import crc_lambda
+            self._lam[alpha] = crc_lambda(s, alpha)
+        return self._lam[alpha]
+
+    def _predict_x(self, x: np.ndarray) -> tuple[float, float, float]:
+        x = (x - self.mu) / self.sd
         z = self.W @ x + self.b
         ps = self._calibrate(1 / (1 + np.exp(-z)))
         p = float(np.median(ps))
@@ -122,3 +164,34 @@ class RiskModel:
         tau = 1.0 if exposure <= 1e-6 else min(p_ceiling, c_block / exposure)
         return Risk(round(p, 4), round(lo, 4), round(hi, 4), round(tau, 4), round(p * exposure, 5),
                     {k: round(v, 3) for k, v in feats.items()}, intent)
+
+
+def fit(X: np.ndarray, y: np.ndarray, X_cal: np.ndarray, y_cal: np.ndarray, n_boot: int = 25, seed: int = 0,
+        sample_weight: np.ndarray | None = None) -> dict:
+    """Bootstrap logistic regression + isotonic calibration (the model file format RiskModel loads). Used by
+    bench/run.py to train and by kavach/learning.py to retrain with human feedback (E11)."""
+    import time
+    from sklearn.isotonic import IsotonicRegression
+    from sklearn.linear_model import LogisticRegression
+
+    mu, sd = X.mean(0), X.std(0) + 1e-6
+    Xs, Xc = (X - mu) / sd, (X_cal - mu) / sd
+    rng = np.random.default_rng(seed)
+    coefs, ints = [], []
+    for _ in range(n_boot):
+        idx = rng.integers(0, len(y), len(y))
+        if len(set(y[idx])) < 2:
+            continue
+        w = None if sample_weight is None else sample_weight[idx]
+        lr = LogisticRegression(C=0.5, max_iter=2000).fit(Xs[idx], y[idx], sample_weight=w)
+        coefs.append(lr.coef_[0].tolist())
+        ints.append(float(lr.intercept_[0]))
+    W, b = np.array(coefs), np.array(ints)
+    raw_cal = np.median(1 / (1 + np.exp(-(Xc @ W.T + b))), axis=1)
+    iso = IsotonicRegression(out_of_bounds="clip", y_min=0.001, y_max=0.999).fit(raw_cal, y_cal)
+    xs = np.linspace(0, 1, 101)
+    return {"coefs": coefs, "intercepts": ints, "mu": mu.tolist(), "sd": sd.tolist(),
+            "iso_x": xs.tolist(), "iso_y": iso.predict(xs).tolist(), "features": FEATURES,
+            "n_train": int(len(y)), "n_cal": int(len(y_cal)),
+            "meta": {"model": "bootstrap logistic regression + isotonic calibration", "n_boot": len(ints),
+                     "trained_at": time.strftime("%Y-%m-%d %H:%M")}}

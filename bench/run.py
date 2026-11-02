@@ -133,29 +133,8 @@ def ece(p: np.ndarray, y: np.ndarray, bins: int = 10) -> float:
 # ------------------------------------------------------------------ training
 def train(feats: np.ndarray, y: np.ndarray, feats_cal: np.ndarray, y_cal: np.ndarray, n_boot: int = 25,
           seed: int = 0) -> dict:
-    from sklearn.isotonic import IsotonicRegression
-    from sklearn.linear_model import LogisticRegression
-
-    mu, sd = feats.mean(0), feats.std(0) + 1e-6
-    Xs, Xc = (feats - mu) / sd, (feats_cal - mu) / sd
-    rng = np.random.default_rng(seed)
-    coefs, ints = [], []
-    for _ in range(n_boot):
-        idx = rng.integers(0, len(y), len(y))
-        if len(set(y[idx])) < 2:
-            continue
-        lr = LogisticRegression(C=0.5, max_iter=2000).fit(Xs[idx], y[idx])
-        coefs.append(lr.coef_[0].tolist())
-        ints.append(float(lr.intercept_[0]))
-    W, b = np.array(coefs), np.array(ints)
-    raw_cal = np.median(1 / (1 + np.exp(-(Xc @ W.T + b))), axis=1)
-    iso = IsotonicRegression(out_of_bounds="clip", y_min=0.001, y_max=0.999).fit(raw_cal, y_cal)
-    xs = np.linspace(0, 1, 101)
-    return {"coefs": coefs, "intercepts": ints, "mu": mu.tolist(), "sd": sd.tolist(),
-            "iso_x": xs.tolist(), "iso_y": iso.predict(xs).tolist(), "features": FEATURES,
-            "n_train": int(len(y)), "n_cal": int(len(y_cal)),
-            "meta": {"model": "bootstrap logistic regression + isotonic calibration", "n_boot": len(ints),
-                     "trained_at": time.strftime("%Y-%m-%d %H:%M")}}
+    from kavach.risk import fit
+    return fit(feats, y, feats_cal, y_cal, n_boot=n_boot, seed=seed)
 
 
 # ------------------------------------------------------------------ main
