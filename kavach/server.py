@@ -60,6 +60,10 @@ if os.environ.get("KAVACH_MANIFESTS"):             # E3: more tools, e.g. kavach
     from .manifest import register_manifests
     register_manifests(gw.registry, gw.policy.cfg["roles"],
                        [p.strip() for p in os.environ["KAVACH_MANIFESTS"].split(",") if p.strip()])
+STORE_STATUS = None
+if os.environ.get("KAVACH_DB_URL"):              # E5: receipts, pauses, undo windows and tool pins outlive a restart
+    from .store import Store, attach
+    STORE_STATUS = attach(gw, Store(os.environ["KAVACH_DB_URL"]))
 # F6: OpenTelemetry spans (standard OTEL_EXPORTER_OTLP_ENDPOINT) and SIEM forwarding (KAVACH_SIEM_KIND/URL/TOKEN)
 try:
     from .telemetry import SiemForwarder, setup_tracing
@@ -81,6 +85,17 @@ if os.environ.get("KAVACH_PROBE") == "1":          # C3: scan untrusted content 
     _probe = InjectionProbe()
     gw.probe = _probe if _probe.enabled else None
 app = FastAPI(title="KAVACH guardrail", version="0.1")
+SWEEPER = None
+
+
+@app.on_event("startup")
+def _start_sweeper():
+    """E6: undo windows close on time and approvals move up their SLA chain with no UI open (KAVACH_SWEEP_S=0: off)."""
+    global SWEEPER
+    every = float(os.environ.get("KAVACH_SWEEP_S", "5") or 0)
+    if every > 0 and SWEEPER is None:
+        from .windows import Sweeper
+        SWEEPER = Sweeper(gw, every).start()
 # A separate UI (another port or host) may call the API. Dev profile: any localhost port. Prod: only the origins in
 # KAVACH_CORS_ORIGINS (comma-separated). Tokens travel in the Authorization header, so no cookies are allowed.
 _origins = [o.strip() for o in os.environ.get("KAVACH_CORS_ORIGINS", "").split(",") if o.strip()]
@@ -186,7 +201,10 @@ def readyz():
     chain = gw.receipts.verify()
     ready = bool(gw.policy.version) and gw.risk.source.startswith("trained") and chain["valid"]
     body = {"ready": ready, "policy": gw.policy.version, "risk_model": gw.risk.source, "chain_valid": chain["valid"],
-            "profile": PROFILE.name}
+            "profile": PROFILE.name, "receipts": len(gw.receipts.items),
+            "store": None if gw.store is None else {"backend": gw.store.engine.url.get_backend_name(),
+                                                    "restored": STORE_STATUS},
+            "windows_sweeper": SWEEPER is not None}
     return body if ready else JSONResponse(body, 503)
 
 
@@ -439,7 +457,7 @@ def settle(advance_s: float = 0.0, who: dict | None = Depends(caller)):
     demo: dev profile only, and only for an admin when auth is on (N8); otherwise the hold can't be skipped."""
     if advance_s > 0 and (not PROFILE.fast_forward or (who is not None and who["role"] != "admin")):
         raise HTTPException(403, "only an admin, in the dev profile, can fast-forward holds")
-    return {"settled": env.settle_due(time.time() + max(0.0, advance_s))}
+    return {"settled": gw.settle(time.time() + max(0.0, advance_s))}
 
 
 @app.get("/api/receipts")
