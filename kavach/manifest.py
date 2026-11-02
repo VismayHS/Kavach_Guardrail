@@ -31,6 +31,9 @@ class ToolSpec:
     safeguard: str | None = None                 # safe transform the gateway applies (hold/recall-window/park:
                                                  # a window it can still cancel; reversibility is the tool's own)
     amount_arg: str | None = None                # for tools KAVACH has no custom model of: the argument that is money
+    # Field-level labels: output fields that are free text written by someone else (a transaction's subject, an
+    # email body). Only those are untrusted; the rest of each record keeps output_trust. Empty = whole output.
+    untrusted_fields: list[str] = field(default_factory=list)
     intent_verbs: list[str] = field(default_factory=list)   # words in a request that ask for this kind of action
     # MCP-style hints (readOnlyHint/destructiveHint/openWorldHint) are derived, never trusted from servers
     def mcp_annotations(self) -> dict:

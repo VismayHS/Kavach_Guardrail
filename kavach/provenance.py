@@ -156,15 +156,29 @@ class ProvenanceTracker:
             text = rx.sub(hide(norm), text)
         return text
 
-    def register_output(self, tool: str, output, trust: str, conf: Conf) -> None:
+    def register_output(self, tool: str, output, trust: str, conf: Conf, untrusted_fields=(), _rid=None) -> None:
+        """Label everything a tool returned. With untrusted_fields, each record is split: those fields (free text
+        someone else wrote) are untrusted, the rest keeps `trust` (field-level labels, as in FIDES)."""
         self.private_seen |= conf in (Conf.PII, Conf.CONFIDENTIAL)
-        self.untrusted_seen |= trust == "untrusted"
+        self.untrusted_seen |= trust == "untrusted" or bool(untrusted_fields)
         records = output if isinstance(output, list) else [output]
+        if untrusted_fields:
+            for rec in records:
+                if not isinstance(rec, dict):
+                    self.register_output(tool, [rec], "untrusted", conf)
+                    continue
+                rid = rec.get("id")
+                self.register_output(tool, [{k: v for k, v in rec.items() if k not in untrusted_fields}], trust,
+                                     conf, _rid=rid)
+                self.register_output(tool, [{k: v for k, v in rec.items() if k in untrusted_fields}], "untrusted",
+                                     conf, _rid=rid)
+            return
         self.n_outputs += 1
         for i, rec in enumerate(records):
             src = f"tool:{tool}"
-            if isinstance(rec, dict) and "id" in rec:
-                src += f"#{rec['id']}"
+            rid = _rid if _rid is not None else (rec.get("id") if isinstance(rec, dict) else None)
+            if rid is not None:
+                src += f"#{rid}"
             record_key = f"{src}@{self.n_outputs}:{i}"      # one person's row: their email, phone... share it
             if tool == "mail.read_inbox" and isinstance(rec, dict) and rec.get("from"):
                 for addr in parse_recipients(str(rec["from"])):    # the header, not addresses written in the body

@@ -106,7 +106,9 @@ class Kavach:
         """Everything a task reads goes through here, so its provenance labels are the same on every path
         (gateway execution, human-approved execution, API context, benchmark setup)."""
         trust, conf = self.output_label(call)
-        self.tasks[task_id].prov.register_output(call.tool, output, trust, conf)
+        spec = self.registry.get(call.tool)
+        self.tasks[task_id].prov.register_output(call.tool, output, trust, conf,
+                                                 spec.untrusted_fields if spec is not None else ())
 
     def add_request(self, task_id: str, request: str) -> None:
         """A later user turn in the same session: its values count as typed by the user, and intent follows it."""
