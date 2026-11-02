@@ -1,0 +1,259 @@
+# KAVACH's own tools as a manifest (generated from kavach.manifest.default_manifest; the Python copy is
+# the source). Every tool KAVACH guards is described this way: what it does (effect_model), where it sends
+# things (sink), whether it can be undone, which arguments pick the target (control_args), and which
+# argument roles map to its own names (arg_map). See kavach/manifests/examples.yaml for third-party tools.
+tools:
+  crm.query:
+    description: Run a read-only SQL SELECT on the CRM database.
+    params:
+      sql: str
+    required:
+    - sql
+    effect: read
+    sink: none
+    reversibility: idempotent
+    output_trust: derived
+    output_conf: pii
+    staging: sqlite
+    effect_model: sql_read
+  crm.execute:
+    description: Run a SQL statement that modifies the CRM database.
+    params:
+      sql: str
+    required:
+    - sql
+    effect: write
+    sink: internal
+    reversibility: reversible
+    control_args:
+    - sql
+    output_trust: derived
+    output_conf: internal
+    staging: sqlite
+    safeguard: snapshot+undo
+    effect_model: sql_write
+  mail.read_inbox:
+    description: Read emails from the shared inbox.
+    params:
+      unread_only: bool
+    effect: ingress
+    sink: none
+    reversibility: idempotent
+    output_trust: untrusted
+    output_conf: internal
+    staging: none
+  mail.send:
+    description: Send an email.
+    params:
+      to: str
+      subject: str
+      body: str
+    required:
+    - to
+    - subject
+    - body
+    effect: external_send
+    sink: external
+    reversibility: irreversible
+    control_args:
+    - to
+    data_args:
+    - subject
+    - body
+    output_trust: derived
+    output_conf: internal
+    staging: none
+    safeguard: recall-window
+    effect_model: email
+  files.read:
+    description: Read a file from the workspace.
+    params:
+      path: str
+    required:
+    - path
+    effect: read
+    sink: none
+    reversibility: idempotent
+    output_trust: derived
+    output_conf: internal
+    staging: fs
+    effect_model: file_read
+  files.write:
+    description: Write a file in the workspace.
+    params:
+      path: str
+      content: str
+    required:
+    - path
+    - content
+    effect: write
+    sink: internal
+    reversibility: reversible
+    control_args:
+    - path
+    data_args:
+    - content
+    output_trust: derived
+    output_conf: internal
+    staging: fs
+    safeguard: snapshot+undo
+    effect_model: file_write
+  files.delete:
+    description: Delete a file in the workspace.
+    params:
+      path: str
+    required:
+    - path
+    effect: write
+    sink: internal
+    reversibility: reversible
+    control_args:
+    - path
+    output_trust: derived
+    output_conf: internal
+    staging: fs
+    safeguard: move-to-trash
+    effect_model: file_delete
+  payments.transfer:
+    description: Transfer money to a bank account.
+    params:
+      to_account: str
+      amount: float
+      memo: str
+    required:
+    - to_account
+    - amount
+    effect: payment
+    sink: external
+    reversibility: irreversible
+    control_args:
+    - to_account
+    - amount
+    data_args:
+    - memo
+    output_trust: derived
+    output_conf: internal
+    staging: none
+    safeguard: hold
+    effect_model: transfer
+  payments.refund:
+    description: Refund an invoice.
+    params:
+      invoice_id: int
+      amount: float
+    required:
+    - invoice_id
+    - amount
+    effect: payment
+    sink: external
+    reversibility: compensable
+    control_args:
+    - invoice_id
+    - amount
+    output_trust: derived
+    output_conf: internal
+    staging: none
+    effect_model: refund
+  web.fetch:
+    description: Fetch a web page.
+    params:
+      url: str
+    required:
+    - url
+    effect: ingress
+    sink: none
+    reversibility: idempotent
+    control_args:
+    - url
+    output_trust: untrusted
+    output_conf: public
+    staging: none
+    effect_model: web_fetch
+  invoice.read:
+    description: Read an accounts-payable invoice.
+    params:
+      invoice_id: str
+    required:
+    - invoice_id
+    effect: read
+    sink: none
+    reversibility: idempotent
+    output_trust: derived
+    output_conf: confidential
+    staging: sqlite
+    effect_model: invoice_read
+  payment.propose:
+    description: Propose payment of an approved invoice.
+    params:
+      invoice_id: str
+    required:
+    - invoice_id
+    effect: write
+    sink: internal
+    reversibility: reversible
+    control_args:
+    - invoice_id
+    output_trust: derived
+    output_conf: internal
+    staging: sqlite
+    safeguard: snapshot+undo
+    effect_model: ap_propose
+  payment.release:
+    description: Release the proposed payment for an invoice to the vendor's bank account.
+    params:
+      invoice_id: str
+    required:
+    - invoice_id
+    effect: payment
+    sink: external
+    reversibility: irreversible
+    control_args:
+    - invoice_id
+    output_trust: derived
+    output_conf: internal
+    staging: none
+    safeguard: hold
+    effect_model: ap_release
+  vendor.update_bank:
+    description: Change a vendor's bank account (IBAN).
+    params:
+      vendor_id: str
+      iban: str
+    required:
+    - vendor_id
+    - iban
+    effect: write
+    sink: internal
+    reversibility: reversible
+    control_args:
+    - vendor_id
+    - iban
+    output_trust: derived
+    output_conf: internal
+    staging: sqlite
+    safeguard: snapshot+undo
+    effect_model: bank_change
+  sap.post:
+    description: Post an accounting document to SAP.
+    params:
+      doc_type: str
+      amount: float
+      gl_account: str
+      text: str
+    required:
+    - doc_type
+    - amount
+    - gl_account
+    effect: write
+    sink: internal
+    reversibility: compensable
+    control_args:
+    - gl_account
+    - amount
+    data_args:
+    - text
+    output_trust: derived
+    output_conf: internal
+    staging: none
+    safeguard: park
+    effect_model: ledger_post
