@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import tempfile
 import time
 from contextlib import AsyncExitStack
@@ -69,7 +70,10 @@ class ProxyConfig:
                 ups[name] = u["url"]
             else:
                 env = {**os.environ, **{k: str(v) for k, v in (u.get("env") or {}).items()}}
-                ups[name] = StdioServerParameters(command=u["command"], args=list(u.get("args") or []), env=env)
+                # "python" means the interpreter the proxy runs on (its venv has the MCP SDK); others are as given
+                cmd = sys.executable if u["command"] in ("python", "python3") else u["command"]
+                ups[name] = StdioServerParameters(command=cmd, args=list(u.get("args") or []), env=env,
+                                                  cwd=u.get("cwd"))
         overrides: dict[str, dict] = {}
         for m in d.get("manifests") or []:
             mp = (path.parent / m) if not Path(m).is_absolute() else Path(m)
