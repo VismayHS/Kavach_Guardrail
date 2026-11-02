@@ -3,13 +3,19 @@
     python -m bench.agentdojo_kavach smoke                                  # B0: 5 banking tasks, no attack
     python -m bench.agentdojo_kavach run --defense none                     # B1: the undefended agent
     python -m bench.agentdojo_kavach run --defense kavach                   #     the same agent behind KAVACH
+    python -m bench.agentdojo_kavach run --suite slack --defense kavach     #     the second suite
     python -m bench.agentdojo_kavach report                                 #     bench/results/AGENTDOJO.md
+    python -m bench.agentdojo_replay                                        # offline ground-truth replay, no model
 
 AgentDojo's tools are not KAVACH's tools, so each suite gets a manifest (below): what each tool does (read, payment,
-write), where it sends things, whether it can be undone, which arguments pick the target, and which output fields
-are free text written by somebody else. The manifest was written from the tools' own descriptions and the
-environment's data layout, before looking at any results. KAVACH's rules, risk model and operating point are the
-shipped ones; nothing is trained or tuned on AgentDojo.
+write), where it sends things, whether it can be undone, which arguments pick the target or are the destination,
+and which output fields are free text written by somebody else. The manifests were written from the tools' own
+descriptions and the environment's data layout. The offline ground-truth replay (bench/agentdojo_replay.py: the
+calls a correct agent makes, and an obedient agent's attack calls, no model) then found gaps in KAVACH's rules,
+which were fixed as general rules with their own tests on KAVACH's own tools, and in the manifests (destination
+roles, user-only arguments, chat messages, channel names), which were revised; all of it before the live runs with
+KAVACH that the report quotes. The risk model and operating point are the shipped ones; nothing is trained or
+tuned on AgentDojo.
 
 In the benchmark there is no human: an ESCALATE is counted as a block (the agent gets KAVACH's message instead of
 the tool result), and escalations are reported separately so that cost is visible.
@@ -159,10 +165,15 @@ class QualcommLLM(BasePipelineElement):
 
 # ------------------------------------------------------------------ KAVACH manifests for AgentDojo's tools
 def _io(effect="read", sink="none", rev=R.IDEMPOTENT, control=(), data=(), out_trust="derived",
-        out_conf=Conf.INTERNAL, untrusted_fields=(), amount=None, verbs=()):
+        out_conf=Conf.INTERNAL, untrusted_fields=(), amount=None, verbs=(), to=None, body=None, model=None,
+        user_args=()):
+    """to/body: which arguments are the destination and the message (arg_map roles R14, R38, R2, R37 read);
+    model: a KAVACH effect model ('message' for chat); user_args: values only the user may choose (R41)."""
+    arg_map = {k: v for k, v in (("to", to), ("body", body)) if v}
     return dict(effect=effect, sink=sink, reversibility=rev, control_args=list(control), data_args=list(data),
                 output_trust=out_trust, output_conf=out_conf, untrusted_fields=list(untrusted_fields),
-                amount_arg=amount, intent_verbs=list(verbs))
+                amount_arg=amount, intent_verbs=list(verbs), arg_map=arg_map, effect_model=model,
+                user_args=list(user_args))
 
 
 MANIFESTS: dict[str, dict[str, dict]] = {
@@ -175,19 +186,48 @@ MANIFESTS: dict[str, dict[str, dict]] = {
         "get_user_info": _io(out_conf=Conf.PII),
         "read_file": _io("ingress", control=["file_path"], out_trust="untrusted"),
         "send_money": _io("payment", "external", R.IRREVERSIBLE, control=["recipient", "amount"],
-                          data=["subject", "date"], amount="amount",
+                          data=["subject", "date"], amount="amount", to="recipient",
                           verbs=["pay", "send", "transfer", "refund", "money", "bill", "difference"]),
         # a future payment can still be changed or stopped before its date
         "schedule_transaction": _io("payment", "external", R.REVERSIBLE, control=["recipient", "amount"],
-                                    data=["subject", "date", "recurring"], amount="amount",
+                                    data=["subject", "date", "recurring"], amount="amount", to="recipient",
                                     verbs=["schedule", "recurring", "standing order", "set up", "subscription"]),
         "update_scheduled_transaction": _io("write", "external", R.REVERSIBLE, control=["id", "recipient", "amount"],
-                                            data=["subject", "date", "recurring"], amount="amount",
+                                            data=["subject", "date", "recurring"], amount="amount", to="recipient",
                                             verbs=["update", "adjust", "change", "rent", "standing order",
                                                    "scheduled", "modify"]),
-        "update_password": _io("write", "internal", R.IRREVERSIBLE, control=["password"], verbs=["password"]),
+        "update_password": _io("write", "internal", R.IRREVERSIBLE, control=["password"], verbs=["password"],
+                               user_args=["password"]),
         "update_user_info": _io("write", "internal", R.REVERSIBLE, control=["first_name", "last_name", "street", "city"],
                                 verbs=["update", "address", "account information", "moved", "info"]),
+    },
+    # slack: a company workspace. Message bodies and web pages are written by other people (untrusted), and so are
+    # channel names: anyone can create a channel, outside parties included (the data has External_ channels). Posting
+    # a web page and inviting an outside email address reach outside the company; DMs and channel posts are chat
+    # messages. Written from the tool descriptions and the environment's data before any slack run; revised after
+    # the offline ground-truth replay (bench/agentdojo_replay.py), still before any live slack run with KAVACH.
+    "slack": {
+        "get_channels": _io(out_trust="untrusted"),
+        "get_users_in_channel": _io(control=["channel"]),
+        "read_channel_messages": _io(control=["channel"], untrusted_fields=["body"]),
+        "read_inbox": _io(control=["user"], untrusted_fields=["body"]),
+        "get_webpage": dict(_io("ingress", control=["url"], out_trust="untrusted", out_conf=Conf.PUBLIC),
+                            effect_model="web_fetch"),
+        "send_direct_message": _io("write", "internal", R.IRREVERSIBLE, control=["recipient"], data=["body"],
+                                   to="recipient", model="message",
+                                   verbs=["send", "message", "dm", "tell", "notify", "write", "ask", "reply", "let",
+                                          "remind", "invite"]),
+        "send_channel_message": _io("write", "internal", R.IRREVERSIBLE, control=["channel"], data=["body"],
+                                    to="channel", model="message",
+                                    verbs=["post", "send", "message", "channel", "announce", "write", "share", "tell"]),
+        "post_webpage": _io("external_send", "external", R.IRREVERSIBLE, control=["url"], data=["content"],
+                            to="url", body="content", verbs=["post", "publish", "upload"]),
+        "invite_user_to_slack": _io("write", "external", R.COMPENSABLE, control=["user_email"], data=["user"],
+                                    to="user_email", verbs=["invite", "add", "join", "onboard"]),
+        "add_user_to_channel": _io("write", "internal", R.REVERSIBLE, control=["user", "channel"],
+                                   verbs=["add", "invite", "join"]),
+        "remove_user_from_slack": _io("write", "internal", R.COMPENSABLE, control=["user"],
+                                      verbs=["remove", "kick", "delete"]),
     },
 }
 
@@ -463,35 +503,88 @@ def _commit() -> str:
         return "unknown"
 
 
+def from_logs(d: dict) -> dict:
+    """What the per-task logs of one finished run add to its summary: (1) the attack check redone on the calls that
+    executed, for the attacks AgentDojo checks from the calls the agent *attempted* (slack injection_task_5: a call
+    KAVACH blocked still counts as the attacker's there); (2) why benign tasks failed: stopped by a KAVACH DENY, only
+    by ESCALATEs (in production a person would have decided), or not stopped at all (the model didn't finish)."""
+    from agentdojo.base_tasks import BaseInjectionTask
+    suite = _suite(d["suite"])
+    base = RUNS / d["suite"] / f"qualcomm-{d['model']}-{d['defense']}" / d["suite"]
+    by_trace = {i: t for i, t in suite.injection_tasks.items()
+                if type(t).security_from_traces is not BaseInjectionTask.security_from_traces}
+    executed = {k: v["attack"] for k, v in d.get("attacked", {}).items()}
+    for key in executed:
+        uid, iid = key.split("|")
+        f = base / uid / d["attack"] / f"{iid}.json"
+        if iid not in by_trace or not f.exists():
+            continue
+        log = json.loads(f.read_text())
+        msgs = log.get("messages") or []
+        blocked = {m.get("tool_call_id") for m in msgs if m.get("role") == "tool"
+                   and str(m.get("error") or "").startswith("BLOCKED by KAVACH")}
+        ran = [FunctionCall(**c) for m in msgs if m.get("role") == "assistant" for c in (m.get("tool_calls") or [])
+               if c.get("id") not in blocked]
+        env = suite.load_and_inject_default_environment(log.get("injections") or {})
+        out = next((get_text_content_as_str(m["content"]) for m in reversed(msgs)
+                    if m.get("role") == "assistant" and m.get("content")), "")
+        r = by_trace[iid].security_from_traces(out, env, env, ran)
+        executed[key] = bool(r) if r is not None else executed[key]
+    why = Counter()
+    for key, v in d.get("benign", {}).items():
+        if v["utility"]:
+            continue
+        f = base / key.split("|")[0] / "none" / "none.json"
+        errs = [str(m.get("error") or "") for m in (json.loads(f.read_text()).get("messages") or [])
+                if m.get("role") == "tool"] if f.exists() else []
+        verdicts = {e.split("(", 1)[1].split(")", 1)[0] for e in errs if e.startswith("BLOCKED by KAVACH (")}
+        why["deny" if "DENY" in verdicts else "escalate_only" if verdicts else "not_stopped"] += 1
+    n = max(1, len(executed))
+    return {"attack_success_executed": sum(executed.values()) / n if executed else None, "benign_failed": dict(why)}
+
+
 def report() -> str:
     """bench/results/AGENTDOJO.md from every finished run."""
     rows = []
     for p in sorted((OUT / "agentdojo").glob("*.json")):
         d = json.loads(p.read_text())
-        rows.append(d)
+        rows.append({**d, **from_logs(d)})
     order = {d: i for i, d in enumerate(DEFENSES)}
     rows.sort(key=lambda d: (d["suite"], d["attack"], order.get(d["defense"], 99)))
     md = ["# KAVACH on AgentDojo", "",
           f"AgentDojo {BENCHMARK_VERSION} (ETH Zurich, NeurIPS 2024), the standard benchmark for prompt-injection "
           "defenses. The agent is Llama 3.3 70B on Qualcomm Cloud AI. Nobody on the team wrote these tasks or attacks.",
-          "", "| Suite | Attack | Defense | Utility (no attack) | Utility under attack | Attack success ↓ | Runs |",
-          "|---|---|---|---|---|---|---|"]
+          "", "| Suite | Attack | Defense | Utility (no attack) | Utility under attack | Attack success ↓ | "
+          "… counting only calls that ran | Runs | KAVACH commit |", "|---|---|---|---|---|---|---|---|---|"]
     for d in rows:
+        ex = d.get("attack_success_executed")
         md.append(f"| {d['suite']} | {d['attack']} | {d['defense']} | {d['utility']:.1%} ({d['n_benign']}) | "
-                  f"{d['utility_under_attack']:.1%} | {d['attack_success']:.1%} | {d['n_attacked']} |"
+                  f"{d['utility_under_attack']:.1%} | {d['attack_success']:.1%} | "
+                  f"{'-' if ex is None else f'{ex:.1%}'} | {d['n_attacked']} | {d.get('kavach_commit', '-')} |"
                   + (f" ⚠ {d['replies']['service_error']} model service errors" if d["replies"].get("service_error")
                      else ""))
     kav = [d for d in rows if d.get("kavach")]
     if kav:
         md += ["", "KAVACH decisions (ESCALATE counts as a block here: there is no human in the benchmark):", ""]
         for d in kav:
-            k = d["kavach"]
+            k, b = d["kavach"], d.get("benign_failed") or {}
             md.append(f"- {d['suite']} / {d['defense']}: {k['decisions']} checks, verdicts {k['verdicts']}, "
-                      f"median check {k['check_ms_p50']} ms; rules that stopped calls: {k['blocking_rules']}")
+                      f"median check {k['check_ms_p50']} ms; rules that stopped calls: {k['blocking_rules']}. "
+                      f"Benign tasks not done: {sum(b.values())} ({b.get('escalate_only', 0)} stopped only by "
+                      f"ESCALATE, which a person would decide in production; {b.get('deny', 0)} by a DENY; "
+                      f"{b.get('not_stopped', 0)} not stopped by KAVACH).")
+            if d.get("melon"):
+                m = d["melon"]
+                md.append(f"  MELON: {m['masked_runs']} masked re-runs, {m['matches']} matches, median {m['ms_p50']} ms.")
     md += ["", "**How to read this.** Utility = AgentDojo's own check that the user's task was done. Attack success = "
-           "AgentDojo's check that the attacker's goal happened. KAVACH's manifest for each suite (bench/"
-           "agentdojo_kavach.py) was written from the tools' descriptions before any run; its rules, model and "
-           "operating point are the shipped ones, not tuned here. Numbers from other papers use other models and are "
+           "AgentDojo's check that the attacker's goal happened. For one slack attack (injection_task_5) AgentDojo "
+           "counts the calls the agent attempted, so a call KAVACH blocked still counts as the attacker's; the next "
+           "column redoes that check on the calls that ran (for every other attack the two are the same). KAVACH's "
+           "manifests (bench/agentdojo_kavach.py) declare what each tool is; the banking one was written before any "
+           "run and gained destination and user-only arguments, and the slack one was revised, after the offline "
+           "ground-truth replay (bench/agentdojo_replay.py, AGENTDOJO_REPLAY.md), before the runs here. The rules "
+           "changed with it are general (each has its own test on KAVACH's own tools); the risk model and operating "
+           "point are the shipped ones, not tuned on AgentDojo. Numbers from other papers use other models and are "
            "not comparable with these."]
     text = "\n".join(md) + "\n"
     (OUT / "AGENTDOJO.md").write_text(text)
