@@ -64,7 +64,8 @@ class ApprovalQueue:
                                        "level": i["level"]})
                     else:
                         i["status"] = "expired-denied"
-                        events.append({"type": "approval-expired", "hitl": i["id"], "task_id": i["task_id"]})
+                        events.append({"type": "approval-expired", "hitl": i["id"], "task_id": i["task_id"],
+                                       "corr": ((i.get("decision") or {}).get("call") or {}).get("call_id")})
         for ev in events:
             for cb in self.on_event:
                 cb(ev)

@@ -640,6 +640,18 @@ def verify():
     return gw.receipts.verify()
 
 
+@app.get("/api/trace/{corr}")
+def trace(corr: str, who: dict | None = Depends(caller)):
+    """One action's whole story by its correlation id (the call id; also the email's X-Kavach-Correlation header):
+    request, untrusted sources, proposed call, decision and rules, approval or hold, whether the connector was invoked
+    and what it said, and every receipt, plus whether the whole chain still verifies."""
+    t = gw.trace(corr)
+    if t is None or not _sees(who, t.get("tenant")):
+        raise HTTPException(404, f"no action with correlation id {corr}")
+    chain = gw.receipts.verify()
+    return {**t, "chain": {"valid": chain["valid"], "reason": chain.get("reason"), "count": len(gw.receipts.items)}}
+
+
 @app.get("/api/receipts/export")
 def receipts_export(who: dict | None = Depends(caller)):
     """The whole chain as JSONL (a header with the public key, then every receipt), for an auditor:
@@ -933,10 +945,13 @@ def mcp(rpc: dict, who: dict | None = Depends(caller)):
                     f"{params.get('name')} is not offered on this server (KAVACH_MCP_TOOLS)"}}
         call = ToolCall(params.get("name", ""), params.get("arguments", {}) or {},
                         tool_def_hash=meta.get("kavach/definitionHash"))
+        if isinstance(meta.get("kavach/correlation"), str) and 0 < len(meta["kavach/correlation"]) <= 64:
+            call.call_id = meta["kavach/correlation"]          # the caller's own trace id, if it has one
         d = gw.run(tid, call)
         allowed = d.verdict.value.startswith("ALLOW")
         text = json.dumps(d.result, default=str)[:4000] if allowed else Kavach.agent_message(d)
         return {"jsonrpc": "2.0", "id": mid, "result": {
             "content": [{"type": "text", "text": text}], "isError": not allowed,
-            "_meta": {"kavach/verdict": d.verdict.value, "kavach/receipt": d.receipt_id, "kavach/hitl": d.hitl_id}}}
+            "_meta": {"kavach/verdict": d.verdict.value, "kavach/receipt": d.receipt_id, "kavach/hitl": d.hitl_id,
+                      "kavach/correlation": call.call_id}}}
     return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"unknown method {method}"}}

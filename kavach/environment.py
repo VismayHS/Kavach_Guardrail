@@ -494,7 +494,7 @@ class Environment:
                 h["ref"], outcome = tx["id"], "settled" if tx["status"] == "paid" else tx["status"]
                 h["error"] = tx.get("error")
             else:
-                out = self._deliver({**h["msg"], "id": h["id"]})     # X-Kavach-Outbox = the hold id
+                out = self._deliver({**h["msg"], "id": h["id"], "corr": h.get("corr")})   # X-Kavach-Outbox = hold id
                 h["ref"], outcome = out["id"], out["status"]
                 h["error"] = out.get("delivery_error")
             self._move(h, ("dispatching", "unknown"), outcome)       # a real result beats a restart's 'unknown'

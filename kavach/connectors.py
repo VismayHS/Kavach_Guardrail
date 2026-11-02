@@ -10,7 +10,8 @@ SMTP (any mail server; Mailpit in the compose stack, http://localhost:8025, catc
     KAVACH_SMTP_FROM=agent@infycorp.com      (default)
     KAVACH_SMTP_USER / KAVACH_SMTP_PASSWORD  (optional; with KAVACH_SMTP_STARTTLS=1 on port 587)
 
-Each message carries X-Kavach-Outbox (the outbox id), so a mail log can be matched to KAVACH's receipts.
+Each message carries X-Kavach-Outbox (the hold id) and X-Kavach-Correlation (the call id behind it), so a mail log can
+be matched to KAVACH's receipts: GET /api/trace/<correlation id> shows the decision, approval and delivery.
 """
 from __future__ import annotations
 
@@ -53,6 +54,8 @@ class SmtpMailer:
             m["Cc"] = ", ".join(parse_recipients(msg["cc"]))
         m["Subject"] = str(msg.get("subject", ""))
         m["X-Kavach-Outbox"] = str(msg.get("id", ""))
+        if msg.get("corr"):                      # the call's id: GET /api/trace/<it> shows the decision behind it
+            m["X-Kavach-Correlation"] = str(msg["corr"])
         m.set_content(str(msg.get("body", "")))
         return m
 

@@ -335,6 +335,13 @@ class Kavach:
     def killed(self, task_id: str) -> dict | None:
         return next((k for k in self.kills.values() if self._matches(k, task_id)), None)
 
+    def _corr_of(self, receipt_id: str | None) -> str | None:
+        rec = self.receipts.get(receipt_id) if receipt_id else None
+        if rec is None:
+            return None
+        b = rec["body"]
+        return b.get("corr") or ((b.get("decision") or {}).get("call") or {}).get("call_id")
+
     def kill(self, scope: str, target: str | None, by: str, reason: str = "") -> dict:
         """Pause agents now (EU AI Act Art. 14(4)(e): immediate interruption). New calls in scope are denied;
         payments, emails and SAP documents they left waiting are cancelled; their pending approvals are closed."""
@@ -388,6 +395,8 @@ class Kavach:
             d.latency_ms = (time.perf_counter() - t0) * 1000
             d.explanation = f"DENY: {call.tool}: {g.message} Nothing runs until an operator resumes."
             rec = self.receipts.append({"type": "decision", "task_id": task_id, "principal": ctx.principal.user_id,
+                                        "role": ctx.principal.role, "tenant": ctx.principal.tenant,
+                                        "corr": call.call_id,
                                         "authenticated": ctx.principal.authenticated, "request": ctx.user_request,
                                         "decision": {**d.to_dict(), "explanation": d.explanation}})
             d.receipt_id = rec["id"]
@@ -530,8 +539,10 @@ class Kavach:
             d.hitl_id = self.hitl.submit(task_id, ctx.principal.user_id, dd, four_eyes, quorum)
             self.pending_calls[d.hitl_id] = (task_id, call, effect)
             dd["hitl_id"] = d.hitl_id
+        # corr: the call's id, carried by every later receipt about it (approval, hold, release, delivery, undo), the
+        # hold itself and the email's X-Kavach-Correlation header, so one id finds the whole story (GET /api/trace)
         rec = self.receipts.append({"type": "decision", "task_id": task_id, "principal": ctx.principal.user_id,
-                                    "tenant": ctx.principal.tenant,
+                                    "role": ctx.principal.role, "tenant": ctx.principal.tenant, "corr": call.call_id,
                                     "authenticated": ctx.principal.authenticated, "request": ctx.user_request,
                                     "decision": self._for_receipt(dd, task.prov)})
         d.receipt_id = rec["id"]
@@ -788,6 +799,7 @@ class Kavach:
             d.result = self._arm_window(d.receipt_id, d.call, d.effect, result)
         self.register_output(task_id, d.call, result)
         self.receipts.append({"type": "execution", "task_id": task_id, "decision_receipt": d.receipt_id,
+                              "corr": d.call.call_id,
                               "result_preview": task.prov.mask(str(d.result))[:200]})   # mask before cutting
         return d
 
@@ -811,6 +823,10 @@ class Kavach:
         ref = isinstance(result, dict) and (result.get("held") or result.get("queued") or result.get("parked"))
         if not ref:
             return result                               # e.g. {"error": "no invoice"}: nothing is waiting
+        h = next((x for x in self.env.holds if x["id"] == ref), None)
+        if h is not None and h.get("corr") != call.call_id:  # the hold (and the email it sends) carries the call's id
+            h["corr"] = call.call_id
+            self.env._held_changed(h)
         self.recall[receipt_id] = (self.env.epoch, ref)
         for cb in list(self.on_recall):
             try:
@@ -822,7 +838,7 @@ class Kavach:
             del self.recall[receipt_id]
             self._uncount_action(receipt_id)
             self.receipts.append({"type": "outcome-mismatch", "receipt": receipt_id, "cancelled": ref,
-                                  "reason": problem})
+                                  "corr": call.call_id, "reason": problem})
             return {"cancelled": ref, "reason": f"Outcome check: {problem}. Cancelled before it went out."}
         return result
 
@@ -840,26 +856,29 @@ class Kavach:
     def resolve_hitl(self, hid: str, approver: str, approve: bool, mode: str = "execute",
                      approver_role: str | None = None) -> dict:
         item = self.hitl.resolve(hid, approver, approve, mode, approver_role=approver_role)
+        corr = (item.get("decision") or {}).get("call", {}).get("call_id")
         if item["status"] == "pending":              # a quorum seat was filled; others still needed
             self.receipts.append({"type": "human-approval-partial", "hitl": hid, "approver": approver,
-                                  "role": approver_role, "remaining": dict(item["remaining"])})
+                                  "role": approver_role, "remaining": dict(item["remaining"]), "corr": corr})
             return {"hitl": item, "executed": False, "pending_quorum": dict(item["remaining"])}
         task_id, call, effect = self.pending_calls.pop(hid)
+        approvals = [dict(a) for a in item.get("approvals") or [{"approver": approver}]]
         out = {"hitl": item, "executed": False}
         if not self.cfg.local_execution:             # the caller (MCP proxy, hook) runs the approved call itself
             if approve:
                 self._count_action(self._totals(task_id), call, effect)   # it still counts toward the totals
             self.receipts.append({"type": "human-approved" if approve else "human-denied", "task_id": task_id,
-                                  "hitl": hid, "approver": approver, "external_execution": True,
-                                  "approvals": [dict(a) for a in item.get("approvals") or [{"approver": approver}]]})
+                                  "hitl": hid, "approver": approver, "external_execution": True, "corr": corr,
+                                  "approvals": approvals})
             return {**out, "approved": approve, "external": True}
         if not approve:
-            self.receipts.append({"type": "human-denied", "task_id": task_id, "hitl": hid, "approver": approver})
+            self.receipts.append({"type": "human-denied", "task_id": task_id, "hitl": hid, "approver": approver,
+                                  "corr": corr})
             return out
         if mode == "safeguard" and call.tool == "mail.send":       # approved as a draft: saved, never sent
             out["result"] = self.env.mail_draft(**call.args)
             self.receipts.append({"type": "human-approved-draft", "task_id": task_id, "hitl": hid,
-                                  "approver": approver})
+                                  "approver": approver, "corr": corr})
             return out
         self._count_action(self._totals(task_id), call, effect)   # an approved action still counts toward totals
         windowed = self._windowed(effect)                          # an approved payment still waits out its hold
@@ -870,8 +889,8 @@ class Kavach:
             result, log = self._dispatch_undoable(call, effect, actor)
         self.register_output(task_id, call, result)
         rec = self.receipts.append({"type": "human-approved-execution", "task_id": task_id, "hitl": hid,
-                                    "approver": approver, "mode": mode,
-                                    "approvals": [dict(a) for a in item.get("approvals") or [{"approver": approver}]]})
+                                    "approver": approver, "mode": mode, "corr": corr,
+                                    "approvals": approvals})
         self.counted[rec["id"]] = (self._totals(task_id), call, effect)
         if windowed:
             result = self._arm_window(rec["id"], call, effect, result)
@@ -891,12 +910,62 @@ class Kavach:
             self.recall.pop(back.get(hid, ""), None)
             self.receipts.append({"type": "window-closed", "hold": hid, "kind": h.get("kind"), "ref": h.get("ref"),
                                   "outcome": h.get("status"), **({"error": h["error"]} if h.get("error") else {}),
-                                  "receipt": back.get(hid), "task_id": self._task_of(back.get(hid))})
+                                  "receipt": back.get(hid), "task_id": self._task_of(back.get(hid)),
+                                  "corr": h.get("corr") or self._corr_of(back.get(hid))})
         return done
 
     def _task_of(self, receipt_id: str | None) -> str | None:
         rec = self.receipts.get(receipt_id) if receipt_id else None
         return rec["body"].get("task_id") if rec else None
+
+    def trace(self, corr: str) -> dict | None:
+        """One action's whole story by its correlation id (the call id): the user's request, where the agent's input
+        came from, the proposed call, the decision with its evidence, the approval or hold, whether the connector
+        (mail server, bank, database) was invoked and what it said, and every receipt on the way, in order."""
+        recs = [r for r in self.receipts.items if r["body"].get("corr") == corr
+                or ((r["body"].get("decision") or {}).get("call") or {}).get("call_id") == corr]
+        first = next((r for r in recs if r["body"].get("type") == "decision"), None)
+        if first is None:
+            return None
+        b, d = first["body"], first["body"]["decision"]
+        types = [r["body"]["type"] for r in recs]
+        closed = next((r["body"] for r in recs if r["body"]["type"] == "window-closed"), None)
+        hold_id = (closed or {}).get("hold") or next((r["body"].get("hold") or r["body"].get("cancelled")
+                                                      for r in recs if r["body"].get("hold") or r["body"].get("cancelled")), None)
+        h = next((x for x in self.env.holds if x["id"] == hold_id), None) if hold_id else None
+        if h is None:
+            h = next((x for x in self.env.holds if x.get("corr") == corr), None)
+        status = (h or {}).get("status")
+        if closed is not None:
+            invoked, outcome = True, closed["outcome"]
+        elif status in ("held", "dispatching"):
+            invoked, outcome = False, "waiting" if status == "held" else "being handed over"
+        elif status == "cancelled" or "undo" in types or "outcome-mismatch" in types:
+            invoked, outcome = False, "cancelled before it went out"
+        elif d["verdict"] == "DENY":
+            invoked, outcome = False, "refused: the connector was never called"
+        elif d["verdict"] == "ESCALATE" and not ({"human-approved-execution", "human-approved"} & set(types)):
+            invoked = False
+            outcome = "refused by a person" if "human-denied" in types else (
+                "approval expired or closed" if {"approval-expired", "approval-closed-restart"} & set(types)
+                else "waiting for a person")
+        else:
+            invoked, outcome = "execution" in types or "human-approved-execution" in types, "ran"
+        untrusted = sorted({s for lab in (d.get("labels") or {}).values() if lab.get("trust") == "untrusted"
+                            for s in lab.get("sources", [])})
+        return {"corr": corr, "task_id": b.get("task_id"), "user": b.get("principal"), "role": b.get("role"),
+                "tenant": b.get("tenant"), "request": b.get("request"), "tool": d["call"]["tool"],
+                "args": d["call"]["args"], "args_sha256": d["call"].get("args_sha256"),
+                "untrusted_sources": untrusted, "verdict": d["verdict"], "reason": d["reason"],
+                "rules": [{"rule": g["rule_id"], "outcome": g["outcome"], "message": g["message"]}
+                          for g in d.get("gates", []) if g.get("outcome") != "PASS"],
+                "latency_ms": d.get("latency_ms"), "hitl": d.get("hitl_id"), "action_digest": d.get("action_digest"),
+                "hold": None if h is None else {"id": h["id"], "kind": h.get("kind"), "status": status,
+                                                "settles_at": h.get("settles_at"), "ref": h.get("ref")},
+                "connector": {"invoked": invoked, "outcome": outcome,
+                              "header": f"X-Kavach-Outbox: {h['id']}" if h and h.get("kind") == "mail" else None},
+                "receipts": [{"id": r["id"], "seq": r["seq"], "ts": r["ts"], "type": r["body"]["type"],
+                              "hash": r["hash"][:16]} for r in recs]}
 
     def release_now(self, receipt_id: str, by: str | None = None) -> dict:
         """Send now: a person lets a queued email or held payment go out before its window ends, the opposite of
@@ -916,7 +985,8 @@ class Kavach:
             h["settles_at"] = min(h["settles_at"], time.time())
             self.env._held_changed(h)
         self.receipts.append({"type": "released-early", "receipt": receipt_id, "hold": ref, "kind": h.get("kind"),
-                              "by": by, "task_id": self._task_of(receipt_id)})
+                              "by": by, "task_id": self._task_of(receipt_id),
+                              "corr": h.get("corr") or self._corr_of(receipt_id)})
         self.settle()
         return {"released": h["status"] not in ("held", "cancelled"), "hold": ref, "outcome": h["status"]}
 
@@ -929,7 +999,8 @@ class Kavach:
             return {"undone": False, "reason": "the environment was reset since this action; nothing to take back"}
         if ref is not None:          # a held payment, queued email or parked SAP document: take back just that one
             ok = self.env.cancel(ref)
-            self.receipts.append({"type": "undo", "receipt": receipt_id, "cancelled": ref, "ok": ok})
+            self.receipts.append({"type": "undo", "receipt": receipt_id, "cancelled": ref, "ok": ok,
+                                  "corr": self._corr_of(receipt_id), "task_id": self._task_of(receipt_id)})
             if ok:
                 self._uncount_action(receipt_id)
             return {"undone": True, "cancelled": ref} if ok else {
@@ -941,6 +1012,6 @@ class Kavach:
             self.undo[receipt_id] = log            # nothing changed; it can be retried once the conflict is resolved
         else:
             self._uncount_action(receipt_id)
-        self.receipts.append({"type": "undo", "receipt": receipt_id, **{k: v for k, v in out.items()
-                                                                         if k in ("undone", "reason", "rows", "files")}})
+        self.receipts.append({"type": "undo", "receipt": receipt_id, "corr": self._corr_of(receipt_id),
+                              **{k: v for k, v in out.items() if k in ("undone", "reason", "rows", "files")}})
         return out
