@@ -69,7 +69,7 @@ def _luhn_ok(d: str) -> bool:
 
 def is_pii(e: str) -> bool:
     """Entities that identify a person: emails, UPI ids, phones, PAN, Aadhaar, card numbers."""
-    return "@" in e or e.startswith(("+", "pan:", "aadhaar:", "card:"))
+    return "@" in e or e.startswith(("+", "pan:", "aadhaar:", "card:", "voter:", "passport:"))
 
 
 def named_targets(text: str) -> set[str]:
@@ -107,8 +107,61 @@ def _norm_num(s: str) -> str:
         return s
 
 
+GSTIN = re.compile(r"\b\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]\b")                    # Indian GST registration
+IFSC = re.compile(r"\b[A-Z]{4}0[A-Z0-9]{6}\b")                                        # Indian bank branch code
+VOTER = re.compile(r"\b[A-Z]{3}\d{7}\b")                                              # EPIC voter id
+PASSPORT = re.compile(r"\b[A-PR-WYa-pr-wy][1-9]\d\s?\d{4}[1-9]\b")                   # Indian passport
+
+# ---- normalisation (E8): undo the obfuscation an injection uses to slip a value past exact matching
+_ZW = re.compile("[­​-‏⁠-⁤﻿]")
+_AT = re.compile(r"\s*[\[\(\{<]\s*at\s*[\]\)\}>]\s*|\s+at\s+(?=[\w-]+\s*[\[\(\{<]?\s*dot\b)", re.I)
+_DOT = re.compile(r"\s*[\[\(\{<]\s*dot\s*[\]\)\}>]\s*|(?<=\w)\s+dot\s+(?=\w)", re.I)
+_ACC_SPACED = re.compile(r"\bACC[\s_.]+(\d{2})[\s_.]+(\d{4})\b")
+_B64 = re.compile(r"(?<![\w+/=])[A-Za-z0-9+/]{16,}={0,2}(?![\w+/=])")
+# letters from other scripts that look Latin (a small, high-value subset of Unicode's confusables)
+_CONFUSABLE = str.maketrans({"а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x", "і": "i", "ј": "j",
+                             "ѕ": "s", "ԁ": "d", "ɡ": "g", "ⅼ": "l", "Α": "A", "Β": "B", "Ε": "E", "Ζ": "Z", "Η": "H",
+                             "Ι": "I", "Κ": "K", "Μ": "M", "Ν": "N", "Ο": "O", "Ρ": "P", "Τ": "T", "Χ": "X", "А": "A",
+                             "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O", "Р": "P", "С": "C", "Т": "T",
+                             "Х": "X"})
+
+
+def normalize(text: str) -> str:
+    """Canonical form for matching values: NFKC, no invisible characters, HTML entities decoded, look-alike letters
+    folded, '[at]'/'(dot)' spelled out, spaced account ids joined, and base64 tokens that decode to text appended."""
+    import base64
+    import binascii
+    import html
+    import unicodedata
+    t = unicodedata.normalize("NFKC", text)
+    t = _ZW.sub("", t)
+    t = html.unescape(t).translate(_CONFUSABLE)
+    t = _DOT.sub(".", _AT.sub("@", t))
+    t = _ACC_SPACED.sub(r"ACC-\1-\2", t)
+    decoded = []
+    for m in _B64.finditer(t):
+        try:
+            raw = base64.b64decode(m.group(0) + "=" * (-len(m.group(0)) % 4), validate=True).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            continue
+        if raw.isprintable() and sum(c.isalpha() for c in raw) > len(raw) / 2:
+            decoded.append(raw)
+    return t + ("\n" + "\n".join(decoded) if decoded else "")
+
+
 def entities(text: str) -> set[str]:
+    """Values worth tracing in a text: as written, and after normalisation (obfuscated copies match too)."""
+    out = _entities(text)
+    n = normalize(text)
+    return out | _entities(n) if n != text else out
+
+
+def _entities(text: str) -> set[str]:
     out: set[str] = set()
+    out |= {"gstin:" + m for m in GSTIN.findall(text)}
+    out |= {"ifsc:" + m for m in IFSC.findall(text)}
+    out |= {"voter:" + m for m in VOTER.findall(text)}
+    out |= {"passport:" + re.sub(r"\s", "", m).upper() for m in PASSPORT.findall(text)}
     out |= {e.lower() for e in EMAIL.findall(text)}
     out |= {u.rstrip(".,") for u in URL.findall(text)}
     out |= set(ACCOUNT.findall(text))
