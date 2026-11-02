@@ -692,6 +692,8 @@ function sessionPage(t) {
     <section class="section"><div class="tag">${field('Blocks so far', `${t.denials} of ${t.circuit_breaker} before the agent is paused`)}
       ${field('Harm budget', `${spent.toFixed(0)}% used`, { tipText: 'Expected harm that could not be undone, summed over the session. Past the budget, everything goes to a person: it stops an attack split into many small steps.' })}
       ${field('Flagged sources', (t.hostile_sources || []).map(esc).join(', '), { empty: 'None', mono: true })}</div></section>
+    <p><a class="btn" href="/api/evidence/${encodeURIComponent(t.task_id)}?format=html" target="_blank" rel="noopener">${icon('file-text')}Evidence pack</a>
+      <span class="meta">Every decision, the rule and the controls it evidences (OWASP agentic, EU AI Act, NIST, DPDP, RBI). Print it to PDF.</span></p>
     <section class="section">${sectionHead('Everything it did', rows.length)}<div class="sheet rows">${rows.join('') || '<p class="hint">Nothing yet.</p>'}</div></section></div>`;
 }
 

@@ -310,6 +310,22 @@ def delegate(body: DelegateIn, who: dict | None = Depends(caller)):
     return {"task_id": child, "tools": gw.tasks[child].allowed_tools}
 
 
+@app.get("/api/evidence/{task_id}")
+def evidence(task_id: str, format: str = "md", who: dict | None = Depends(caller)):
+    """F4: the session's compliance evidence pack (md, html for print-to-PDF, or json)."""
+    if task_id not in gw.tasks or not _sees(who, _task_tenant(task_id)):
+        raise HTTPException(404, f"no task {task_id}")
+    from fastapi.responses import HTMLResponse, PlainTextResponse
+
+    from .evidence import html_page, markdown, pack
+    p = pack(gw, task_id)
+    if format == "html":
+        return HTMLResponse(html_page(p))
+    if format == "json":
+        return p
+    return PlainTextResponse(markdown(p), media_type="text/markdown; charset=utf-8")
+
+
 @app.get("/.well-known/jwks.json")
 def jwks():
     """KAVACH's Ed25519 public key, for tools that verify delegated agent tokens (F1)."""
