@@ -63,7 +63,7 @@ if os.environ.get("KAVACH_MANIFESTS"):             # E3: more tools, e.g. kavach
     from .manifest import register_manifests
     register_manifests(gw.registry, gw.policy.cfg["roles"],
                        [p.strip() for p in os.environ["KAVACH_MANIFESTS"].split(",") if p.strip()])
-if os.environ.get("KAVACH_SHELL") == "1":          # E10: shell.run for agents, read and dry-run in a Docker sandbox
+if os.environ.get("KAVACH_SHELL", "1") != "0":    # E10: shell.run for agents, read and dry-run in a Docker sandbox
     from .manifest import register_manifests as _reg
     from .shell import DockerSandbox
     _reg(gw.registry, gw.policy.cfg["roles"], [ROOT / "manifests" / "shell.yaml"])
