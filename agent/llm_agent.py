@@ -44,6 +44,17 @@ def openai_tools(gw: Kavach) -> list[dict]:
 
 
 PYTHONIC_CALL = re.compile(r"<\|python_tag\|>\s*([A-Za-z_]\w*)\((.*)\)\s*(?:<\|eom_id\|>|$)", re.S)
+END_OF_CALL = re.compile(r"<\|(?:eom_id|eot_id|start_header_id)\|>")
+REPAIR = ("That tool call did not come through: its arguments were not valid JSON, so nothing ran. Call the tool again "
+          "with valid JSON arguments (escape any quotes inside text), or answer if you are done.")
+
+
+def broken_call(content: str | None) -> bool:
+    """The reply is a tool call the endpoint couldn't parse: Llama's own call syntax left in the text, or a JSON call
+    whose arguments are malformed (3 Nov 2026: an unescaped quote inside an email body). It is not an answer."""
+    text = (content or "").lstrip()
+    return bool(END_OF_CALL.search(text) or text.startswith("<|python_tag|>")
+                or re.match(r'\{\s*"name"\s*:\s*"[A-Za-z_][\w.]*"\s*,\s*"(?:parameters|arguments)"', text))
 
 
 def text_tool_calls(content: str | None) -> list[dict]:
@@ -51,8 +62,10 @@ def text_tool_calls(content: str | None) -> list[dict]:
     ({"name": ..., "parameters": ...}) or pythonic (<|python_tag|>name(arg="...")). Read it as the call it is,
     so it runs (unguarded) or is checked by KAVACH (guarded) rather than silently doing nothing."""
     text, name, args = (content or "").strip(), None, None
+    if text.startswith("{"):
+        text = END_OF_CALL.split(text, 1)[0].strip()        # the call, without the turn markers written after it
     try:
-        obj = json.loads(text)
+        obj, _end = json.JSONDecoder().raw_decode(text)
         if isinstance(obj, dict) and isinstance(obj.get("name"), str):
             p = obj.get("parameters", obj.get("arguments", {}))
             name, args = obj["name"], json.loads(p) if isinstance(p, str) else p
@@ -109,12 +122,18 @@ def run(request: str, guard: bool = True, role: str = "analyst", model: str | No
                        name_map=lambda n: n.replace("__", "."))
     msgs = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": request}]
     trace = [] if trace is None else trace
+    repairs = 0
     for _ in range(max_steps):
         resp = llm.chat(msgs, tools=openai_tools(gw), max_tokens=4000)    # a long email body must not be cut off
         msg = resp["choices"][0]["message"]
         calls = msg.get("tool_calls") or text_tool_calls(msg.get("content"))
         msgs.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls} if calls
                     else {"role": "assistant", "content": msg.get("content") or ""})
+        if not calls and broken_call(msg.get("content")) and repairs < 2:
+            repairs += 1                     # a call that didn't parse is not the agent's answer: ask it again
+            trace.append({"note": "the model's tool call was malformed (nothing ran); asked it to call again"})
+            msgs.append({"role": "user", "content": REPAIR})
+            continue
         if not calls:
             trace.append({"final": msg.get("content")})
             break
