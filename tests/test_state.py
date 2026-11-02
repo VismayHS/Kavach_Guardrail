@@ -98,3 +98,38 @@ def test_persistent_state_needs_a_real_receipt_key(monkeypatch, tmp_path):
     monkeypatch.setenv("KAVACH_RECEIPT_KEY", "k" * 40)
     gw, _ = server.make_gateway()
     assert gw.receipts.store is not None
+
+
+# ---------------------------------------------------------------- U11 recalibration from human decisions
+def reviewed_store(tmp_path, n_each: int) -> Path:
+    """A store holding reviewers' decisions: refunds above the auto limit approved, made-up transfers denied."""
+    db = tmp_path / "kavach.db"
+    gw = gateway(db)
+    for i in range(n_each):
+        tid, _ = gw.start_task("asha", "support", f"Refund {6000 + i} on invoice {1100 + i}; double charged.")
+        ok = gw.check(tid, ToolCall("payments.refund", {"invoice_id": 1100 + i, "amount": 6000 + i}))
+        gw.resolve_hitl(ok.hitl_id, "meera", True)
+        tid, _ = gw.start_task("meera", "finance", "Settle the vendor invoices this week.")
+        bad = gw.check(tid, ToolCall("payments.transfer", {"to_account": "ACC-11-2001", "amount": 9000 + i,
+                                                           "memo": "settle"}))
+        gw.resolve_hitl(bad.hitl_id, "asha", False)
+    return db
+
+
+def test_recalibration_trains_on_reviewer_decisions_without_touching_the_shipped_model(tmp_path):
+    from bench import recalibrate
+    from kavach.risk import MODEL_PATH
+    shipped = MODEL_PATH.read_bytes()
+    db = reviewed_store(tmp_path, 12)
+    out = recalibrate.main(str(db), out=str(tmp_path / "new.json"))
+    assert out["trained_on"] + out["held_out"] == 24 and (tmp_path / "new.json").exists()
+    assert set(out["suite_test"]["recalibrated"]) >= {"UAR", "safe_auto"} and not out["installed"]
+    assert MODEL_PATH.read_bytes() == shipped
+
+
+def test_too_few_labels_trains_nothing(tmp_path):
+    from bench import recalibrate
+    db = reviewed_store(tmp_path, 3)
+    with pytest.raises(SystemExit, match="Not enough"):
+        recalibrate.main(str(db), out=str(tmp_path / "new.json"))
+    assert not (tmp_path / "new.json").exists()
