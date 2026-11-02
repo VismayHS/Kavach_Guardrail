@@ -257,6 +257,14 @@ class ProvenanceTracker:
         return sum(1 for e in entities(text)
                    if e in self.pii_values and e not in rcpt and not (self.pii_owner.get(e, set()) & mine))
 
+    def add_pii(self, values, src: str) -> None:
+        """Values a PII detector found in free text: traced like personal data from a labelled tool output."""
+        for raw in values:
+            for e in entities(str(raw)) or {str(raw)}:
+                if is_pii(e) or e.startswith("#"):
+                    self.pii_values.add(e)
+                    self.origins.setdefault(e, []).append(Label(Trust.DERIVED, Conf.PII, [src]))
+
     def reply_trusted(self, sender: str) -> bool:
         """'Reply to the sender' trust: not for lookalike domains (R25), nor for a message a classifier flagged."""
         if self.lookalike is not None and self.lookalike.check(domain_of(sender)):

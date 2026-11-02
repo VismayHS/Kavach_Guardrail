@@ -122,6 +122,7 @@ class PolicyEngine:
         # R2 PII leaving the company
         if spec.sink == "external" and spec.effect == "external_send":
             pii = sum(l.pii_entities for k, l in labels.items() if k in spec.data_args)
+            pii = max(pii, st.get("detected_pii") or 0)     # E8: Presidio also counts PII typed from memory
             to = ", ".join(str(arg(spec, call.args, r)) for r in ("to", "cc", "bcc") if arg(spec, call.args, r))
             internal = self._all_internal(to)    # every recipient, not just the end of the string
             if pii > self.cfg["limits"]["pii_external_max"] and not internal:

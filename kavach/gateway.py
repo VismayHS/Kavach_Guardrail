@@ -58,6 +58,7 @@ class GatewayConfig:
     use_rules: bool = True                   # ablation switch: False => only R6/R7 (unknown tool, schema); the model
                                              # decides everything else (measures what the model alone catches)
     use_injection_probe: bool = False        # C3: scan untrusted content with a CPU classifier (needs torch)
+    use_presidio: bool = False               # E8: Presidio PII detection in free text (needs presidio + spaCy)
     # False when KAVACH only decides and something else executes (MCP proxy, AgentOS hook): it can't snapshot or hold
     # what it doesn't run, so it never claims undo is armed, and an approval doesn't run the call in its own world
     local_execution: bool = True
@@ -80,6 +81,10 @@ class Kavach:
             from .injection_probe import InjectionProbe
             probe = InjectionProbe()
         self.probe = probe if probe is not None and probe.enabled else None
+        self.pii = None
+        if self.cfg.use_presidio:
+            from . import pii as _pii
+            self.pii = _pii.PIIDetector() if _pii.available() else None
         self.policy = policy or PolicyEngine()
         self.registry = registry or ToolRegistry()
         self.consequence = ConsequenceEngine(env)
@@ -160,6 +165,17 @@ class Kavach:
         self.tasks[task_id].prov.register_output(call.tool, output, trust, conf, fields)
         if self.probe is not None and (trust == "untrusted" or fields):
             self._probe(task_id, call.tool, output, fields)
+        if self.pii is not None and conf not in (Conf.PII, Conf.CONFIDENTIAL):
+            self._scan_pii(task_id, call.tool, output)
+
+    def _scan_pii(self, task_id: str, tool: str, output) -> None:
+        """E8: personal data inside free text (a page, a document) makes the task private, and its traceable
+        values (emails, phones, ids) become PII values like a CRM row's."""
+        text = output if isinstance(output, str) else json.dumps(output, default=str)
+        found = self.pii.find(text)
+        if found:
+            self.tasks[task_id].prov.add_pii([f["value"] for f in found if f["type"] != "PERSON"], f"tool:{tool}")
+            self.tasks[task_id].prov.private_seen = True
 
     def _probe(self, task_id: str, tool: str, output, fields) -> None:
         """C3: scan each piece of untrusted content; a hit marks its exact source hostile (and is receipted)."""
@@ -284,7 +300,8 @@ class Kavach:
                   if model_of(spec) == "email" else 0,
                   "stray_recipients": [r for r in (effect.magnitude.get("not_invoice_customer") or [] if effect else [])
                                        if not task.prov.given(r)],
-                  "given": task.prov.given, "hostile": sorted(task.prov.hostile)}
+                  "given": task.prov.given, "hostile": sorted(task.prov.hostile),
+                  "detected_pii": self._outbound_pii(spec, call)}
         gates = self.policy.evaluate(ctx, call, spec, self.registry, labels, staged)
         if effect and effect.magnitude.get("inside_workspace") is False:
             gates.append(GateResult("R12", "DENY", "Path escapes the agent workspace."))
@@ -357,6 +374,12 @@ class Kavach:
         item = self.hitl.items.get(hitl_id) if hitl_id else None
         if item is not None:
             item["decision"].setdefault("risk", {}).setdefault("intent", {})["review"] = note
+
+    def _outbound_pii(self, spec, call: ToolCall) -> int:
+        """E8: personal data Presidio finds in what an outbound action carries, even values KAVACH never saw come in."""
+        if self.pii is None or spec is None or spec.sink != "external":
+            return 0
+        return self.pii.count(" ".join(str(call.args.get(a, "")) for a in spec.data_args))
 
     @staticmethod
     def _for_receipt(dd: dict, prov: ProvenanceTracker) -> dict:
