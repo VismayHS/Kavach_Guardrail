@@ -164,8 +164,14 @@ class PolicyEngine:
                 lab = labels.get(a)
                 if lab and lab.trust == Trust.UNTRUSTED and any(s.startswith("tool:") for s in lab.sources) \
                         and not any(g.rule_id == "R1" and g.evidence.get("arg") == a for g in out):
-                    add("R11", "DENY", f"'{a}' was copied from untrusted content ({', '.join(lab.sources)}).",
-                        arg=a, sources=lab.sources)
+                    if lab.delegated and self._asked_for(ctx, call.tool, spec):     # as R1: the user pointed at it
+                        add("R11", "REQUIRE_APPROVAL", f"'{a}' = {call.args.get(a)!r} came from "
+                            f"{', '.join(lab.sources)}, which the user pointed at and asked to act on. A document can "
+                            "still be tampered with, so a person confirms the value before it is used.", arg=a,
+                            sources=lab.sources, delegated=True)
+                    else:
+                        add("R11", "DENY", f"'{a}' was copied from untrusted content ({', '.join(lab.sources)}).",
+                            arg=a, sources=lab.sources)
 
         # R2 PII leaving the company
         if spec.sink == "external" and spec.effect == "external_send":

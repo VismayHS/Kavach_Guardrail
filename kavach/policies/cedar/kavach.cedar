@@ -69,6 +69,10 @@ forbid(principal, action == Action::"auto_execute", resource) when { context.ing
 forbid(principal, action == Action::"auto_execute", resource)
   when { context.external && !context.ingress && context.delegated_control };
 
+@id("R11")
+forbid(principal, action == Action::"auto_execute", resource)
+  when { context.state_changing && context.delegated_copy };
+
 @id("R2")
 forbid(principal, action == Action::"auto_execute", resource)
   when { context.external_send && !context.all_internal && context.pii_out > context.pii_external_max };
