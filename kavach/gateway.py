@@ -23,7 +23,7 @@ from .explain import Explainer
 from .hitl import ApprovalQueue
 from .intent import IntentJudge
 from .addresses import parse_recipients
-from .manifest import ToolRegistry
+from .manifest import ToolRegistry, arg, model_of
 from .models import (Conf, Decision, Effect, GateResult, Label, Principal, Reversibility, TaskContext, ToolCall,
                      Trust, Verdict)
 from .plan import validate_plan
@@ -144,8 +144,8 @@ class Kavach:
         """(trust, confidentiality) of a tool's output: the manifest's, except files take their own sensitivity."""
         spec = self.registry.get(call.tool)
         trust, conf = (spec.output_trust, spec.output_conf) if spec else ("untrusted", Conf.INTERNAL)
-        if call.tool == "files.read":
-            conf = self.policy.file_conf(call.args.get("path", "")) or conf
+        if model_of(spec) == "file_read":
+            conf = self.policy.file_conf(arg(spec, call.args, "path", "")) or conf
         return trust, conf
 
     def register_output(self, task_id: str, call: ToolCall, output) -> None:
@@ -276,8 +276,9 @@ class Kavach:
                   "effect": effect.magnitude if effect else {},     # facts the rules read (amounts, payees...)
                   "private_seen": task.prov.private_seen, "untrusted_seen": task.prov.untrusted_seen,
                   "third_party_pii": task.prov.third_party_pii(
-                      parse_recipients(call.args.get("to", "")),
-                      f"{call.args.get('subject', '')} {call.args.get('body', '')}") if call.tool == "mail.send" else 0,
+                      parse_recipients(*(arg(spec, call.args, r, "") for r in ("to", "cc", "bcc"))),
+                      f"{arg(spec, call.args, 'subject', '')} {arg(spec, call.args, 'body', '')}")
+                  if model_of(spec) == "email" else 0,
                   "stray_recipients": [r for r in (effect.magnitude.get("not_invoice_customer") or [] if effect else [])
                                        if not task.prov.given(r)],
                   "given": task.prov.given, "hostile": sorted(task.prov.hostile)}
@@ -460,7 +461,8 @@ class Kavach:
             result = self.env.dispatch(d.call.tool, d.call.args, actor=actor, hold=windowed)
         d.executed, d.result = True, result
         # post-condition: actual effect must match the staged prediction
-        if d.call.tool == "crm.execute" and d.effect and isinstance(result, dict) and d.receipt_id in self.undo:
+        if model_of(self.registry.get(d.call.tool)) == "sql_write" and d.effect and isinstance(result, dict) \
+                and d.receipt_id in self.undo:
             predicted = d.effect.magnitude.get("rows_affected", 0)
             if result.get("rowcount", 0) != predicted and not d.effect.magnitude.get("ddl"):
                 self.env.undo_logged(self.undo.pop(d.receipt_id))
@@ -493,7 +495,7 @@ class Kavach:
         if not ref:
             return result                               # e.g. {"error": "no invoice"}: nothing is waiting
         self.recall[receipt_id] = (self.env.epoch, ref)
-        problem = self._outcome_mismatch(call, effect, result)
+        problem = self._outcome_mismatch(call, self.registry.get(call.tool), effect, result)
         if problem and self.env.cancel(ref):
             del self.recall[receipt_id]
             self.receipts.append({"type": "outcome-mismatch", "receipt": receipt_id, "cancelled": ref,
@@ -502,10 +504,10 @@ class Kavach:
         return result
 
     @staticmethod
-    def _outcome_mismatch(call: ToolCall, effect: Effect | None, result: dict) -> str | None:
+    def _outcome_mismatch(call: ToolCall, spec, effect: Effect | None, result: dict) -> str | None:
         """Records can change between the check and the execution, e.g. someone edits the vendor's bank account
         while a human looks at an escalated payment. The payment that will go out must be the one checked."""
-        if call.tool == "payment.release" and effect is not None:
+        if model_of(spec) == "ap_release" and effect is not None:
             m = effect.magnitude
             if (result.get("to"), result.get("amount")) != (m.get("iban"), m.get("amount")):
                 return (f"the payment would go to {result.get('to')} for {result.get('amount')}, but the check "

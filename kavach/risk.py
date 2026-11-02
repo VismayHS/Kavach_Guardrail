@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .manifest import ToolSpec
+from .manifest import ToolSpec, model_of
 from .models import Effect, Label, Risk, Trust
 from .provenance import arg_targets, named_targets
 
@@ -62,7 +62,7 @@ def featurize(spec: ToolSpec, args: dict, labels: dict[str, Label], effect: Effe
         "ddl": float(bool(m.get("ddl"))),
         "prod": float(env == "prod" and spec.effect not in ("read", "ingress")),
         "amount": math.log1p(float(m.get("amount", 0) or 0)) / 12.0,
-        "payee_unknown": float(spec.name == "payments.transfer" and not m.get("payee_known", True)),
+        "payee_unknown": float(model_of(spec) == "transfer" and not m.get("payee_known", True)),
         "misalignment": 1.0 - float(intent.get("alignment", 0.5)),
         "scope_excess": float(rows > 5 and not intent.get("breadth_requested", False)),
         "irreversibility": 1.0 - spec.reversibility.recoverable_fraction,   # the tool's own; windows only move tau
