@@ -142,7 +142,9 @@ class Kavach:
                   "destination_given": self._destination_given(task, call),
                   "repeat": self._action_key(call) in ctx.actions_run,
                   "task_rows": ctx.rows_changed + (effect.magnitude.get("rows_affected", 0) if effect else 0),
-                  "task_money": self._money_after(ctx, call, effect)}
+                  "task_money": self._money_after(ctx, call, effect),
+                  "untrusted_details": task.prov.untrusted_details(
+                      f"{call.args.get('subject', '')} {call.args.get('body', '')}") if call.tool == "mail.send" else []}
         gates = self.policy.evaluate(ctx, call, spec, self.registry, labels, staged)
         if effect and effect.magnitude.get("inside_workspace") is False:
             gates.append(GateResult("R12", "DENY", "Path escapes the agent workspace."))

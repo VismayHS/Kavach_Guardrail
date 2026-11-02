@@ -185,6 +185,18 @@ class ProvenanceTracker:
         return sum(1 for e in entities(text)
                    if e in self.pii_values and e not in rcpt and not (self.pii_owner.get(e, set()) & mine))
 
+    def untrusted_details(self, text: str) -> list[str]:
+        """R33: bank accounts, IBANs and links in `text` that came from untrusted content and that the user didn't type.
+        A fraud email's new bank details pass on just as well inside an internal summary."""
+        out = set()
+        for e in entities(text):
+            if e in self.user_entities or not (e.startswith(("http://", "https://")) or ACCOUNT.fullmatch(e)
+                                                or IBAN.fullmatch(e)):
+                continue
+            if any(lab.trust == Trust.UNTRUSTED for lab in self.origins.get(e, [])):
+                out.add(e)
+        return sorted(out)
+
     def given(self, value: str) -> bool:
         """The user typed this value, or asked to reply to the message it came from."""
         return any(s == "user" or s.startswith("sender:") for s in self.label(value, is_control=True).sources)
