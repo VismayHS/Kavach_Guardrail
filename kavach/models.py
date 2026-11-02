@@ -86,6 +86,9 @@ class TaskContext:
     started_at: float = field(default_factory=time.time)
     harm_spent: float = 0.0                             # cumulative expected unrecoverable harm
     denials: int = 0
+    rows_changed: int = 0                               # rows this task's SQL has changed so far (R30)
+    money_moved: dict[str, float] = field(default_factory=dict)   # currency -> total this task has paid out (R30)
+    actions_run: set[str] = field(default_factory=set)  # digests of the outbound calls this task already ran (R30)
     plan: list[dict] | None = None
     plan_findings: list[dict] = field(default_factory=list)
 

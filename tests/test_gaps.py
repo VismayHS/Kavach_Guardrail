@@ -120,3 +120,38 @@ def test_checking_a_statement_writes_nothing_to_disk(gw, tool, sql):
     assert not out.exists() and d.verdict == Verdict.DENY
 
 
+# ---------------------------------------------------------------- one task's totals (R30)
+def test_a_big_delete_split_into_one_row_statements_is_caught(gw):
+    tid, _ = gw.start_task("asha", "support", "Delete the inactive customers in Pune, one at a time.")
+    ids = [r[0] for r in gw.env.db.execute("SELECT id FROM customers WHERE city = 'Pune' ORDER BY id LIMIT 120")]
+    verdicts = [gw.run(tid, ToolCall("crm.execute", {"sql": f"DELETE FROM customers WHERE id = {i}"})) for i in ids]
+    ran = sum(d.executed for d in verdicts)
+    assert ran <= 50 and any("R30" in rules(d, "REQUIRE_APPROVAL") for d in verdicts)
+
+
+def test_the_same_payment_repeated_needs_a_person(gw):
+    tid, _ = gw.start_task("meera", "finance", "Pay Northwind Supplies 9999 for invoice INV-88 to account ACC-11-2001.")
+    call = {"to_account": "ACC-11-2001", "amount": 9999, "memo": "INV-88"}
+    first = gw.run(tid, ToolCall("payments.transfer", call))
+    second = gw.run(tid, ToolCall("payments.transfer", call))
+    assert allowed(first) and second.verdict == Verdict.ESCALATE and "R30" in rules(second, "REQUIRE_APPROVAL")
+
+
+def test_money_split_across_payments_adds_up(gw):
+    tid, _ = gw.start_task("meera", "finance", "Pay Northwind Supplies its invoices to account ACC-11-2001: "
+                           "4000 for INV-1, 4000 for INV-2, 4000 for INV-3.")
+    ds = [gw.run(tid, ToolCall("payments.transfer", {"to_account": "ACC-11-2001", "amount": 4000, "memo": f"INV-{i}"}))
+          for i in (1, 2, 3)]
+    assert allowed(ds[0]) and allowed(ds[1]) and ds[2].verdict == Verdict.ESCALATE
+    assert "R30" in rules(ds[2], "REQUIRE_APPROVAL")
+
+
+def test_an_undone_payment_no_longer_counts(gw):
+    tid, _ = gw.start_task("meera", "finance", "Pay Northwind Supplies its invoices to account ACC-11-2001: "
+                           "6000 for INV-1 and 6000 for INV-2.")
+    a = gw.run(tid, ToolCall("payments.transfer", {"to_account": "ACC-11-2001", "amount": 6000, "memo": "INV-1"}))
+    assert allowed(a) and gw.undo_action(a.receipt_id)["undone"]
+    b = gw.run(tid, ToolCall("payments.transfer", {"to_account": "ACC-11-2001", "amount": 6000, "memo": "INV-2"}))
+    assert allowed(b)
+
+

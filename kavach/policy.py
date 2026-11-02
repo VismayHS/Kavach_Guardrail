@@ -160,6 +160,10 @@ class PolicyEngine:
             if guarded:
                 add("R29", "DENY", f"Raw SQL may not change {', '.join(guarded)}: the finance rules rely on these "
                     "records. Use the finance tools, which go through approval.", tables=guarded)
+            if ctx.env == "prod" and st.get("task_rows", 0) > self.cfg["limits"]["task_rows_approval"]:
+                add("R30", "REQUIRE_APPROVAL", f"This task would have changed {st['task_rows']} rows in total "
+                    f"(limit {self.cfg['limits']['task_rows_approval']}); a big change may be split into small ones.",
+                    rows=st["task_rows"])
         if call.tool == "crm.query" and (sql_info.get("writes") or sql_info.get("ddl")):
             add("R7", "DENY", f"crm.query is read-only but the statement would {', '.join(sql_info['sql_ops'])}.",
                 ops=sql_info.get("sql_ops"))
@@ -185,6 +189,18 @@ class PolicyEngine:
                 elif not payee_known or amt > lim["transfer_auto_max"]:
                     add("R5", "REQUIRE_APPROVAL",
                         f"Transfer of {amt:,.0f} to {'unknown' if not payee_known else 'known'} payee needs approval.")
+
+        # R30 one task's totals: repeats of an outbound action, and money across several small payments
+        if spec.effect in ("payment", "external_send") and st.get("repeat"):
+            add("R30", "REQUIRE_APPROVAL", f"This task already ran the same {call.tool} call; a repeat needs a person.")
+        task_money = st.get("task_money") or {}
+        if task_money.get("INR", 0) > self.cfg["limits"]["task_money_approval"]:
+            add("R30", "REQUIRE_APPROVAL", f"This task would have moved INR {task_money['INR']:,.0f} in total "
+                f"(limit {self.cfg['limits']['task_money_approval']:,}).", total=task_money["INR"])
+        release_limit = self.cfg["finance"]["role_release_limit"].get(ctx.principal.role, 0)
+        if call.tool == "payment.release" and task_money.get("EUR", 0) > release_limit:
+            add("R30", "REQUIRE_APPROVAL", f"This task would have released EUR {task_money['EUR']:,.0f} in total; role "
+                f"'{ctx.principal.role}' may release up to EUR {release_limit:,.0f}.", total=task_money["EUR"])
 
         # R9 secrets
         if call.tool == "files.read":

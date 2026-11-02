@@ -76,6 +76,7 @@ class Kavach:
         self.undo: dict[str, dict] = {}       # receipt id -> snapshot
         self.recall: dict[str, tuple[int, str]] = {}   # receipt -> (world epoch, held payment / email / SAP doc)
         self.pending_calls: dict[str, tuple[str, ToolCall, Effect | None]] = {}
+        self.counted: dict[str, tuple[TaskContext, ToolCall, Effect | None]] = {}   # receipt -> what it added (R30)
 
     # ------------------------------------------------------------------ task lifecycle
     def start_task(self, user_id: str, role: str, request: str, env: str = "prod",
@@ -136,7 +137,10 @@ class Kavach:
                       str(call.args.get("to", "")).split(","),
                       f"{call.args.get('subject', '')} {call.args.get('body', '')}") if call.tool == "mail.send" else 0,
                   "stray_recipients": [r for r in (effect.magnitude.get("not_invoice_customer") or [] if effect else [])
-                                       if not task.prov.given(r)]}
+                                       if not task.prov.given(r)],
+                  "repeat": self._action_key(call) in ctx.actions_run,
+                  "task_rows": ctx.rows_changed + (effect.magnitude.get("rows_affected", 0) if effect else 0),
+                  "task_money": self._money_after(ctx, call, effect)}
         gates = self.policy.evaluate(ctx, call, spec, self.registry, labels, staged)
         if effect and effect.magnitude.get("inside_workspace") is False:
             gates.append(GateResult("R12", "DENY", "Path escapes the agent workspace."))
@@ -160,6 +164,8 @@ class Kavach:
             ctx.denials += 1
         if risk and verdict in (Verdict.ALLOW, Verdict.ALLOW_WITH_SAFEGUARD):
             ctx.harm_spent += risk.euh
+        if verdict in (Verdict.ALLOW, Verdict.ALLOW_WITH_SAFEGUARD):
+            self._count_action(ctx, call, effect)
 
         d = Decision(verdict, reason, call, {k: l.to_dict() for k, l in labels.items()}, gates, effect, risk,
                      self._scorecard(spec, gates, effect, risk, labels), replan_hint=hint)
@@ -179,7 +185,48 @@ class Kavach:
                                     "authenticated": ctx.principal.authenticated, "request": ctx.user_request,
                                     "decision": self._for_receipt(dd, task.prov)})
         d.receipt_id = rec["id"]
+        if verdict in (Verdict.ALLOW, Verdict.ALLOW_WITH_SAFEGUARD):
+            self.counted[d.receipt_id] = (ctx, call, effect)
         return d
+
+    # ------------------------------------------------------------------ one task's totals (R30)
+    @staticmethod
+    def _action_key(call: ToolCall) -> str:
+        return hashlib.sha256(json.dumps([call.tool, call.args], sort_keys=True, default=str).encode()).hexdigest()
+
+    @staticmethod
+    def _money_of(call: ToolCall, effect: Effect | None) -> tuple[str, float] | None:
+        if call.tool in ("payments.transfer", "payments.refund"):
+            return "INR", float(call.args.get("amount", 0) or 0)
+        if call.tool == "payment.release" and effect is not None:
+            return "EUR", float(effect.magnitude.get("amount", 0) or 0)
+        return None
+
+    def _money_after(self, ctx: TaskContext, call: ToolCall, effect: Effect | None) -> dict[str, float]:
+        totals = dict(ctx.money_moved)
+        money = self._money_of(call, effect)
+        if money:
+            totals[money[0]] = totals.get(money[0], 0.0) + money[1]
+        return totals
+
+    def _count_action(self, ctx: TaskContext, call: ToolCall, effect: Effect | None) -> None:
+        ctx.actions_run.add(self._action_key(call))
+        ctx.money_moved = self._money_after(ctx, call, effect)
+        if call.tool == "crm.execute" and effect is not None:
+            ctx.rows_changed += effect.magnitude.get("rows_affected", 0) or 0
+
+    def _uncount_action(self, receipt_id: str) -> None:
+        """An action that was taken back no longer counts toward its task's totals."""
+        entry = self.counted.pop(receipt_id, None)
+        if entry is None:
+            return
+        ctx, call, effect = entry
+        ctx.actions_run.discard(self._action_key(call))
+        money = self._money_of(call, effect)
+        if money:
+            ctx.money_moved[money[0]] = max(0.0, ctx.money_moved.get(money[0], 0.0) - money[1])
+        if call.tool == "crm.execute" and effect is not None:
+            ctx.rows_changed = max(0, ctx.rows_changed - (effect.magnitude.get("rows_affected", 0) or 0))
 
     @staticmethod
     def _for_receipt(dd: dict, prov: ProvenanceTracker) -> dict:
@@ -315,6 +362,7 @@ class Kavach:
         problem = self._outcome_mismatch(call, effect, result)
         if problem and self.env.cancel(ref):
             del self.recall[receipt_id]
+            self._uncount_action(receipt_id)
             self.receipts.append({"type": "outcome-mismatch", "receipt": receipt_id, "cancelled": ref,
                                   "reason": problem})
             return {"cancelled": ref, "reason": f"Outcome check: {problem}. Cancelled before it went out."}
@@ -344,12 +392,14 @@ class Kavach:
                                   "approver": approver})
             return out
         spec = self.registry.get(call.tool)
+        self._count_action(self.tasks[task_id].ctx, call, effect)   # an approved action still counts toward totals
         windowed = self._windowed(effect)                          # an approved payment still waits out its hold
         snap = None if windowed else self.env.snapshot()
         result = self.env.dispatch(call.tool, call.args, actor={"user": approver, "task": task_id}, hold=windowed)
         self.tasks[task_id].prov.register_output(call.tool, result, spec.output_trust, spec.output_conf)
         rec = self.receipts.append({"type": "human-approved-execution", "task_id": task_id, "hitl": hid,
                                     "approver": approver, "mode": mode})
+        self.counted[rec["id"]] = (self.tasks[task_id].ctx, call, effect)
         if windowed:
             result = self._arm_window(rec["id"], call, effect, result)
         else:
@@ -367,6 +417,8 @@ class Kavach:
         if ref is not None:          # a held payment, queued email or parked SAP document: take back just that one
             ok = self.env.cancel(ref)
             self.receipts.append({"type": "undo", "receipt": receipt_id, "cancelled": ref, "ok": ok})
+            if ok:
+                self._uncount_action(receipt_id)
             return {"undone": True, "cancelled": ref} if ok else {
                 "undone": False, "reason": f"{ref} can no longer be taken back (its window closed, or it was cancelled)"}
         if snap is None:
@@ -375,4 +427,5 @@ class Kavach:
         self.env.restore(snap)
         after = self.env.table_counts()
         self.receipts.append({"type": "undo", "receipt": receipt_id, "before": before, "after": after})
+        self._uncount_action(receipt_id)
         return {"undone": True, "tables_before": before, "tables_after": after}
