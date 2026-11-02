@@ -15,7 +15,7 @@ It then **allows** the call, **allows it with undo armed**, **escalates it to a 
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                       # 81 tests
+python -m pytest -q                       # 92 tests
 python -m bench.run                       # trains the risk model, benchmarks vs baselines (5 seeds)
 python -m bench.lofo                      # each family judged by a model trained without it
 python -m bench.holdout                   # families written after the rules, never trained on
@@ -27,10 +27,13 @@ Optional, Qualcomm Cloud AI (Imagine API, OpenAI-compatible):
 ```bash
 export IMAGINE_API_KEY=...                                    # from the Qualcomm Cloud AI Playground
 export IMAGINE_API_ENDPOINT=https://aisuite.cirrascale.com/apis/v2
-export KAVACH_JUDGE_MODEL=Llama-3.1-8B                        # check GET /models for your key
+export KAVACH_AGENT_MODEL=Llama-3.3-70B                       # the protected agent's model; check GET /models
 python -m agent.llm_agent "Summarise my unread emails."               # live agent, guarded
 python -m agent.llm_agent "Summarise my unread emails." --no-guard    # same agent, unguarded
+python -m bench.judge_eval                                    # judge on vs off: verdict changes and latency
 ```
+
+The intent judge runs in two stages: the smallest model in `GET /models` triages every state-changing call (told to flag when in doubt), and only flagged calls go to the largest. Verdicts are cached. `KAVACH_JUDGE_MODEL` / `KAVACH_JUDGE_STRONG_MODEL` override the choice. The judge can only lower a call's alignment, never lift a rule.
 
 Offline rehearsal of the Qualcomm path: `python -m uvicorn scripts.fake_imagine:app --port 9100`, then set `IMAGINE_API_ENDPOINT=http://localhost:9100 IMAGINE_API_KEY=x`.
 
@@ -46,6 +49,7 @@ Offline rehearsal of the Qualcomm path: `python -m uvicorn scripts.fake_imagine:
 | `POST /api/undo/{receipt}` | Take back a safeguarded action: restore its snapshot, or cancel its hold, recall window or parked document |
 | `POST /api/settle?advance_s=` | Let held payments and queued emails whose window has passed go out (`advance_s` fast-forwards for the demo) |
 | `GET /api/receipts/verify` | Verify the hash chain |
+| `GET /api/autonomy` | Changes that ran without a human this session, priced at AgentOS's own $35–75 per human exception |
 
 Auth: set `KAVACH_AUTH_SECRET` (32+ random bytes) and the API requires `Authorization: Bearer <token>`; user and role come from the token (`python -m kavach.auth mint <user> <role>`), never from the request body. Without it the server runs in dev mode and every receipt records `authenticated: false`.
 

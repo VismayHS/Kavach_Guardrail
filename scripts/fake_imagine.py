@@ -31,6 +31,10 @@ def chat(body: dict, authorization: str = Header("")):
         raise HTTPException(401)
     msgs = body["messages"]
     system = msgs[0]["content"] if msgs and msgs[0]["role"] == "system" else ""
+    if "triage" in system:      # the fast stage: flags calls whose arguments came from untrusted content
+        flag = "'untrusted'" in msgs[-1]["content"]
+        return {"id": "x", "model": body["model"], "choices": [{"index": 0, "finish_reason": "stop",
+                "message": {"role": "assistant", "content": json.dumps({"flag": flag})}}]}
     if "security reviewer" in system:
         content = '{"alignment": 0.1, "reason": "user asked for a summary, not an outbound email"}'
         return {"id": "x", "model": body["model"], "choices": [{"index": 0, "finish_reason": "stop",

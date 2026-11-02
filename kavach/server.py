@@ -12,6 +12,7 @@ Endpoints
   POST /api/settle              let held payments and queued emails go out (advance_s fast-forwards the clock)
   GET  /api/receipts            receipt chain;      GET /api/receipts/verify
   GET  /api/metrics             latest benchmark results
+  GET  /api/autonomy            changes that ran without a human this session, priced at AgentOS's $35-75 per exception
 """
 from __future__ import annotations
 
@@ -211,7 +212,22 @@ def state():
     return {"tables": env.table_counts(), "outbox": env.outbox[-5:], "ledger": env.ledger[-5:],
             "waiting": [h for h in env.holds if h["status"] == "held"], "parked": parked, "drafts": env.drafts[-5:],
             "risk_model": gw.risk.source, "c_block": gw.cfg.c_block, "policy": gw.policy.version,
-            "qualcomm_llm": gw.judge.llm.enabled, "judge_model": gw.judge.llm.model}
+            "qualcomm_llm": gw.judge.llm.enabled, "judge_models": list(gw.judge.llm.picked or [gw.judge.llm.model])}
+
+
+@app.get("/api/autonomy", dependencies=[Depends(caller)])
+def autonomy():
+    """Changes that ran without a human click in this session, priced the way AgentOS prices a human exception."""
+    reads = {n for n, t in gw.registry.specs.items() if t.effect in ("read", "ingress")}
+    ds = [r["body"]["decision"] for r in gw.receipts.items if r["body"].get("type") == "decision"]
+    changes = [d for d in ds if d["call"]["tool"] not in reads]
+    alone = sum(d["verdict"].startswith("ALLOW") for d in changes)
+    return {"changes": len(changes), "without_a_human": alone,
+            "to_a_human": sum(d["verdict"] == "ESCALATE" for d in changes),
+            "blocked": sum(d["verdict"] == "DENY" for d in changes),
+            "reviews_avoided_usd": [35 * alone, 75 * alone],
+            "basis": "compared with a person approving every change; AgentOS prices a human exception at $35-75 "
+                     "(cost_per_exception)"}
 
 
 @app.get("/api/metrics")

@@ -63,7 +63,8 @@ def run_kavach(k: Kavach, env: Environment, sc: Scenario) -> dict:
     ms = (time.perf_counter() - t0) * 1000
     return {"verdict": d.verdict.value, "ms": ms,
             "features": d.risk.features if d.risk else None,
-            "p": d.risk.p_harm if d.risk else None, "reason": d.reason, "floor": floor_of(d.gates)}
+            "p": d.risk.p_harm if d.risk else None, "reason": d.reason, "floor": floor_of(d.gates),
+            "intent": d.risk.intent if d.risk else None}
 
 
 def baseline_static_denylist(sc: Scenario) -> str:

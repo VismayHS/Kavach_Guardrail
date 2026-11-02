@@ -92,8 +92,10 @@ async function init() {
 async function refresh() {
   const st = await api('/api/state');
   const v = await api('/api/receipts/verify');
+  const au = await api('/api/autonomy');
   $('#chips').innerHTML = [`policy ${st.policy}`, `risk model: ${st.risk_model}`, `C_block ${st.c_block}`,
-    `Qualcomm LLM judge: ${st.qualcomm_llm ? st.judge_model : 'off (heuristic)'}`,
+    `Qualcomm LLM judge: ${st.qualcomm_llm ? st.judge_models.join(' → ') : 'off (heuristic)'}`,
+    `autonomy: ${au.without_a_human} of ${au.changes} changes ran without a human (≈ $${au.reviews_avoided_usd[0]}–${au.reviews_avoided_usd[1]} of reviews avoided)`,
     `receipts ${v.valid ? 'valid' : 'BROKEN'} (${v.count ?? 0})`].map(c => `<span class="chip">${esc(c)}</span>`).join('');
   const h = await api('/api/hitl');
   $('#hitl').innerHTML = h.length ? h.map(hitlCard).join('') : '<span class="empty">No pending approvals.</span>';

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 
 try:
@@ -33,6 +34,7 @@ class QualcommCloudAI:
         self.model = model or os.environ.get("KAVACH_JUDGE_MODEL", "Llama-3.1-8B")
         self.timeout = timeout
         self.last_latency_ms: float | None = None
+        self.picked: tuple[str, str] | None = None     # (fast, strong) judge models, once read from GET /models
 
     @property
     def enabled(self) -> bool:
@@ -63,6 +65,23 @@ class QualcommCloudAI:
                       headers={"Authorization": f"Bearer {self.api_key}"})
         r.raise_for_status()
         return r.json()
+
+    def pick_models(self) -> tuple[str, str]:
+        """(fast, strong) chat models for the two-stage judge: the smallest and largest by size in the name ("8B",
+        "70B") in the live GET /models list. KAVACH_JUDGE_MODEL / KAVACH_JUDGE_STRONG_MODEL override; if the list
+        can't be read, both stages use the configured model (and the list is asked for again next time)."""
+        if self.picked is None:
+            try:
+                d = self.models()
+                names = list(d.get("llm") or []) + [m.get("id", "") for m in d.get("data") or [] if isinstance(m, dict)]
+            except Exception:
+                names = []
+            sized = sorted((float(m.group(1)), n) for n in names if (m := re.search(r"(\d+(?:\.\d+)?)B\b", n, re.I)))
+            if not sized:
+                return self.model, os.environ.get("KAVACH_JUDGE_STRONG_MODEL", self.model)
+            self.picked = (os.environ.get("KAVACH_JUDGE_MODEL", sized[0][1]),
+                           os.environ.get("KAVACH_JUDGE_STRONG_MODEL", sized[-1][1]))
+        return self.picked
 
     def chat_json(self, messages: list[dict], **kw) -> dict:
         text = self.chat_text(messages, **kw)
