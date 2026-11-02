@@ -76,6 +76,9 @@ class Task:
     timeline: list[dict] = field(default_factory=list)
     outbound_attempted: bool = False
     policy: object | None = None          # F9 canary rollout: the candidate policy decides this task
+    parent: str | None = None             # F2: the task that delegated to this one
+    agent: str = ""                       # F2: which agent works this task
+    allowed_tools: list | None = None     # F2: delegation scope (None = the role's tools)
 
 
 class Kavach:
@@ -242,6 +245,31 @@ class Kavach:
             self.events.pop(next(iter(self.events)))
         self.events.setdefault(task_id, []).append(ev)
 
+    def delegate(self, parent_id: str, agent: str, instruction: str, tools: list[str] | None = None) -> str:
+        """F2: agent-to-agent delegation. The child task keeps the user's principal and the user's original request
+        (the trusted request); the parent agent's instruction is agent-generated content, tainted by whatever the
+        parent read. The child inherits the parent's provenance (a value from the parent's untrusted email stays
+        untrusted), can use only `tools` within the role's (authority only narrows: R33), shares the root's harm
+        budget, and is paused when the parent is."""
+        import copy
+        parent = self.tasks[parent_id]
+        p = parent.ctx.principal
+        child_id, _ = self.start_task(p.user_id, p.role, parent.ctx.user_request, parent.ctx.env,
+                                      authenticated=p.authenticated, tenant=p.tenant)
+        child = self.tasks[child_id]
+        child.prov = copy.deepcopy(parent.prov)
+        child.parent, child.agent = parent_id, agent
+        role_tools = (parent.policy or self.policy).cfg["roles"].get(p.role, [])
+        scope = list(tools) if tools is not None else (parent.allowed_tools if parent.allowed_tools is not None else None)
+        if parent.allowed_tools is not None and scope is not None:
+            scope = [x for x in scope if x in parent.allowed_tools]
+        child.allowed_tools = None if scope is None else [x for x in scope if "*" in role_tools or x in role_tools]
+        trust = "untrusted" if parent.prov.untrusted_seen else "derived"
+        child.prov.register_output(f"agent:{agent or 'delegate'}", instruction, trust, Conf.INTERNAL)
+        self.receipts.append({"type": "delegation", "task_id": child_id, "parent": parent_id, "agent": agent,
+                              "tools": child.allowed_tools, "instruction_trust": trust})
+        return child_id
+
     def add_request(self, task_id: str, request: str) -> None:
         """A later user turn in the same session: its values count as typed by the user, and intent follows it."""
         task = self.tasks[task_id]
@@ -252,9 +280,17 @@ class Kavach:
     # ------------------------------------------------------------------ kill switch (F3)
     KILL_SCOPES = ("global", "user", "role", "task")
 
+    def lineage(self, task_id: str) -> list[str]:
+        """This task and every task above it in a delegation chain (F2)."""
+        out, t = [], task_id
+        while t in self.tasks and t not in out:
+            out.append(t)
+            t = self.tasks[t].parent
+        return out
+
     def _matches(self, k: dict, task_id: str) -> bool:
         ctx = self.tasks[task_id].ctx if task_id in self.tasks else None
-        return (k["scope"] == "global" or (k["scope"] == "task" and k["target"] == task_id)
+        return (k["scope"] == "global" or (k["scope"] == "task" and k["target"] in self.lineage(task_id))
                 or (ctx is not None and k["scope"] == "user" and k["target"] == ctx.principal.user_id)
                 or (ctx is not None and k["scope"] == "role" and k["target"] == ctx.principal.role))
 
@@ -351,6 +387,9 @@ class Kavach:
                   "detected_pii": self._outbound_pii(spec, call)}
         policy = task.policy or self.policy
         gates = policy.evaluate(ctx, call, spec, self.registry, labels, staged)
+        if task.allowed_tools is not None and call.tool not in task.allowed_tools:     # F2: authority only narrows
+            gates.append(GateResult("R33", "DENY", f"This agent was delegated {', '.join(task.allowed_tools) or 'no tools'};"
+                                    f" {call.tool} is outside that scope.", {"parent": task.parent}))
         if effect and effect.magnitude.get("inside_workspace") is False:
             gates.append(GateResult("R12", "DENY", "Path escapes the agent workspace."))
         if effect and effect.magnitude.get("error"):
@@ -385,7 +424,8 @@ class Kavach:
         if verdict == Verdict.DENY:
             ctx.denials += 1
         if risk and verdict in (Verdict.ALLOW, Verdict.ALLOW_WITH_SAFEGUARD):
-            ctx.harm_spent += risk.euh
+            for t in self.lineage(task_id):                  # F2: delegated work spends the root's harm budget
+                self.tasks[t].ctx.harm_spent += risk.euh
 
         d = Decision(verdict, reason, call, {k: l.to_dict() for k, l in labels.items()}, gates, effect, risk,
                      self._scorecard(spec, gates, effect, risk, labels), replan_hint=hint)
@@ -486,8 +526,10 @@ class Kavach:
         if spec.effect not in ("read", "ingress") and risk.intent.get("alignment", 1.0) < 0.3:
             return Verdict.ESCALATE, ("Intent mismatch: the user did not ask for a state-changing action "
                                       f"({risk.intent.get('reason', '')})."), None
-        if ctx.harm_spent + risk.euh > self.cfg.harm_budget:
-            return Verdict.ESCALATE, (f"Task harm budget exceeded ({ctx.harm_spent + risk.euh:.3f} > "
+        root_spent = max(self.tasks[t].ctx.harm_spent for t in self.lineage(ctx.task_id)) \
+            if ctx.task_id in self.tasks else ctx.harm_spent
+        if root_spent + risk.euh > self.cfg.harm_budget:
+            return Verdict.ESCALATE, (f"Task harm budget exceeded ({root_spent + risk.euh:.3f} > "
                                       f"{self.cfg.harm_budget}); possible split attack."), None
         if risk.p_hi < risk.tau:
             return self._allow(spec, effect, f"p(harm) upper bound {risk.p_hi:.2f} < tau {risk.tau:.3f}.")

@@ -118,4 +118,5 @@ rules:
   R30: "Bank accounts must be valid: an IBAN with the wrong length or check digits is blocked (a typo, or an invented account)."
   R31: "Confirmation of Payee: a new bank account registered to someone other than the vendor needs approval."
   R32: "Raw credentials (API keys, tokens, private keys) never pass through an agent's arguments; tools get them from the secrets broker."
+  R33: "A delegated agent can use only the tools it was delegated, within the user's role: authority only narrows down a delegation chain."
   R29: "If a classifier flagged injected instructions in content the task read, state-changing actions need approval unless every target was typed by the user (a model signal: it escalates, never blocks)."
