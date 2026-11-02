@@ -338,9 +338,11 @@ class Kavach:
         return {"resumed": kill_id, "scope": k["scope"], "target": k["target"]}
 
     # ------------------------------------------------------------------ the decision path
-    def check(self, task_id: str, call: ToolCall, flow: dict[str, Label] | None = None) -> Decision:
+    def check(self, task_id: str, call: ToolCall, flow: dict[str, Label] | None = None, melon=None) -> Decision:
         """flow (E9 planner mode): exact labels for the arguments, from the plan's references. They replace the
-        inferred trust and sources; confidentiality and PII counts keep the larger of the two."""
+        inferred trust and sources; confidentiality and PII counts keep the larger of the two.
+        melon (C1): callable(call) -> {"match": bool, ...}, the masked re-execution of the agent's last step. Run
+        only for state-changing calls the rules did not deny; a match adds R27 (approval), never a denial."""
         t0 = time.perf_counter()
         task = self.tasks[task_id]
         ctx = task.ctx
@@ -409,6 +411,17 @@ class Kavach:
             gates.append(GateResult("R7", "DENY", f"Fails when staged: {effect.magnitude['error']}"))
         if not self.cfg.use_rules:                 # ablation: the model alone (structural gates still apply)
             gates = [g for g in gates if g.rule_id in ("R6", "R7")]
+        if melon is not None and spec is not None and spec.effect not in ("read", "ingress") \
+                and floor_of(gates) != "DENY":
+            m = melon(call)
+            if m.get("match"):
+                gates.append(GateResult("R27", "REQUIRE_APPROVAL", f"With the user's request masked out, the agent "
+                                        f"still proposes {call.tool} with the same arguments: this action is driven by "
+                                        "content it read, not by the user (MELON).", m))
+            else:
+                gates.append(GateResult("R27", "PASS", "With the user's request masked out, the agent does not "
+                                        "propose this action (MELON)." if "error" not in m else
+                                        f"MELON check unavailable ({m['error']}); rules and risk decide.", m))
         cedar_note = self._cedar(task_id, call, spec, labels, staged, effect, gates) if self.cedar else None
         floor = floor_of(gates)
 
