@@ -6,6 +6,7 @@ auto-allowed) or DENY (final). The rule id travels into the receipt.
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import re
 from pathlib import Path
 from urllib.parse import urlparse
@@ -39,7 +40,10 @@ DESTINATION = {"email": "to", "transfer": "to_account", "refund": "invoice_id", 
 class PolicyEngine:
     def __init__(self, path: str | Path | None = None):
         path = path or Path(__file__).parent / "policies" / "default.yaml"
-        self.cfg = yaml.safe_load(Path(path).read_text())
+        raw = Path(path).read_bytes()
+        self.sha256 = hashlib.sha256(raw).hexdigest()
+        self._check_signature(Path(path))
+        self.cfg = yaml.safe_load(raw)
         self.version = self.cfg["version"]
         self.rules = self.cfg["rules"]
         self.lookalike = Lookalike(list(self.cfg.get("internal_domains", [])) + list(self.cfg.get("known_domains", [])))
@@ -47,6 +51,40 @@ class PolicyEngine:
 
         from .finance import SanctionsList
         self.sanctions = SanctionsList.load(os.environ.get("KAVACH_SANCTIONS_CSV") or self.cfg.get("sanctions_list"))
+
+    @classmethod
+    def from_text(cls, text: str) -> "PolicyEngine":
+        """A draft policy from YAML text (for replay): never loaded from disk, so no signature applies."""
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
+            f.write(text)
+        import os
+        saved = os.environ.pop("KAVACH_POLICY_PUBKEY", None)
+        try:
+            return cls(f.name)
+        finally:
+            if saved is not None:
+                os.environ["KAVACH_POLICY_PUBKEY"] = saved
+            os.unlink(f.name)
+
+    def _check_signature(self, path: Path) -> None:
+        """F9: with KAVACH_POLICY_PUBKEY set, a policy loads only with a valid Ed25519 signature (<file>.sig)."""
+        import json
+        import os
+        pub = os.environ.get("KAVACH_POLICY_PUBKEY")
+        if not pub:
+            self.signed_by = None
+            return
+        from .signing import key_id, load_public, verify
+        sig = path.with_name(path.name + ".sig")
+        key = load_public(Path(pub).read_text())
+        if not sig.exists():
+            raise PermissionError(f"{path} has no signature ({sig.name}); refusing to load an unsigned policy")
+        s = json.loads(sig.read_text())
+        if s.get("sha256") != self.sha256 or s.get("kid") != key_id(key) or \
+                not verify(key, self.sha256.encode(), s.get("sig", "")):
+            raise PermissionError(f"{path}: signature does not match the file or the trusted key; refusing to load")
+        self.signed_by = s["kid"]
 
     def file_conf(self, path: str) -> Conf | None:
         """Sensitivity of a workspace file by name (N2); None = the tool's default."""
