@@ -40,7 +40,8 @@ def main(routes=None) -> int:
         page = b.new_page(viewport={"width": 1440, "height": 900})
         page.on("pageerror", lambda e: problems.append(f"page error: {e}"))
         page.on("console", lambda m: problems.append(f"console {m.type}: {m.text}") if m.type == "error" else None)
-        for r in routes or ["agent", "scenarios", "check", "approvals", "windows", "receipts", "results", "rules"]:
+        for r in routes or ["agent", "scenarios", "check", "approvals", "windows", "receipts", "results", "rules",
+                            "sessions", "control", "game"]:
             page.goto(f"{base}/#/{r}")
             page.wait_for_selector("h1", timeout=10000)
             page.wait_for_timeout(300)
@@ -69,6 +70,24 @@ def main(routes=None) -> int:
         page.fill("#approver", "rahul")
         page.click("text=Approve as Finance Director")
         page.wait_for_selector("text=waiting in an undo window", timeout=10000)
+        # sessions: the inbox attack is listed with all three legs, and opens
+        page.goto(f"{base}/#/sessions")
+        page.locator("text=Summarise my unread emails.").first.click()
+        page.wait_for_selector("text=Everything it did", timeout=10000)
+        # kill switch: pause a role, see it in the top bar, resume
+        page.goto(f"{base}/#/control")
+        page.select_option("#k-scope", "role")
+        page.fill("#k-target", "analyst")
+        page.click("text=Pause now")
+        page.wait_for_selector("#paused:not([hidden])", timeout=10000)
+        page.click("text=Resume")
+        page.wait_for_selector("text=Nothing is paused.", timeout=10000)
+        # the approval game: approve everything, then the reveal says so
+        page.goto(f"{base}/#/game")
+        for _ in range(15):
+            page.locator("button:has-text('Approve')").first.click()
+        page.click("text=Reveal KAVACH")
+        page.wait_for_selector("text=You approved the exfiltration", timeout=10000)
         # sign-in: with auth on, the console asks for a token; signed in, it works and shows who you are
         from kavach import auth, server
         server.AUTH_SECRET = "kavach-test-secret-at-least-32-bytes-long"
