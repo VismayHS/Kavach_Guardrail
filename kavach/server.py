@@ -50,6 +50,17 @@ if os.environ.get("KAVACH_MANIFESTS"):             # E3: more tools, e.g. kavach
     from .manifest import register_manifests
     register_manifests(gw.registry, gw.policy.cfg["roles"],
                        [p.strip() for p in os.environ["KAVACH_MANIFESTS"].split(",") if p.strip()])
+# F6: OpenTelemetry spans (standard OTEL_EXPORTER_OTLP_ENDPOINT) and SIEM forwarding (KAVACH_SIEM_KIND/URL/TOKEN)
+try:
+    from .telemetry import SiemForwarder, setup_tracing
+    _tracing = setup_tracing()
+    if _tracing is not None:
+        gw.receipts.listeners.append(_tracing)
+    if os.environ.get("KAVACH_SIEM_URL"):
+        gw.receipts.listeners.append(SiemForwarder(os.environ.get("KAVACH_SIEM_KIND", "webhook"),
+                                                   os.environ["KAVACH_SIEM_URL"], os.environ.get("KAVACH_SIEM_TOKEN")))
+except ImportError:
+    pass
 if os.environ.get("KAVACH_PROBE") == "1":          # C3: scan untrusted content with the CPU classifier
     from .injection_probe import InjectionProbe
     _probe = InjectionProbe()
@@ -357,6 +368,15 @@ def autonomy():
             "reviews_avoided_usd": [35 * alone, 75 * alone],
             "basis": "compared with a person approving every change; AgentOS prices a human exception at $35-75 "
                      "(cost_per_exception)"}
+
+
+@app.get("/metrics")
+def prometheus():
+    """Prometheus metrics: decisions by tool and verdict, rule hits, check latency, approvals, holds, kills."""
+    from fastapi.responses import PlainTextResponse
+
+    from .telemetry import metrics_text
+    return PlainTextResponse(metrics_text(gw), media_type="text/plain; version=0.0.4")
 
 
 @app.get("/api/metrics")
