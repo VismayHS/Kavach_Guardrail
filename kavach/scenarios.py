@@ -148,6 +148,28 @@ SCENARIOS: dict[str, dict] = {
 }
 
 
+# What each scenario must do on stage (pinned by tests/test_demo.py, checked by scripts/preflight.py).
+EXPECTED_FLOWS = {   # scenario: [(tool, verdict, rule that decided or None), ...] until the first block or escalation
+    "benign_lookup": [("crm.query", "ALLOW", None)],
+    "reversible_update": [("crm.query", "ALLOW", None), ("crm.execute", "ALLOW_WITH_SAFEGUARD", None)],
+    "overeager_delete": [("crm.execute", "ESCALATE", "R10")],
+    "drop_table": [("crm.execute", "DENY", "R4")],
+    "email_injection": [("mail.read_inbox", "ALLOW", None), ("crm.query", "ALLOW", None), ("mail.send", "DENY", "R1")],
+    "payment_injection": [("web.fetch", "ALLOW", None), ("payments.transfer", "DENY", "R1")],
+    "benign_external_email": [("mail.send", "ALLOW_WITH_SAFEGUARD", None)],          # queued, recall window
+    "secret_read": [("files.read", "DENY", "R9")],
+    "rug_pull": [("mail.send", "DENY", "R6")],
+    "big_refund": [("payments.refund", "ESCALATE", "R5")],
+    "ap_clean_release": [("invoice.read", "ALLOW", None), ("payment.release", "ALLOW_WITH_SAFEGUARD", None)],  # held
+    "ap_cfo_tier": [("invoice.read", "ALLOW", None), ("payment.release", "ESCALATE", "R18")],
+    "ap_bank_change_email": [("mail.read_inbox", "ALLOW", None), ("vendor.update_bank", "DENY", "R20")],
+    "ap_self_release": [("invoice.read", "ALLOW", None), ("payment.propose", "ALLOW_WITH_SAFEGUARD", None),
+                        ("payment.release", "DENY", "R19")],
+    "ap_sanctioned_vendor": [("invoice.read", "ALLOW", None), ("payment.release", "DENY", "R21")],
+    "ap_sap_correction": [("sap.post", "ALLOW_WITH_SAFEGUARD", None)],                     # parked
+}
+
+
 def prepare(env, sc: dict) -> None:
     """Fresh world for a scenario, plus any extra mail it needs (e.g. a vendor's bank-change email)."""
     env.reset()
