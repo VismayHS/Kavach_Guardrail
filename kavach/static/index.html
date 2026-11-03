@@ -50,19 +50,14 @@
 <div class="vx" id="app">
   <a class="btn skip" href="#" data-act="skip" onclick="return false">Skip to content</a>
   <aside class="rail" id="rail" aria-label="Navigation">
-    <div class="brand"><a class="brand" style="height:auto;padding:0;border:0" href="#/agent">
+    <div class="brand"><a class="brand" style="height:auto;padding:0;border:0" href="#/activity">
       <svg class="brand-mark" aria-hidden="true"><use href="#mark"/></svg>
       <span><span class="wordmark">KAVACH</span><span class="tagline">Agent guardrail</span></span></a>
       <button class="icon-btn rail-close" type="button" data-act="close-drawer" aria-label="Close menu"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
     <nav class="rail-nav" aria-label="Main">
-      <div class="rail-group"><div class="rail-label">Try it</div><ul>
-        <li><a class="rail-item" data-page="demo" href="#/demo"><svg class="i" aria-hidden="true"><use href="#i-play"/></svg>Live demo</a></li>
-        <li><a class="rail-item" data-page="start" href="#/start"><svg class="i" aria-hidden="true"><use href="#i-shield-check"/></svg>Two actions</a></li>
-        <li><a class="rail-item" data-page="agent" href="#/agent"><svg class="i" aria-hidden="true"><use href="#i-bot"/></svg>Live agent</a></li>
-        <li><a class="rail-item" data-page="scenarios" href="#/scenarios"><svg class="i" aria-hidden="true"><use href="#i-list-checks"/></svg>Scenarios</a></li>
-        <li><a class="rail-item" data-page="check" href="#/check"><svg class="i" aria-hidden="true"><use href="#i-scan-search"/></svg>Check an action</a></li>
-        <li><a class="rail-item" data-page="game" href="#/game"><svg class="i" aria-hidden="true"><use href="#i-mouse-pointer-click"/></svg>Approval game</a></li>
+      <div class="rail-group"><div class="rail-label">Live</div><ul>
+        <li><a class="rail-item" data-page="activity" href="#/activity"><svg class="i" aria-hidden="true"><use href="#i-activity"/></svg>Activity</a></li>
       </ul></div>
       <div class="rail-group"><div class="rail-label">Oversight</div><ul>
         <li><a class="rail-item" data-page="approvals" href="#/approvals"><svg class="i" aria-hidden="true"><use href="#i-user-check"/></svg>Approvals<span class="rail-count" id="count-approvals">0</span></a></li>
@@ -72,18 +67,26 @@
         <li><a class="rail-item" data-page="sessions" href="#/sessions"><svg class="i" aria-hidden="true"><use href="#i-activity"/></svg>Sessions</a></li>
         <li><a class="rail-item" data-page="control" href="#/control"><svg class="i" aria-hidden="true"><use href="#i-octagon-pause"/></svg>Kill switch</a></li>
       </ul></div>
+      <div class="rail-group"><div class="rail-label">Scenarios (scripted)</div><ul>
+        <li><a class="rail-item" data-page="scenarios" href="#/scenarios"><svg class="i" aria-hidden="true"><use href="#i-list-checks"/></svg>Scenario library</a></li>
+        <li><a class="rail-item" data-page="demo" href="#/demo"><svg class="i" aria-hidden="true"><use href="#i-play"/></svg>Scripted stories</a></li>
+        <li><a class="rail-item" data-page="start" href="#/start"><svg class="i" aria-hidden="true"><use href="#i-shield-check"/></svg>Two actions</a></li>
+        <li><a class="rail-item" data-page="agent" href="#/agent"><svg class="i" aria-hidden="true"><use href="#i-bot"/></svg>Agent on the demo company</a></li>
+        <li><a class="rail-item" data-page="check" href="#/check"><svg class="i" aria-hidden="true"><use href="#i-scan-search"/></svg>Check an action</a></li>
+        <li><a class="rail-item" data-page="game" href="#/game"><svg class="i" aria-hidden="true"><use href="#i-mouse-pointer-click"/></svg>Approval game</a></li>
+      </ul></div>
       <div class="rail-group"><div class="rail-label">Evidence</div><ul>
         <li><a class="rail-item" data-page="results" href="#/results"><svg class="i" aria-hidden="true"><use href="#i-chart-column"/></svg>Results</a></li>
         <li><a class="rail-item" data-page="rules" href="#/rules"><svg class="i" aria-hidden="true"><use href="#i-book-open"/></svg>Rulebook</a></li>
       </ul></div>
     </nav>
-    <p class="rail-foot">A demo company with made-up data. Nothing real is touched.</p>
+    <p class="rail-foot">Live and Oversight show real agents. Scenarios play on a made-up demo company.</p>
   </aside>
   <div class="scrim" id="scrim" hidden></div>
   <div class="shell">
     <header class="topbar">
       <button class="icon-btn" type="button" data-act="menu" aria-label="Show or hide the menu"><svg class="i" aria-hidden="true"><use href="#i-menu"/></svg></button>
-      <a class="top-brand" href="#/agent"><svg class="brand-mark" aria-hidden="true"><use href="#mark"/></svg><span class="wordmark">KAVACH</span></a>
+      <a class="top-brand" href="#/activity"><svg class="brand-mark" aria-hidden="true"><use href="#mark"/></svg><span class="wordmark">KAVACH</span></a>
       <nav class="crumbs" id="crumbs" aria-label="Breadcrumb"></nav>
       <div class="top-right">
         <a href="#/control" id="paused" hidden></a>

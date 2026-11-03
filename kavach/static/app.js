@@ -931,13 +931,16 @@ async function stageTick() {
 }
 
 async function pageStage() {
+  if (S.st?.mail?.mode === 'gmail')       // the stories play on the demo company; real activity is on its own page
+    return `<div class="page narrow">${head('Scripted stories', 'Three stories on a made-up demo company: stop an email, an invoice scam, a poisoned email. They need the demo company, so they are off while KAVACH runs on your real Gmail.')}
+      <p>Real agents on your real Gmail: <a href="#/activity">Activity</a>. To play these stories: stop KAVACH (scripts/demo_reset.sh) and start the demo company (scripts/demo_up.sh).</p></div>`;
   S.stage = { story: S.stage?.story || 'email', seq: null, feed: [], painted: {},
     mail: S.stage?.mail || { to: 'demo-recipient@example.test', subject: 'Test summary', body: "All checks passed on today's build." },
     pay: S.stage?.pay || { acct: 'TEST-ACCT-999', amount: '8000' } };
   const fresh = !S.stage.mail.touched;
   await stageFetch();
   if (fresh && S.stage.st.demo?.mail_to) S.stage.mail.to = S.stage.st.demo.mail_to;   // real Gmail is on
-  return `<div class="page stage">${head('Live demo', 'Three real stories. The agent acts on the left. On the right, the real inbox and the real bank show what actually happened: KAVACH is not in between.',
+  return `<div class="page stage">${head('Scripted stories', 'Three stories on a made-up demo company. The agent acts on the left. On the right, the real inbox and the real bank show what actually happened: KAVACH is not in between.',
     `<button class="btn" type="button" data-act="stage-reset">${icon('rotate-ccw')}Start over</button>`)}
     ${flash()}
     <div class="stage-tabs" role="tablist" aria-label="Story">
@@ -1072,6 +1075,69 @@ async function pageReceipts() {
     ${table}</div>`;
 }
 
+
+// ---------------------------------------------------------------- activity: what agents are doing through KAVACH, live
+// Nothing here is scripted: every line is a receipt written because an agent (Claude Code, the Llama agent, any MCP
+// client) asked KAVACH to do something, or a person decided something about it.
+const actWho = p => ({ claude: 'Claude', llama: 'Llama (Qualcomm)', 'scripted-agent': 'The scripted agent' }[p] || titleCase(p || 'An agent'));
+function actWhat(c) {
+  const a = c.args || {};
+  if (c.tool === 'mail.send') return `email ${a.to}${a.subject ? `: “${a.subject}”` : ''}`;
+  if (c.tool === 'mail.read_inbox') return 'read the inbox';
+  return `${toolName(c.tool).toLowerCase()} (${c.tool})`;
+}
+function activityLine(r, st) {
+  const b = r.body, sent = id => (st.outbox || []).find(m => m.id === id) || (st.waiting || []).find(h => h.id === id)?.msg;
+  const row = (stampHtml, title, detail = '', extra = '') => `<li><time>${clock(r.ts)}</time>${stampHtml}<div><b>${nw(esc(title))}</b>${extra}${detail ? `<p>${detail}</p>` : ''}${corrOf(b) ? `<p>${traceLink(corrOf(b), 'Trace')}</p>` : ''}</div></li>`;
+  if (b.type === 'decision') {
+    const d = b.decision, rule = ruleOf(d.reason);
+    const why = d.verdict === 'ALLOW' ? '' : d.verdict === 'ALLOW_WITH_SAFEGUARD'
+      ? `Allowed. It waits ${waitWord((st.hold_s || {}).mail || 30)} before it leaves, so you can still cancel it.` : plainReason(d.reason);
+    return row(verdictStamp(d.verdict), `${actWho(b.principal)} wants to ${actWhat(d.call)}`, why,
+      rule ? ` <span class="rule">${esc(rule)}</span>` : '');
+  }
+  if (b.type === 'window-closed') {
+    const m = sent(b.hold), to = m?.to ? ` to ${m.to}` : '';
+    const [tone, word] = { sent: ['done', 'Sent'], settled: ['done', 'Paid'], failed: ['failed', 'Failed'], unknown: ['possible', 'Not sure'] }[b.outcome] || ['done', 'Went out'];
+    const text = { sent: `The email${to} left`, failed: `The mail server refused the email${to}`, unknown: `Not sure the email${to} arrived` }[b.outcome] || 'It went out';
+    return row(stamp(tone, word), text, b.error ? esc(b.error) : '');
+  }
+  if (b.type === 'undo' && b.cancelled) return row(stamp(b.ok === false ? 'failed' : 'rejected', b.ok === false ? 'Too late' : 'Cancelled'),
+    b.ok === false ? 'Cancel came too late' : `Cancelled before it went out${b.by === 'kill switch' ? ' (kill switch)' : ''}`);
+  if (b.type === 'released-early') return row(stamp('done', 'Sent now'), 'A person let it go without waiting');
+  if (b.type === 'human-approved-execution' || b.type === 'human-approved') return row(stamp('done', 'Approved'), `${titleCase(b.approver)} approved it`);
+  if (b.type === 'human-denied') return row(stamp('rejected', 'Refused'), `${titleCase(b.approver)} refused it`, 'Nothing happened.');
+  if (b.type === 'approval-expired') return row(stamp('skipped', 'Expired'), 'Nobody answered in time', 'So the answer is no.');
+  if (b.type === 'kill') return row(stamp('failed', 'Paused'), `Agents paused by ${b.by}`, b.cancelled?.length ? `${plural(b.cancelled.length, 'waiting item')} taken back.` : '');
+  if (b.type === 'resume') return row(stamp('done', 'Resumed'), `Agents resumed by ${b.by}`);
+  return null;
+}
+async function pageActivity() {
+  const [st, hitl, recs] = await Promise.all([api('/api/state'), api('/api/hitl'), api('/api/receipts?limit=80')]);
+  S.activityKey = `${recs.length ? recs[recs.length - 1].seq : 0}:${st.waiting.length}:${hitl.length}`;
+  const mail = st.mail || {};
+  const lines = recs.slice().reverse().map(r => activityLine(r, st)).filter(Boolean);
+  const lede = mail.mode === 'gmail'
+    ? `Everything an agent does through KAVACH, as it happens. Mail is your real Gmail, ${esc(mail.account)}: the agent reads that inbox and sends from it, only through KAVACH.`
+    : 'Everything an agent does through KAVACH, as it happens. (Mail here is the demo company\'s; start with scripts/gmail_up.sh for your real Gmail.)';
+  return `<div class="page narrow">${head('Activity', lede)}
+    ${flash()}
+    ${st.waiting.length ? `<section class="section">${sectionHead('Waiting to go out', st.waiting.length, 'Nothing has left yet. Cancel stops it for good; Send now skips the rest of the wait.')}<div class="sheet rows">${st.waiting.map(waitingRow).join('')}</div></section>` : ''}
+    ${hitl.length ? `<section class="section">${sectionHead('Needs a person', hitl.length, 'The agent stopped and waits for your answer. If nobody answers in time, the answer is no.')}<div class="queue">${hitl.map((it, i) => approvalCard(it, i === 0)).join('')}</div></section>` : ''}
+    <section class="section">${sectionHead('What happened', null, 'Every line is a signed receipt. Newest first.')}
+      <ol class="feed activity">${lines.join('') || `<li class="feed-empty">Nothing yet. Start an agent (scripts/demo_claude.sh) and ask it to work with your mail; each step shows here as it happens.</li>`}</ol></section>
+  </div>`;
+}
+async function activityTick() {
+  if (S.page !== 'activity' || document.hidden || S.activityBusy) return;
+  if (document.activeElement && document.activeElement.closest?.('#main') && /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  S.activityBusy = true;
+  try {
+    const [recs, st, hitl] = await Promise.all([api('/api/receipts?limit=1'), api('/api/state'), api('/api/hitl')]);
+    const key = `${recs.length ? recs[recs.length - 1].seq : 0}:${st.waiting.length}:${hitl.length}`;
+    if (key !== S.activityKey && S.page === 'activity') route(true);
+  } catch { /* the next tick tries again */ } finally { S.activityBusy = false; }
+}
 
 // ---------------------------------------------------------------- trace: one action, request to real effect, by its id
 const corrOf = b => b.corr || b.decision?.call?.call_id || '';
@@ -1363,11 +1429,22 @@ function afterRules(hit) {
 }
 
 // ---------------------------------------------------------------- shell: routes, top bar, polling
+// Pages that play on the made-up demo company. With KAVACH on real Gmail (scripts/gmail_up.sh) their buttons are refused
+// by the server, so real and scripted never mix; the notice says so.
+const SCRIPTED = new Set(['demo', 'start', 'agent', 'scenarios', 'check', 'game']);
+function scriptedNote(html) {
+  const gmail = S.st?.mail?.mode === 'gmail';
+  const note = gmail
+    ? `<div class="notice warn" role="status" style="margin-bottom:16px">${icon('triangle-alert')} Scripted scenario on a made-up demo company. KAVACH is running on your real Gmail now, so these buttons are switched off; the real thing is on <a href="#/activity">Activity</a>. Run scripts/demo_up.sh to play scenarios.</div>`
+    : `<div class="notice" role="status" style="margin-bottom:16px">${icon('info')} Scripted scenario on a made-up demo company. For real agents on your real Gmail: scripts/gmail_up.sh, then <a href="#/activity">Activity</a>.</div>`;
+  return html.replace(/(<div class="page[^"]*">)/, `$1${note}`);
+}
 const ROUTES = {
-  demo: { title: 'Live demo', render: pageStage, after: () => stagePaint() },
+  activity: { title: 'Activity', render: pageActivity },
+  demo: { title: 'Scripted stories', render: pageStage, after: () => stagePaint() },
   start: { title: 'One request, two actions', render: pageSide },
-  agent: { title: 'Live agent', render: pageAgent, after: afterAgent },
-  scenarios: { title: 'Scenarios', render: pageScenarios },
+  agent: { title: 'Agent on the demo company', render: pageAgent, after: afterAgent },
+  scenarios: { title: 'Scenario library', render: pageScenarios },
   check: { title: 'Check an action', render: pageCheck },
   approvals: { title: 'Approvals', render: pageApprovals },
   windows: { title: 'Undo windows', render: pageWindows },
@@ -1394,7 +1471,7 @@ async function route(quiet) {
   const token = ++routeToken;
   const [name, arg] = location.hash.replace(/^#\/?/, '').split('/');
   const r = ROUTES[name];
-  if (!r) { location.replace('#/start'); return; }
+  if (!r) { location.replace('#/activity'); return; }
   setDrawer(false);
   if (S.page !== name) S.flash = null;
   S.page = name;
@@ -1407,7 +1484,7 @@ async function route(quiet) {
     if (token !== routeToken) return;
     main.innerHTML = `<div class="page narrow" role="status" aria-live="polite"><div class="working" aria-hidden="true"><span class="skel"></span><span class="skel short"></span></div><span class="sr">Loading ${esc(r.title)}…</span></div>`;
   }, 180);
-  try { html = await r.render(arg); } catch (e) {
+  try { html = await r.render(arg); if (SCRIPTED.has(name)) html = scriptedNote(html); } catch (e) {
     html = `<div class="page narrow">${head(r.title)}${emptyNote("This page couldn't load", esc(e.message), '<button class="btn" type="button" data-act="reload">Try again</button>', 'failed')}</div>`;
   }
   clearTimeout(loadingTimer);
@@ -1697,4 +1774,5 @@ try { if (localStorage.getItem('kavach-rail') === 'hidden') $('#app').classList.
   }, 5000);
   setInterval(countdowns, 1000);
   setInterval(() => { if (!document.hidden) stageTick(); }, 1000);   // the live demo page only (stageTick checks)
+  setInterval(activityTick, 1500);                                    // the activity page: redraw when something happens
 })();

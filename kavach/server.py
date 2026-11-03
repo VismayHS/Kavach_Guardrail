@@ -389,10 +389,19 @@ SIDE_BY_SIDE = {
 }
 
 
+def _scripted() -> None:
+    """Scripted scenarios play on the demo company (made-up inbox, CRM, invoices). With KAVACH on your real Gmail they
+    would read your real inbox or send through your real account, so they are refused: real and scripted never mix."""
+    if MAIL_MODE == "gmail":
+        raise HTTPException(409, "Scripted scenarios run on the demo company, and KAVACH is on your real Gmail now. "
+                                 "Use scripts/demo_up.sh for scenarios; here, use a real agent (scripts/demo_claude.sh).")
+
+
 @app.post("/api/demo/side-by-side")
 def demo_side_by_side():
     """The demo's opening: one request, one inbox, two actions. The email the user asked for goes out (after its
     recall window); the customer list the hidden instruction in the inbox asked for is stopped, with the reason."""
+    _scripted()
     if not PROFILE.demo_endpoints:
         raise HTTPException(404, "demo endpoints are off in this profile")
     env.reset()
@@ -416,6 +425,7 @@ def demo_side_by_side():
 
 @app.post("/api/demo/{name}", dependencies=[Depends(caller)])
 def demo(name: str, reset: bool = True):
+    _scripted()
     sc = SCENARIOS.get(name)
     if sc is None or not PROFILE.demo_endpoints:
         raise HTTPException(404, "unknown scenario")
@@ -635,6 +645,7 @@ def stage_direct_send(body: dict, who: dict | None = Depends(caller)):
     tool would, with no check, no hold and nothing to cancel. {"leak": true} sends the customer list (synthetic) to
     the address in the poisoned email. Dev profile only; it exists to show the difference. A receipt still records
     that the bypass was used, so the audit trail stays honest."""
+    _scripted()
     import smtplib
     from email.message import EmailMessage
     if not PROFILE.fast_forward or (who is not None and who["role"] != "admin"):
@@ -665,6 +676,7 @@ def stage_reset(who: dict | None = Depends(caller)):
     """The live demo page's Start over: a fresh demo company (anything still waiting is discarded, never sent) and
     approvals still open are closed. Dev profile only, like fast-forward; the receipt chain is append-only and keeps
     everything, with a demo-reset receipt marking where the new run starts."""
+    _scripted()
     if not PROFILE.fast_forward or (who is not None and who["role"] != "admin"):
         raise HTTPException(403, "only an admin, in the dev profile, can reset the demo")
     closed = [hid for hid, it in gw.hitl.items.items() if it["status"] == "pending"]
