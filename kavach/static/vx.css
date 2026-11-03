@@ -537,3 +537,4 @@ blockquote.mail p { margin-top: 4px; font-size: 17px; }
 .stage .step-out .hold-acts { grid-column: 2 / -1; justify-content: flex-start; }   /* under the text: a long address never runs into Cancel */
 .stage .step-out b { overflow-wrap: anywhere; }
 .feed .rule.real { border-color: var(--vx-stamp-deep); color: var(--vx-stamp-deep); }
+@media (max-width: 767px) { .nw { white-space: normal; overflow-wrap: anywhere; } }   /* long addresses wrap on phones */

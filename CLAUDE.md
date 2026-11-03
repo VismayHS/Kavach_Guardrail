@@ -3,9 +3,11 @@
 KAVACH is our entry for **ET-03 "Agentic AI Guardrail Validator"** in the Infosys IGNITE ENG NEXT 2026 Hack-AI-Thon: check whether an AI agent's planned action is **safe, authorized, explainable and reversible** before it runs. Platform: Qualcomm Cloud AI Playground. Read `docs/HANDOFF.md` for the full context (competition, research, design, results, open tasks) before starting non-trivial work.
 
 ## Branches (check first)
-- `main` (`32c6767`): `build/phase-5` merged (PR #1): Ashwin's Phase 5 (R25–R34, AgentDojo, MELON, red team, Cedar, MCP proxy, adapters, persistent store, signed receipts, learning loop, deploy files) and dhanush-sr's console UI.
+- `main` (`b3c4b1b`): `build/phase-5` (PR #1) and `vismay-dev` (PR #2) merged.
+- `build/phase-5` (Ashwin): `main` + `build/e2e-demos` merged (3 Nov) + his later work (R42 user-only arguments, AgentDojo replay, link and provenance fixes).
+- `build/e2e-demos` / `build/live-demo` (dhanush-sr): `build/phase-5` + the live demo with real effects: Mailpit cancel-before-delivery lifecycle, sandbox bank, R41 (pay only the vendor's account on record), Live demo page (#/demo), Claude locked to `/mcp`, with/without comparison, optional Gmail. See `docs/LIVE_DEMO.md`.
 - `build/phase-0` … `build/phase-4` (`4c42d4e`): stacked work by dhanush-sr (1–2 Nov 2026): 940 scenarios, 47 families, rules R1–R24, undo windows, Qualcomm judge, AgentOS hook.
-- **`vismay-dev`**: `main` + Vismay's gap work (2 Nov), one fix per commit, every commit tested. Rules R35–R40 (R25–R34 are Phase 5's; new rules start at R41), SQL sandbox authorizer, server-set environment (`KAVACH_ENV`), orchestrator/agent tokens, per-task totals across delegation chains, signed receipt checkpoint on the Phase 5 store, and the eval scripts (`bench/layers.py`, `semantic_eval.py`, `explain_eval.py`). Every change to teammates' files: `docs/MERGE_NOTES.md`. Done and blocked: `docs/HANDOFF.md` §0.
+- **`vismay-dev`**: `main` + Vismay's gap work (2 Nov), one fix per commit, every commit tested. Rules R35–R40 (R25–R34 are Phase 5's; R41 is the invoice-account rule, R42 the user-only-arguments rule; new rules start at R43), SQL sandbox authorizer, server-set environment (`KAVACH_ENV`), orchestrator/agent tokens, per-task totals across delegation chains, signed receipt checkpoint on the Phase 5 store, and the eval scripts (`bench/layers.py`, `semantic_eval.py`, `explain_eval.py`). Every change to teammates' files: `docs/MERGE_NOTES.md`. Done and blocked: `docs/HANDOFF.md` §0.
 - Merging into `main` is a team decision; ask before pushing anything but `vismay-dev`.
 
 ## Commands
@@ -19,6 +21,7 @@ python -m bench.redteam fuzz ; python -m kavach.policy_verify     # offline red 
 pip install -r requirements-extra.txt      # optional features (Cedar, OTel, MCP, AgentDojo...); their tests skip without
 python -m bench.semantic_eval --offline     # judge-on runs need the Qualcomm key (rehearsals go to bench/results/rehearsal/)
 python -m uvicorn kavach.server:app --port 8000   # dashboard http://localhost:8000
+scripts/demo_up.sh ; scripts/demo_reset.sh ; scripts/demo_claude.sh [--without-kavach]   # live demo: docs/LIVE_DEMO.md
 python scripts/build_deck.py && (cd deliverables && soffice --headless --convert-to pdf KAVACH_Solution_Deck.pptx)
 python scripts/build_page.py               # docs/KAVACH_Blueprint.html from docs/BLUEPRINT.md
 python bench/infosys_compare.py <clone of Infosys/Infosys-Agentic-Foundry>
