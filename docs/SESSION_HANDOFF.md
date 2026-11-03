@@ -1,6 +1,6 @@
 # Session handoff: Vismay's work on KAVACH (2–3 Nov 2026)
 
-What was done on `vismay-dev` in the cloud Claude Code sessions of 2–3 Nov, where everything stands, and how to pick
+What was done on `vismay-dev` in the Claude Code sessions of 2–3 Nov (cloud, then the laptop; section 2d), where everything stands, and how to pick
 it up. For the whole project (competition, research, design, results), read `docs/HANDOFF.md`. For the rules a
 session must follow, read `CLAUDE.md`. This file is the log of *this* work.
 
@@ -11,13 +11,16 @@ session must follow, read `CLAUDE.md`. This file is the log of *this* work.
 | Branch | Head | What it is |
 |---|---|---|
 | `main` | `b3c4b1b` | PR #2 merged: `main` (Phase 5 + console UI) + this branch's gap work as of 2 Nov |
-| **`vismay-dev`** | `0cf97b1` | `main` + Ashwin's later `build/phase-5` (fast-forward) + Dhanush's last `build/e2e-demos` commit. **The most complete branch.** |
+| **`vismay-dev`** | see `git log` | `main` + Ashwin's later `build/phase-5` (fast-forward) + Dhanush's `build/e2e-demos` and `build/live-demo` + the fixes in section 2d. **The most complete branch.** |
 | `build/phase-5` (Ashwin) | `30eacac` | Contained in `vismay-dev` |
 | `build/e2e-demos` (Dhanush) | `c9f531b` | Contained in `vismay-dev` |
+| `build/live-demo` (Dhanush) | `0e05100` | Docs only; contained in `vismay-dev` |
 | `build/truth-check` (Dhanush) | `0747087` | **Not merged anywhere**: 44 commits stale, conflicts, duplicates Ashwin's callout (section 6) |
 
-- **Tests:** 507 passed, 15 skipped (optional packages) on `vismay-dev`; `tests/ui/console_check.py` passes in
-  headless Chromium.
+- **Tests:** 510 passed, 14 skipped on the laptop, from `requirements-demo.txt` plus Playwright; `tests/ui/console_check.py`
+  passes. `preflight.py --demo` says GO, and `demo_rehearse.py` passes on the live stack.
+- **Start here to run or present it:** `deliverables/KAVACH_Complete_Guide.pdf` covers the story, the demo script, every
+  console screen, the agents, connecting it and the test checklist.
 - **Merging `vismay-dev` into `main`:** the team decides, and it needs a new PR, because PR #2 is already merged.
   Pushes go to `vismay-dev` only.
 
@@ -33,7 +36,7 @@ pushed, so it was rebuilt here from the transcript. Each attack is a test that f
 | Item | What landed | Rule / file |
 |---|---|---|
 | **Part 1** | Raw SQL can't change finance records. The SQL sandbox refuses `VACUUM INTO`, `ATTACH`, `PRAGMA`, triggers and file functions (SQLite authorizer, defensive mode, `LIMIT_ATTACHED=0`). The server sets the environment, not the caller. Per-task totals. Bulk or encoded outbound mail. Destinations from untrusted content. Output from unknown tools counts as untrusted. `safeguard_armed` / `outputs_seen` in the check response. Intent matches whole words, and a question never authorises a write. R9 covers writing and deleting credential files. R15 covers SAP amounts. The explainer can't call a blocked action safe. `.env` is ignored. The Infosys comparison uses a fair config. | R35–R38, R9, R15, `kavach/sql.py`, `kavach/intent.py`, `kavach/explain.py` |
-| U1 | 24 cases that only meaning can decide. Offline, rules + keywords catch **0 of 12** misreadings. | `bench/semantic_eval.py` |
+| U1 | 24 cases that only meaning can decide. Live: 7 of 12 misreadings with the judge inline, 1 of 12 with keywords (section 2d). | `bench/semantic_eval.py` |
 | U2 | Live agent runs saved with full transcripts; rehearsals go to git-ignored `bench/results/rehearsal/` | `agent/llm_agent.py --both --save-log` |
 | U3 | What each layer decides: **the risk model changes no verdict** on the suite | `bench/layers.py`, `LAYERS.md` |
 | U4 | Evaluation of LLM-written explanations | `bench/explain_eval.py` |
@@ -76,6 +79,25 @@ pushed, so it was rebuilt here from the transcript. Each attack is a test that f
     let later emails go to made-up addresses.
   - **Checkpoint:** stores older than the checkpoint are adopted instead of reported as tampered with.
 
+### 2d. On the laptop, with the Qualcomm keys (3 Nov)
+- **Branch work:** the local 2 Nov work was superseded by 2a, so it's kept only in the laptop's `git stash`. Moved to
+  `vismay-dev` and merged Dhanush's `build/live-demo` (docs; one conflict, in `CLAUDE.md`'s branch list).
+- **Fixes, one commit each:**
+  - **Grafana and Prometheus on Linux:** `scripts/metrics_bridge.py`, started by `demo_up.sh`. Prometheus in Docker
+    couldn't reach a KAVACH on 127.0.0.1, so `preflight --demo` said NOT READY. It forwards `GET /metrics` only.
+  - **`requirements-demo.txt`:** `requirements.txt` alone can't run the demo; the extras file pulls in torch.
+  - **Live agent page:** a malformed tool call showed "The risk score is over the limit". It now says what happened.
+  - **Undo windows:** an INR payment was labelled EUR.
+  - **`bench/semantic_eval.py`:** "judge on" never consulted the judge, because the default mode only runs on calls
+    already going to a person. It now runs inline.
+- **Run live for the first time on this branch:** `bench.semantic_eval`, `bench.explain_eval`, the Live agent page, the
+  judge's note on approval cards, and real Claude through `/mcp` (stories A, B, C) and through the MCP proxy.
+- **Also rerun and passing:** `demo_recovery.py` and its `kill-switch` mode, `alert_drill.py`, `console_check.py`, all 41
+  Grafana queries, Jaeger traces, the red-team fuzz (0 of 1,178), Cedar parity (1027/1027), and 19 earlier attacks
+  (0 auto-allowed, 18 on the old code).
+- **Found, not fixed:** `RESULTS.md` and the Results page say 25.5% escalated, but the current code gives 26.6% on seed 0.
+  A later R1 change moved `attack:big_refund` from DENY to ESCALATE. Still 0% unsafe auto-allowed (section 6).
+
 ---
 
 ## 3. `vismay-dev` vs the `main` of 2 Nov: what it stops
@@ -106,10 +128,15 @@ These attacks were written by the same person who wrote the fixes, so a teammate
   - Banking, on the tasks both runs finished: attacks succeeded 0 of 40 with KAVACH vs 23 of 40 without. Benign
     tasks: 8 of 16 completed either way.
   - Slack: 6 of 64 vs 26 of 64, but benign tasks fell from 9 of 21 to 6 of 21 with KAVACH. That cost must be stated.
+- **Qualcomm judge, inline, live** (`SEMANTIC.md`, one run, 24 hand-written cases, so not a detection rate): misreadings
+  caught 7 of 12 vs 1 of 12 with keywords; safe rewordings 11 of 12 both ways; about 4.7 s per check; on 5 of the 24 the
+  judge didn't answer in time and fell back to keywords.
+- **LLM explanations, live** (`EXPLAIN.md`, 47 decisions): 19 kept, 22 rejected, 6 unavailable. They stay off by default.
 - **Latency** without the judge: about 1 ms on a laptop, about 2 / 9 ms (p50 / p95) on the shared build container.
   The Qualcomm judge adds seconds, and only runs on escalated calls.
 - **Don't claim:**
-  - that the risk model or the judge improves safety (not measured);
+  - that the risk model improves safety (`LAYERS.md`: it changes no verdict);
+  - that the demo's judge catches misreadings: that result is for inline mode, and the server runs escalations-only;
   - AgentOS beyond "tested through its governance code with a stand-in agent";
   - undo for actions KAVACH didn't execute.
 
@@ -142,7 +169,8 @@ These attacks were written by the same person who wrote the fixes, so a teammate
 | Decide on `build/truth-check` vs Ashwin's "the agent claims what KAVACH stopped" callout | Dhanush + Ashwin | Then rebase onto `vismay-dev` and merge |
 | `ap_agent` may now read the whole customer database (`crm.query`, added for the recorded Claude runs) | Dhanush + Ashwin | Least-privilege regression; Ashwin's demo script kept that role away from customer records |
 | Re-attack `vismay-dev` (someone other than the author) | team | V1 |
-| Run `bench.semantic_eval` and `bench.explain_eval` live; this decides slide 6 | anyone with the key | Rules + keywords catch 0 of 12 misreadings offline |
+| Regenerate results: `RESULTS.md` says 25.5% escalated, current code 26.6% (seed 0) | team | `bench.run`, `bench.conformal`, then the docs that quote it; keep REDTEAM's hand-written section |
+| Decide whether to offer inline judging | team | 7 of 12 vs 1 of 12, at about 5 s per call; `judge_mode` can only be set in code today |
 | Finish the AgentDojo KAVACH runs | Ashwin | Banking 56/160 done at last report |
 | Update the deck and blueprint from `docs/CLAIMS_CHECK.md` | docs owner | Still the 29 Oct numbers |
 | Per-user totals across tasks (a patient attacker starts a new task each time) | open | Next good change; no network needed |
@@ -153,18 +181,23 @@ These attacks were written by the same person who wrote the fixes, so a teammate
 **Blocked in the cloud container:** it can't reach `aisuite.cirrascale.com` (network policy). Allow that host in
 the environment's Network access settings, or run live Qualcomm work on a laptop with the key in `.env`.
 
+**Second Qualcomm key:** `.env` can hold `INFERENCE_CLOUD_API_KEY_2`. Nothing reads it automatically; pass it to long runs
+with `INFERENCE_CLOUD_API_KEY="$INFERENCE_CLOUD_API_KEY_2"` after `set -a; . ./.env; set +a`, so they don't compete with the demo.
+
 ---
 
 ## 7. How to continue
 
 ```bash
 git fetch origin && git checkout vismay-dev && git pull
-pip install -r requirements.txt && pip install sqlalchemy cedarpy opentelemetry-sdk   # store, Cedar, telemetry tests
+pip install -r requirements-demo.txt                    # the demo and the test suite
 pip install -r requirements-extra.txt                   # optional: every feature (MCP, AgentDojo, Presidio, torch...)
-python -m pytest -q                                      # 507 passed, 15 skipped expected
+python -m pytest -q                                      # about 510 passed; the rest skip for optional packages
 python tests/ui/console_check.py                         # needs Python Playwright + a Chromium
 python -m uvicorn kavach.server:app --port 8000          # console: http://localhost:8000 (Live demo: #/demo)
-scripts/demo_up.sh                                       # the full live demo stack (Mailpit, sandbox bank, Qualcomm key from ../.env)
+docker compose up -d mailpit prometheus grafana otel-collector jaeger
+scripts/demo_up.sh                                       # the live demo stack (sandbox bank, KAVACH, Qualcomm key from ./.env)
+python scripts/preflight.py --demo                       # must say GO; a Qualcomm connect timeout usually clears on a retry
 ```
 
 After changing rules or the gateway:

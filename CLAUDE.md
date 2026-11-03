@@ -12,7 +12,7 @@ KAVACH is our entry for **ET-03 "Agentic AI Guardrail Validator"** in the Infosy
 
 ## Commands
 ```bash
-pip install -r requirements.txt            # Python 3.11+
+pip install -r requirements.txt            # Python 3.11+ (core); requirements-demo.txt adds what the demo and all core tests need
 python -m pytest -q                        # every test; a commit must keep them all passing
 python -m bench.run --quick                # seed-0 benchmark (~1 min); without --quick also 5 seeds
 python -m bench.conformal                  # after bench.run: model rows for the learning loop + CONFORMAL.md
@@ -21,7 +21,7 @@ python -m bench.redteam fuzz ; python -m kavach.policy_verify     # offline red 
 pip install -r requirements-extra.txt      # optional features (Cedar, OTel, MCP, AgentDojo...); their tests skip without
 python -m bench.semantic_eval --offline     # judge-on runs need the Qualcomm key (rehearsals go to bench/results/rehearsal/)
 python -m uvicorn kavach.server:app --port 8000   # dashboard http://localhost:8000
-scripts/demo_up.sh ; scripts/demo_reset.sh ; scripts/demo_claude.sh [--without-kavach]   # live demo: docs/LIVE_DEMO.md
+scripts/demo_up.sh ; scripts/demo_reset.sh ; scripts/demo_claude.sh [--without-kavach]   # live demo: DEMO.md, docs/LIVE_DEMO.md; guide: deliverables/KAVACH_Complete_Guide.pdf
 python scripts/build_deck.py && (cd deliverables && soffice --headless --convert-to pdf KAVACH_Solution_Deck.pptx)
 python scripts/build_page.py               # docs/KAVACH_Blueprint.html from docs/BLUEPRINT.md
 python bench/infosys_compare.py <clone of Infosys/Infosys-Agentic-Foundry>

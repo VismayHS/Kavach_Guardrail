@@ -80,7 +80,8 @@ The stage demo proves outcomes with services KAVACH doesn't own: a real inbox (M
 Gmail) and a local sandbox bank, each with its own page. Claude reaches the tools only through KAVACH's `/mcp`.
 
 ```bash
-brew install mailpit                 # once (macOS); any Mailpit binary works
+pip install -r requirements-demo.txt # once
+docker compose up -d mailpit prometheus grafana otel-collector jaeger   # or, on macOS without Docker: brew install mailpit
 scripts/demo_up.sh                   # Mailpit + sandbox bank + KAVACH; console http://127.0.0.1:8000/#/demo
 scripts/demo_claude.sh               # Claude Code locked to KAVACH (no shell, files, browser or other MCP server)
 scripts/demo_claude.sh --without-kavach   # the same Claude and tools with no KAVACH, for the comparison
@@ -93,7 +94,8 @@ delivery; side by side with sending it without KAVACH), *The invoice scam* (only
 paid, R41; a person approves; held 60 s), and *The poisoned email* (an email asks for the customer list; refused
 by R1). Real Claude runs with and without KAVACH are recorded in
 [`bench/results/CLAUDE_WITH_WITHOUT.md`](bench/results/CLAUDE_WITH_WITHOUT.md). Steps, guarantees and settings:
-[`docs/LIVE_DEMO.md`](docs/LIVE_DEMO.md).
+[`docs/LIVE_DEMO.md`](docs/LIVE_DEMO.md). The whole thing explained, with screenshots of every screen:
+[`deliverables/KAVACH_Complete_Guide.pdf`](deliverables/KAVACH_Complete_Guide.pdf).
 
 ## API
 

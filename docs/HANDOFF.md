@@ -14,7 +14,7 @@ teammates' files, and the attack-by-attack comparison with `main`: `docs/MERGE_N
 | Item | What landed | Rule / file |
 |---|---|---|
 | Part 1 | Raw SQL can't change finance records; SQL sandbox authorizer (no VACUUM INTO / ATTACH / PRAGMA / triggers); env set by the server; per-task totals; bulk/encoded outbound mail; untrusted destinations; unknown-tool output untrusted; `safeguard_armed` / `outputs_seen`; whole-word intent, questions don't authorise writes; credential files on write/delete; SAP amounts; explainer can't contradict a block; `.env` ignored; fair Infosys config | R35–R38, R9, R15, `kavach/sql.py` |
-| U1 | 24 cases only meaning can decide; offline, rules + keywords catch 0 of 12 misreadings | `bench/semantic_eval.py` |
+| U1 | 24 cases only meaning can decide; live, the judge inline catches 7 of 12 misreadings, rules + keywords 1 of 12 | `bench/semantic_eval.py` |
 | U2 | Live agent runs saved with full transcripts | `agent/llm_agent.py --both --save-log` |
 | U3 | What each layer decides: the risk model changes no verdict (supporting signal) | `bench/layers.py`, `LAYERS.md` |
 | U4 | Evaluation of LLM-written explanations | `bench/explain_eval.py` |

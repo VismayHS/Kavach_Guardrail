@@ -167,6 +167,16 @@ Every attack in `tests/test_gaps.py`, run against both branches (KAVACH's verdic
 - Latency in `RESULTS.md` is this build container's (about 2 / 9 ms p50 / p95 for both `main` and `vismay-dev`
   here), not a regression; `main`'s recorded 0.42 / 1.01 ms came from a faster machine.
 
+## Later changes to teammates' files (laptop session, 3 Nov)
+
+- `scripts/demo_up.sh`, `scripts/demo_reset.sh` (dhanush-sr): start and stop `scripts/metrics_bridge.py` on Linux, so
+  Prometheus in Docker can scrape the demo; the Mailpit-missing message also names `docker compose`.
+- `DEMO.md` (Ashwin): setup uses `requirements-demo.txt`; Linux notes on the bridge and on ufw.
+- `kavach/static/app.js` (dhanush-sr / Ashwin): `stepHtml` draws a `{note}` step as a note; `money()` uses the payment's
+  own currency.
+- `README.md`, `CLAUDE.md`: Linux start commands and `requirements-demo.txt`.
+- Merged `build/live-demo` (docs). No teammate test was edited.
+
 ## Not done here
 - Phase 5 follow-ups the team is already working on (shared-client rate-limit retry, R1 for a source the user named,
   console additions, a recorded live-run fallback) were left to their owners.
