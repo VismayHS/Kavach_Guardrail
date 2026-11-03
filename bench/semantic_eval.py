@@ -144,7 +144,8 @@ def main(offline: bool) -> dict | None:
     c_block = RiskModel().meta["operating_point"]["c_block"]
     env = Environment(tempfile.mkdtemp())
     off = Kavach(env, GatewayConfig(use_llm_judge=False, c_block=c_block))
-    on = None if offline else Kavach(env, GatewayConfig(use_llm_judge=True, c_block=c_block))
+    # inline: the default, escalations-only, never shows the judge a call that passed the rules, which all of these do
+    on = None if offline else Kavach(env, GatewayConfig(use_llm_judge=True, judge_mode="inline", c_block=c_block))
     if on is not None and not on.judge.llm.enabled:
         print("No Qualcomm key/endpoint (IMAGINE_* or INFERENCE_CLOUD_*): run with --offline, or set them.")
         return None
