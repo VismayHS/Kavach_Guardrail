@@ -64,6 +64,8 @@ approvals:
 
 change_freeze: false             # when true: no writes to prod (Replit incident lesson)
 require_tool_hash: false         # when true: calls must present the pinned tool definition hash (MCP clients)
+first_contact_approval: false    # R43: a first email to a new outside address needs approval (on for real Gmail)
+mail_trusted: []                 # R43: addresses or @domains that are never first contact
 
 # Accounts payable, from the rulebook in Infosys AgentOS's sample tenant
 # (Topaz_AgentOS/enterprise_root/tenants/company/shared/contexts/judgment/fa_judgment.md, section L2 AP)
@@ -146,3 +148,4 @@ rules:
   R40: "When a task has shown no tool output, an email or transfer to an outside destination the user didn't give needs approval: there is nothing to trace it to."
   R41: "An invoice is paid only to its vendor's account on record, for the invoice's own amount: any other account or amount the agent names is blocked, and no approval can change that."
   R42: "Arguments only the user may choose (a new password; a tool's manifest lists them as user_args) must come from the user's own words; any other value needs approval."
+  R43: "First contact: an email to an address nobody here has corresponded with (not the sending account, not a trusted address, not the sender of a message the agent read) needs a person's approval, even when the user typed it. On when first_contact_approval is true (KAVACH on real Gmail)."

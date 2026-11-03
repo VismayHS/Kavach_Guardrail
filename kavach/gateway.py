@@ -37,7 +37,7 @@ from .risk import RiskModel, featurize
 SAFETY_RULES = {"R2", "R9", "R10", "R13", "R16", "R17", "R22", "R23", "R24", "R25", "R26", "R27", "R28", "R29",
                 "R34", "R36", "R37"}
 AUTH_RULES = {"R1", "R3", "R4", "R5", "R6", "R7", "R8", "R11", "R12", "R14", "R15", "R18", "R19", "R20", "R21",
-              "R35", "R38", "R39", "R40", "R41", "R42", "KILL"}
+              "R35", "R38", "R39", "R40", "R41", "R42", "R43", "KILL"}
 
 
 @dataclass
@@ -472,6 +472,7 @@ class Kavach:
 
         # [4] deterministic gates
         tot = self._totals(task_id)            # R36 totals belong to the root of a delegation chain
+        policy = task.policy or self.policy
         staged = {"rows_affected": effect.magnitude.get("rows_affected", 0) if effect else 0,
                   "payees": self.env.payees, "freeze": self.env.change_freeze,
                   "sql": {k: effect.magnitude.get(k) for k in ("writes", "ddl", "sql_ops")} if effect else {},
@@ -486,6 +487,7 @@ class Kavach:
                   "given": task.prov.given, "hostile": sorted(task.prov.hostile),
                   "detected_pii": self._outbound_pii(spec, call),
                   "destination_given": self._destination_given(task, call),
+                  "first_contact": self._first_contact(task, call, policy) if model_of(spec) == "email" else [],
                   "repeat": self._action_key(call) in tot.actions_run,
                   "task_rows": tot.rows_changed + self._rows_of(call, effect),
                   "task_money": self._money_after(tot, call, effect),
@@ -497,7 +499,6 @@ class Kavach:
                   "untrusted_details": task.prov.untrusted_details(
                       f"{arg(spec, call.args, 'subject', '')} {arg(spec, call.args, 'body', '')}")
                   if model_of(spec) in ("email", "message") else []}
-        policy = task.policy or self.policy
         gates = policy.evaluate(ctx, call, spec, self.registry, labels, staged)
         if task.allowed_tools is not None and call.tool not in task.allowed_tools:     # F2: authority only narrows
             gates.append(GateResult("R33", "DENY", f"This agent was delegated {', '.join(task.allowed_tools) or 'no tools'};"
@@ -693,6 +694,22 @@ class Kavach:
         if money:
             ctx.money_moved[money[0]] = max(0.0, ctx.money_moved.get(money[0], 0.0) - money[1])
         ctx.rows_changed = max(0, ctx.rows_changed - self._rows_of(call, effect))
+
+    def _first_contact(self, task: Task, call: ToolCall, policy) -> list[str]:
+        """R43: the addresses this email goes to that nobody here has corresponded with. Known: the sending account,
+        the policy's mail_trusted list (addresses, or @domain), and senders of messages the agent read in this task.
+        Off unless the policy sets first_contact_approval (KAVACH on real Gmail turns it on)."""
+        cfg = policy.cfg
+        if not cfg.get("first_contact_approval"):
+            return []
+        spec = self.registry.get(call.tool)
+        own = str(getattr(self.env.mailer, "sender", "") or "").lower()
+        trusted = [str(t).lower() for t in cfg.get("mail_trusted") or []]
+        known = set(task.prov.senders)
+
+        def ok(a: str) -> bool:
+            return a == own or a in known or a in trusted or any(t.startswith("@") and a.endswith(t) for t in trusted)
+        return [a for a in parse_recipients(*(arg(spec, call.args, r, "") for r in ("to", "cc", "bcc"))) if not ok(a)]
 
     def _destination_given(self, task: Task, call: ToolCall) -> bool:
         """R38/R40: every destination of an email or transfer (or of a tool that declares one) was typed by the user,

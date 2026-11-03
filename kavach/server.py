@@ -69,6 +69,11 @@ if MAIL_MODE == "gmail":       # real Gmail only: the inbox is read over IMAP, e
         "Send an email from the user's Gmail account. It leaves after a short window in which a person can cancel it.")
     for _t in ("mail.read_inbox", "mail.send"):     # the operator's own wording at start-up, pinned as the definition
         gw.registry.pins[_t] = gw.registry.specs[_t].definition_hash()
+    # R43: on real mail, a first email to an address nobody here has corresponded with waits for a person
+    gw.policy.cfg["first_contact_approval"] = True
+    gw.policy.cfg["mail_trusted"] = [t.strip().lower() for t in os.environ.get("KAVACH_MAIL_TRUSTED", "").split(",")
+                                     if t.strip()]
+    gw.policy.version = f"{gw.policy.version}+gmail"     # receipts say which rules were on
 if PROFILE.require_tool_hash:
     gw.policy.cfg["require_tool_hash"] = True
 if os.environ.get("KAVACH_LOG_JSON") == "1":          # F11: structured logs, a line per decision (no arguments)

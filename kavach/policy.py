@@ -247,6 +247,16 @@ class PolicyEngine:
             add("R40", "REQUIRE_APPROVAL", f"No tool output was shown for this task, so where {call.args.get(dest)!r} "
                 "came from can't be checked, and the user didn't give it.", arg=dest)
 
+        # R43 first contact (on when the policy sets first_contact_approval, as KAVACH on real Gmail does): an email to an
+        # address nobody here has corresponded with waits for a person, even when the user typed it. Not first contact:
+        # the sending account itself, the policy's mail_trusted addresses and domains, and the sender of a message the
+        # agent read in this task (replying to it). A sensitive action isn't malicious; it needs the right authorisation.
+        if m == "email" and st.get("first_contact"):
+            new = st["first_contact"]
+            add("R43", "REQUIRE_APPROVAL", f"First email to {', '.join(new)}: nobody here has corresponded with "
+                f"{'this address' if len(new) == 1 else 'these addresses'} before, so a person confirms the recipient "
+                "and what is leaving before it goes.", recipients=new)
+
         # R39 bank details or links from untrusted content, passed on by email or chat (inside the company too)
         if m in ("email", "message") and st.get("untrusted_details"):
             add("R39", "REQUIRE_APPROVAL", f"The {m} repeats {', '.join(st['untrusted_details'])} from untrusted "
@@ -423,7 +433,9 @@ class PolicyEngine:
     @staticmethod
     def _asked_for(ctx: TaskContext, tool: str, spec: ToolSpec) -> bool:
         """The user's request asks for this kind of action (its intent verbs), e.g. "pay" for a transfer. Names the
-        user typed (a file, an address: 'address-change.txt', .../pay/dec-2023) are not words of the request."""
+        user typed (a file, an address: 'address-change.txt', .../pay/dec-2023) are not words of the request, and a
+        verb the user negated is not a request: "Do not send any emails" doesn't ask for an email (it read as one, so
+        a recipient taken from the email the user named went to a person instead of being refused)."""
         from .intent import TOOL_VERBS
         req = NAME_TOKEN.sub(" ", ctx.user_request.lower())
         for v in (spec.intent_verbs or TOOL_VERBS.get(tool, [])):
