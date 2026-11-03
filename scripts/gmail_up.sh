@@ -57,6 +57,14 @@ export KAVACH_DB_URL=${KAVACH_DB_URL:-sqlite:///$PWD/.kavach/gmail.db}
 if curl -s -o /dev/null --max-time 1 http://127.0.0.1:4318/ 2>/dev/null; then
   export OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://127.0.0.1:4318} OTEL_SERVICE_NAME=kavach-gmail
 fi
+# Linux: Prometheus in Docker needs this to reach a KAVACH on 127.0.0.1 (see demo_up.sh); GET /metrics only
+if [ "$(uname -s)" = Linux ] && command -v docker >/dev/null 2>&1; then
+  GW=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || true)
+  if [ -n "$GW" ] && ip -4 addr 2>/dev/null | grep -q "inet $GW/" && ! curl -s -o /dev/null --max-time 1 "http://$GW:8000/metrics"; then
+    nohup "$PY" scripts/metrics_bridge.py "$GW" --upstream "http://127.0.0.1:$PORT" > .kavach/metrics-bridge.log 2>&1 &
+    echo $! > .kavach/metrics-bridge.pid
+  fi
+fi
 [ -n "${INFERENCE_CLOUD_API_KEY:-}${IMAGINE_API_KEY:-}" ] && echo "Qualcomm: key loaded (the judge's note on approvals; scripts/llama_agent.py)"
 echo "Console: http://127.0.0.1:$PORT/#/activity"
 echo "Agents:  scripts/demo_claude.sh (Claude Code)  |  .venv/bin/python scripts/llama_agent.py (Llama on Qualcomm)"
