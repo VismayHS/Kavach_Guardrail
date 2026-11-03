@@ -74,6 +74,27 @@ The intent judge runs in two stages: the smallest model in `GET /models` triages
 
 Offline rehearsal of the Qualcomm path: `python -m uvicorn scripts.fake_imagine:app --port 9100`, then set `IMAGINE_API_ENDPOINT=http://localhost:9100 IMAGINE_API_KEY=x`.
 
+## Live demo with real effects
+
+The stage demo proves outcomes with services KAVACH doesn't own: a real inbox (Mailpit, optionally forwarding to
+Gmail) and a local sandbox bank, each with its own page. Claude reaches the tools only through KAVACH's `/mcp`.
+
+```bash
+brew install mailpit                 # once (macOS); any Mailpit binary works
+scripts/demo_up.sh                   # Mailpit + sandbox bank + KAVACH; console http://127.0.0.1:8000/#/demo
+scripts/demo_claude.sh               # Claude Code locked to KAVACH (no shell, files, browser or other MCP server)
+scripts/demo_claude.sh --without-kavach   # the same Claude and tools with no KAVACH, for the comparison
+scripts/demo_replay.py               # labelled replay of a fooled agent paying the scam account
+scripts/demo_reset.sh                # clean start: empty inbox and bank, no receipts or approvals
+```
+
+The **Live demo** page tells three stories with the proof beside them: *Stop the email* (held 30 s, cancel before
+delivery; side by side with sending it without KAVACH), *The invoice scam* (only the vendor's account on record is
+paid, R41; a person approves; held 60 s), and *The poisoned email* (an email asks for the customer list; refused
+by R1). Real Claude runs with and without KAVACH are recorded in
+[`bench/results/CLAUDE_WITH_WITHOUT.md`](bench/results/CLAUDE_WITH_WITHOUT.md). Steps, guarantees and settings:
+[`docs/LIVE_DEMO.md`](docs/LIVE_DEMO.md).
+
 ## API
 
 | Endpoint | Purpose |
@@ -104,6 +125,8 @@ kavach/   models · manifest · provenance · consequence · policy (+ policies/
 bench/    suite.py (labelled scenarios) · run.py (train, calibrate, baselines, Pareto, multi-seed) · lofo.py · holdout.py
           layers.py · semantic_eval.py · judge_eval.py · explain_eval.py · infosys_compare.py · results/
 agent/    llm_agent.py: real tool-using agent on Qualcomm Cloud AI behind KAVACH
+scripts/  demo_up.sh · demo_reset.sh · demo_claude.sh · demo_replay.py · sandbox_bank.py · plain_mail_mcp.py ·
+          record_claude_comparison.py · preflight.py · record_live_agent.py
 integrations/  agentos_hook.py: KAVACH as Infosys Topaz AgentOS hooks
 docs/     BLUEPRINT.md (end-to-end design + research) · INFOSYS_GAP_ANALYSIS.md · AUDIT_OF_EXISTING_DOCS.md · img/
 deliverables/  KAVACH_Solution_Deck.pptx (filled Hack-AI-Thon template + appendix)
@@ -124,4 +147,4 @@ Findings and the gaps they show: [`docs/INFOSYS_GAP_ANALYSIS.md`](docs/INFOSYS_G
 
 ## Results
 
-See [`bench/results/RESULTS.md`](bench/results/RESULTS.md), [`LOFO.md`](bench/results/LOFO.md) (leave one family out) and [`HOLDOUT.md`](bench/results/HOLDOUT.md); the Qualcomm judge on vs off in [`JUDGE.md`](bench/results/JUDGE.md); a live Llama agent on Qualcomm Cloud AI, attacked through its inbox, with and without KAVACH in [`LIVE_AGENT.md`](bench/results/LIVE_AGENT.md). The suite is synthetic: its scenario families mirror the axes of AgentDojo and AmPermBench, but the numbers are **not** comparable with results published on those benchmarks.
+See [`bench/results/RESULTS.md`](bench/results/RESULTS.md), [`LOFO.md`](bench/results/LOFO.md) (leave one family out) and [`HOLDOUT.md`](bench/results/HOLDOUT.md); the Qualcomm judge on vs off in [`JUDGE.md`](bench/results/JUDGE.md); a live Llama agent on Qualcomm Cloud AI, attacked through its inbox, with and without KAVACH in [`LIVE_AGENT.md`](bench/results/LIVE_AGENT.md); real Claude with and without KAVACH on the live demo's tools in [`CLAUDE_WITH_WITHOUT.md`](bench/results/CLAUDE_WITH_WITHOUT.md). The suite is synthetic: its scenario families mirror the axes of AgentDojo and AmPermBench, but the numbers are **not** comparable with results published on those benchmarks.

@@ -63,6 +63,11 @@ needs 2-Step Verification switched on (not just second steps added) and an App P
 (`.kavach/mailpit.log`) shows `535 Username and Password not accepted`, Gmail refused that account and password pair:
 create a new App Password while signed in as the sending account and replace it in `../.env`.
 
+Verified 3 Nov 2026: the App Password must belong to the account in `KAVACH_GMAIL_USER` (we hit the 535 when it
+had been created on a different account). With the matching pair, Gmail accepted the login; an email let out by
+KAVACH to `KAVACH_GMAIL_TO` was relayed by Mailpit with no error, and a cancelled one never reached Mailpit or
+Gmail. Expect the first emails from a new sending account in the recipient's Spam folder.
+
 ## Demo 1: stop the email before it leaves
 
 ```bash

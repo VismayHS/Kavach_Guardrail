@@ -1,5 +1,10 @@
 # KAVACH demo script (6 minutes)
 
+> **The stage flow is now the Live demo page** (`scripts/demo_up.sh`, then http://127.0.0.1:8000/#/demo): three stories
+> with the real inbox and sandbox bank beside them, real Claude through KAVACH, and a with/without comparison. Steps
+> and a 2-minute run: [`docs/LIVE_DEMO.md`](LIVE_DEMO.md). The walkthrough below is the older console tour (sign-in,
+> quorum approvals, receipts); it still works and is the place for questions about roles and the receipt chain.
+
 Rehearse this twice end to end, and record one clean run as the fallback video.
 Everything here runs offline except section 1, which uses Qualcomm Cloud AI.
 
