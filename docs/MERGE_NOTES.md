@@ -32,7 +32,7 @@ classifier, R30 valid IBAN, R31 Confirmation of Payee, R32 raw credentials, R33 
 | R33 | R39 | Payment details or links from untrusted content passed on by email (approval) |
 | R34 | R40 | Outside destination with no tool output shown (approval) |
 
-New rules start at R41.
+New rules started at R41 at the time of this merge; R41 (dhanush-sr) and R42 (Ashwin) have since been added, so new rules start at R43.
 
 ## Changes to teammates' files
 
