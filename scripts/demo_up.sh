@@ -30,6 +30,7 @@ fi
 # Mailpit, so it never reaches Gmail. The password goes only into .kavach/gmail-relay.yaml (owner-only), for Mailpit:
 # not into KAVACH's environment, and never into Claude's.
 ENV_FILE=${KAVACH_ENV_FILE:-../.env}
+[ -f "$ENV_FILE" ] || ENV_FILE=.env                       # or the repo's own .env (git-ignored, like ../.env)
 envval() { [ -f "$ENV_FILE" ] && sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$ENV_FILE" | tail -1 | tr -d "\"'"; }
 GMAIL_USER=${KAVACH_GMAIL_USER:-$(envval KAVACH_GMAIL_USER || true)}
 GMAIL_PASS=${KAVACH_GMAIL_APP_PASSWORD:-$(envval KAVACH_GMAIL_APP_PASSWORD || true)}
@@ -48,8 +49,12 @@ if curl -sf http://127.0.0.1:8025/api/v1/info >/dev/null && [ ${#RELAY[@]} -gt 0
   MP_PID=$(lsof -nP -tiTCP:8025 -sTCP:LISTEN | head -1)
   if [ -n "$MP_PID" ] && ps -p "$MP_PID" -o comm= | grep -q mailpit; then
     kill "$MP_PID" 2>/dev/null && sleep 1                              # restart it with Gmail forwarding on
-  else      # the compose stack's Mailpit (port 8025 belongs to Docker, which must never be killed)
-    echo "Gmail forwarding needs this script's own Mailpit: docker compose stop mailpit, then run demo_up.sh again"
+  elif command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -qx 'kavach-mailpit-1' \
+       && command -v mailpit >/dev/null; then   # the compose stack's Mailpit can't forward: use this script's own
+    echo "Gmail is on: stopping the compose stack's Mailpit (docker compose stop mailpit) to start one that forwards"
+    docker compose stop mailpit >/dev/null && sleep 1
+  else      # never kill whatever else holds 8025 (with Docker it is Docker's own port forwarder)
+    echo "Gmail forwarding needs this script's own Mailpit (brew install mailpit; docker compose stop mailpit), then run demo_up.sh again"
   fi
 fi
 if ! curl -sf http://127.0.0.1:8025/api/v1/info >/dev/null; then
@@ -70,7 +75,11 @@ fi
 echo "Bank:    http://127.0.0.1:8030"
 
 if [ -f .env ] && [ -z "${KAVACH_NO_DOTENV:-}" ]; then   # the Qualcomm key: the judge writes its note on approval cards
-  set -a; . ./.env; set +a                                 # (values are never printed; KAVACH_NO_DOTENV=1 skips it)
+  # only the Qualcomm settings go into KAVACH's environment (values never printed; KAVACH_NO_DOTENV=1 skips it); the
+  # Gmail password stays out of it: Mailpit alone gets it, through .kavach/gmail-relay.yaml
+  while IFS='=' read -r k v; do
+    case "$k" in INFERENCE_CLOUD_*|IMAGINE_*) export "$k=$(printf '%s' "$v" | tr -d "\"'")" ;; esac
+  done < <(grep -E '^[[:space:]]*(INFERENCE_CLOUD_|IMAGINE_)[A-Z_]+=' .env | sed 's/^[[:space:]]*//')
   echo "Qualcomm: key loaded from .env (judge on escalations; console badge QUALCOMM AI ON)"
 fi
 export KAVACH_BANK_URL=http://127.0.0.1:8030 KAVACH_INVOICE_DEMO=1     # INV-101, vendor V001 = TEST-ACCT-001

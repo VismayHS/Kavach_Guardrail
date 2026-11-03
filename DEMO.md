@@ -31,6 +31,28 @@ npm i -g @anthropic-ai/claude-code                   # for the REAL stories (sig
 #   INFERENCE_CLOUD_API_KEY=...   INFERENCE_CLOUD_ENDPOINT=https://aisuite.cirrascale.com/apis/v2
 ```
 
+### Real Gmail (optional)
+
+Put three lines in `.env` (git-ignored), or in `../.env`:
+
+```
+KAVACH_GMAIL_USER=the-sending-account@gmail.com
+KAVACH_GMAIL_APP_PASSWORD=its app password
+KAVACH_GMAIL_TO=the-address-that-should-receive@gmail.com
+```
+
+- The App Password must be created on the sending account itself, with 2-Step Verification on. Otherwise Mailpit's
+  log (`.kavach/mailpit.log`) shows `535 Username and Password not accepted`.
+- Install Mailpit locally once: `brew install mailpit`.
+- `scripts/demo_up.sh` then:
+  - stops the compose Mailpit;
+  - starts its own Mailpit, which forwards to Gmail only the emails addressed to `KAVACH_GMAIL_TO`;
+  - pre-fills that address on the Live demo page.
+
+Everything else still lands in Mailpit only. A cancelled email reaches neither Mailpit nor Gmail. The password goes
+only to Mailpit (`.kavach/gmail-relay.yaml`, readable only by you), never to KAVACH or Claude. Expect the first
+emails in Spam. `KAVACH_GMAIL=off scripts/demo_up.sh` turns it off, for when there is no internet on stage.
+
 Docker Desktop is needed for Grafana, Prometheus, Jaeger and Mailpit. Without Docker, `brew install mailpit` and
 skip the Grafana parts. The demo itself still works.
 
