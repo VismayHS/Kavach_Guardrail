@@ -1086,55 +1086,58 @@ function actWhat(c) {
   if (c.tool === 'mail.read_inbox') return 'read the inbox';
   return `${toolName(c.tool).toLowerCase()} (${c.tool})`;
 }
-function activityLine(r, st) {
-  const b = r.body, sent = id => (st.outbox || []).find(m => m.id === id) || (st.waiting || []).find(h => h.id === id)?.msg;
-  const row = (stampHtml, title, detail = '', extra = '') => `<li><time>${clock(r.ts)}</time>${stampHtml}<div><b>${nw(esc(title))}</b>${extra}${detail ? `<p>${detail}</p>` : ''}${corrOf(b) ? `<p>${traceLink(corrOf(b), 'Trace')}</p>` : ''}</div></li>`;
-  if (b.type === 'decision') {
-    const d = b.decision, rule = ruleOf(d.reason);
-    const why = d.verdict === 'ALLOW' ? '' : d.verdict === 'ALLOW_WITH_SAFEGUARD'
-      ? `Allowed. It waits ${waitWord((st.hold_s || {}).mail || 30)} before it leaves, so you can still cancel it.` : plainReason(d.reason);
-    return row(verdictStamp(d.verdict), `${actWho(b.principal)} wants to ${actWhat(d.call)}`, why,
-      rule ? ` <span class="rule">${esc(rule)}</span>` : '');
-  }
-  if (b.type === 'window-closed') {
-    const m = sent(b.hold), to = m?.to ? ` to ${m.to}` : '';
-    const [tone, word] = { sent: ['done', 'Sent'], settled: ['done', 'Paid'], failed: ['failed', 'Failed'], unknown: ['possible', 'Not sure'] }[b.outcome] || ['done', 'Went out'];
-    const text = { sent: `The email${to} left`, failed: `The mail server refused the email${to}`, unknown: `Not sure the email${to} arrived` }[b.outcome] || 'It went out';
-    return row(stamp(tone, word), text, b.error ? esc(b.error) : '');
-  }
-  if (b.type === 'undo' && b.cancelled) return row(stamp(b.ok === false ? 'failed' : 'rejected', b.ok === false ? 'Too late' : 'Cancelled'),
-    b.ok === false ? 'Cancel came too late' : `Cancelled before it went out${b.by === 'kill switch' ? ' (kill switch)' : ''}`);
-  if (b.type === 'released-early') return row(stamp('done', 'Sent now'), 'A person let it go without waiting');
-  if (b.type === 'human-approved-execution' || b.type === 'human-approved') return row(stamp('done', 'Approved'), `${titleCase(b.approver)} approved it`);
-  if (b.type === 'human-denied') return row(stamp('rejected', 'Refused'), `${titleCase(b.approver)} refused it`, 'Nothing happened.');
-  if (b.type === 'approval-expired') return row(stamp('skipped', 'Expired'), 'Nobody answered in time', 'So the answer is no.');
-  if (b.type === 'kill') return row(stamp('failed', 'Paused'), `Agents paused by ${b.by}`, b.cancelled?.length ? `${plural(b.cancelled.length, 'waiting item')} taken back.` : '');
-  if (b.type === 'resume') return row(stamp('done', 'Resumed'), `Agents resumed by ${b.by}`);
-  return null;
+const STATUS_STAMP = { executed: ['done', 'Executed'], 'not executed': ['rejected', 'Not executed'], held: ['queued', 'Held'],
+  'awaiting approval': ['possible', 'Needs a person'], failed: ['failed', 'Failed'], unknown: ['possible', 'Not sure'] };
+function actArgs(a) {
+  const c = a.args || {}, row = (k, v, long) => `<div class="act-arg"><span>${esc(k)}</span>${long
+    ? `<pre class="act-body">${esc(String(v))}</pre>` : `<code>${esc(String(v))}</code>`}</div>`;
+  if (a.tool === 'mail.send') return row('To', c.to) + (c.cc ? row('Cc', c.cc) : '') + row('Subject', c.subject || '') + row('Message', c.body || '', true);
+  const rest = Object.entries(c).filter(([, v]) => v !== '' && v != null).map(([k, v]) => row(k, typeof v === 'object' ? JSON.stringify(v) : v)).join('');
+  const got = a.returned ? `<div class="act-arg"><span>Returned</span><div>${a.returned.length ? a.returned.map(m => `<div>${esc(m.subject || m.id || '')}${m.from ? ` <span class="meta">from ${esc(m.from)}</span>` : ''}</div>`).join('') : '<span class="meta">nothing</span>'}</div></div>` : '';
+  return (rest || '<div class="act-arg"><span>Arguments</span><code>none</code></div>') + got;
+}
+function actCard(a) {
+  const [tone, word] = STATUS_STAMP[a.status.word] || ['info', a.status.word];
+  const hold = a.hold && a.hold.status === 'held' && a.hold.receipt
+    ? `<span class="meta">leaves in <span class="countdown" data-until="${a.hold.settles_at}"></span></span>
+       <button class="btn danger sm" type="button" data-act="cancel" data-r="${esc(a.hold.receipt)}" data-what="The email">${icon('ban')}Cancel</button>
+       <button class="btn sm" type="button" data-act="send-now" data-r="${esc(a.hold.receipt)}" data-what="The email">${icon('send')}Send now</button>` : '';
+  const ask = a.hitl && a.hitl.status === 'pending'
+    ? `<div class="fold-body act-decide"><div data-err></div><div class="d-actions">
+         <button class="btn primary" type="button" data-act="decide" data-id="${esc(a.hitl.id)}" data-approve="1" data-mode="execute">${icon('check')}Approve</button>
+         <button class="btn danger" type="button" data-act="decide" data-id="${esc(a.hitl.id)}" data-approve="">${icon('ban')}Refuse</button>
+         <span class="meta">expires in <span class="countdown" data-until="${a.hitl.expires}"></span>; no answer means no</span></div></div>` : '';
+  const rules = (a.rules || []).map(g => `<span class="rule" title="${esc(g.message)}">${esc(g.rule)}</span>`).join(' ');
+  return `<li class="act-card">
+    <div class="act-head"><time>${clock(a.ts)}</time><b>${esc(actWho(a.agent))}</b><span class="meta">asked to</span><code class="tool">${esc(a.tool)}</code>${verdictStamp(a.verdict)}${rules}</div>
+    <div class="act-args">${actArgs(a)}</div>
+    ${a.verdict === 'ALLOW' ? '' : `<p class="act-why">${plainReason(a.reason)}</p>`}
+    <div class="act-status">${stamp(tone, word)}<span>${esc(a.status.text)}</span>${hold}</div>
+    ${ask}
+    <p class="act-links">${traceLink(a.corr, 'Trace')} · <a href="#" data-act="open-receipt" data-id="${esc(a.receipt)}">Receipt ${esc(a.receipt)}</a> · <span class="meta">${esc(a.corr)}</span></p>
+  </li>`;
 }
 async function pageActivity() {
-  const [st, hitl, recs] = await Promise.all([api('/api/state'), api('/api/hitl'), api('/api/receipts?limit=80')]);
-  S.activityKey = `${recs.length ? recs[recs.length - 1].seq : 0}:${st.waiting.length}:${hitl.length}`;
-  const mail = st.mail || {};
-  const lines = recs.slice().reverse().map(r => activityLine(r, st)).filter(Boolean);
+  const [st, acts] = await Promise.all([api('/api/state'), api('/api/activity?limit=40')]);
+  S.activityKey = activityKey(acts);
+  const mail = st.mail || {}, count = w => acts.filter(a => a.status.word === w).length;
   const lede = mail.mode === 'gmail'
-    ? `Everything an agent does through KAVACH, as it happens. Mail is your real Gmail, ${esc(mail.account)}: the agent reads that inbox and sends from it, only through KAVACH.`
-    : 'Everything an agent does through KAVACH, as it happens. (Mail here is the demo company\'s; start with scripts/gmail_up.sh for your real Gmail.)';
+    ? `Every action an agent asks KAVACH for, as it happens, and what became of it. Mail is your real Gmail, ${esc(mail.account)}: agents read that inbox and send from it, only through KAVACH.`
+    : 'Every action an agent asks KAVACH for, as it happens, and what became of it. (Mail here is the demo company\'s; for your real Gmail, start KAVACH with scripts/gmail_up.sh.)';
+  const tally = acts.length ? `<div class="act-tally">${[['executed', 'Executed'], ['not executed', 'Not executed'], ['held', 'Held'], ['awaiting approval', 'Needs a person']]
+    .map(([w, label]) => `<div><b>${count(w)}</b><span>${label}</span></div>`).join('')}<div><b>${acts.filter(a => a.status.approved).length}</b><span>Approved by a person</span></div></div>` : '';
   return `<div class="page narrow">${head('Activity', lede)}
-    ${flash()}
-    ${st.waiting.length ? `<section class="section">${sectionHead('Waiting to go out', st.waiting.length, 'Nothing has left yet. Cancel stops it for good; Send now skips the rest of the wait.')}<div class="sheet rows">${st.waiting.map(waitingRow).join('')}</div></section>` : ''}
-    ${hitl.length ? `<section class="section">${sectionHead('Needs a person', hitl.length, 'The agent stopped and waits for your answer. If nobody answers in time, the answer is no.')}<div class="queue">${hitl.map((it, i) => approvalCard(it, i === 0)).join('')}</div></section>` : ''}
-    <section class="section">${sectionHead('What happened', null, 'Every line is a signed receipt. Newest first.')}
-      <ol class="feed activity">${lines.join('') || `<li class="feed-empty">Nothing yet. Start an agent (scripts/demo_claude.sh) and ask it to work with your mail; each step shows here as it happens.</li>`}</ol></section>
+    ${flash()}${tally}
+    <ol class="act-list">${acts.map(actCard).join('') || '<li class="feed-empty">Nothing yet. Start an agent (scripts/demo_claude.sh, or scripts/llama_agent.py) and ask it to work with your mail; each action shows here as it happens.</li>'}</ol>
   </div>`;
 }
+const activityKey = acts => JSON.stringify(acts.map(a => [a.receipt, a.status.word, a.hold?.status, a.hitl?.status]));
 async function activityTick() {
   if (S.page !== 'activity' || document.hidden || S.activityBusy) return;
   if (document.activeElement && document.activeElement.closest?.('#main') && /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
   S.activityBusy = true;
   try {
-    const [recs, st, hitl] = await Promise.all([api('/api/receipts?limit=1'), api('/api/state'), api('/api/hitl')]);
-    const key = `${recs.length ? recs[recs.length - 1].seq : 0}:${st.waiting.length}:${hitl.length}`;
+    const key = activityKey(await api('/api/activity?limit=40'));
     if (key !== S.activityKey && S.page === 'activity') route(true);
   } catch { /* the next tick tries again */ } finally { S.activityBusy = false; }
 }
@@ -1638,6 +1641,20 @@ const ACT = {
     const r = (S.receipts || []).find(x => x.id === b.dataset.id);
     if (!r) return;
     openDialog(`Receipt ${r.seq}`, `<div class="tag" style="margin-bottom:16px">${field('Receipt', copyValue(r.id))}${field('Written at', esc(new Date(r.ts * 1000).toLocaleString()))}${field('Hash', copyValue(r.hash))}${field('Links to the hash', copyValue(r.prev_hash))}</div><pre class="pre">${esc(JSON.stringify(r.body, null, 2))}</pre>`);
+  },
+  async 'open-receipt'(b, e) {
+    e?.preventDefault?.();
+    const r = await api(`/api/receipt/${encodeURIComponent(b.dataset.id)}`);
+    openDialog(`Receipt ${r.id}`, `<div class="tag" style="margin-bottom:16px">${field('Receipt', copyValue(r.id))}${field('Number in the chain', String(r.seq))}${field('Written at', esc(new Date(r.ts * 1000).toLocaleString()))}${field('Its hash (SHA-256)', copyValue(r.hash))}${field('Hash of the receipt before it', copyValue(r.prev_hash))}${field('HMAC', copyValue(r.sig))}${r.ed25519 ? field('Ed25519 signature', copyValue(r.ed25519.sig.slice(0, 32) + '…'), { tipText: `key ${r.ed25519.kid}` }) : ''}</div>
+      <div class="d-actions" style="margin-bottom:12px"><button class="btn primary" type="button" data-act="verify-here">${icon('shield-check')}Verify the whole chain</button><span data-verify class="meta"></span></div>
+      <pre class="pre">${esc(JSON.stringify(r.body, null, 2))}</pre>`);
+  },
+  async 'verify-here'(b) {
+    flip(b, true);
+    const v = await api('/api/receipts/verify').catch(e => ({ valid: false, reason: e.message }));
+    const out = $('[data-verify]', b.closest('dialog') || document);
+    if (out) out.innerHTML = v.valid ? `${stamp('done', 'Chain verifies')} all ${plural(v.count, 'receipt')}: every hash, link, HMAC and Ed25519 signature checks out` : `${stamp('failed', 'Broken')} ${esc(v.reason || v.broken_at || '')}`;
+    flip(b, false);
   },
   report(b, e) { e.preventDefault(); openReport(b.dataset.name); },
   'close-dialog'() { $('#dialog').close(); },

@@ -538,3 +538,23 @@ blockquote.mail p { margin-top: 4px; font-size: 17px; }
 .stage .step-out b { overflow-wrap: anywhere; }
 .feed .rule.real { border-color: var(--vx-stamp-deep); color: var(--vx-stamp-deep); }
 @media (max-width: 767px) { .nw { white-space: normal; overflow-wrap: anywhere; } }   /* long addresses wrap on phones */
+/* Activity: one card per action an agent asked for */
+.act-tally { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 8px 0 20px; }
+.act-tally div { padding: 12px 14px; border: 1px solid var(--vx-rule); border-radius: 8px; background: var(--vx-sheet); }
+.act-tally b { display: block; font: 600 24px var(--vx-mono); }
+.act-tally span { color: var(--vx-ink-2); font-size: 13px; }
+.act-list { display: grid; gap: 14px; }
+.act-card { padding: 16px 18px; border: 1px solid var(--vx-rule); border-radius: 10px; background: var(--vx-sheet); box-shadow: var(--vx-lift); }
+.act-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.act-head time { font: 13px var(--vx-mono); color: var(--vx-ink-3); }
+.act-args { display: grid; gap: 6px; margin: 12px 0 4px; padding: 10px 12px; border-radius: 8px; background: var(--vx-paper, rgba(0,0,0,.03)); }
+.act-arg { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 14px; }
+.act-arg > span { color: var(--vx-ink-3); font-size: 13px; padding-top: 2px; }
+.act-arg code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.act-body { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.5 var(--vx-mono); }
+.act-why { margin: 8px 0 0; color: var(--vx-ink-2); font-size: 15px; }
+.act-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; font-weight: 500; }
+.act-decide { margin-top: 10px; }
+.act-links { margin-top: 8px; font-size: 13px; color: var(--vx-ink-3); }
+.act-card .rule { padding: 1px 6px; border: 1px solid var(--vx-stamp); border-radius: 4px; color: var(--vx-stamp-deep); font: 500 12px var(--vx-mono); }
+@media (max-width: 767px) { .act-tally { grid-template-columns: repeat(2, minmax(0, 1fr)); } .act-arg { grid-template-columns: minmax(0, 1fr); } }
