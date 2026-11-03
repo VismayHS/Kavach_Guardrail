@@ -266,6 +266,7 @@ async function pageAgent(id) {
     </div></div>`;
 }
 const stepHtml = (t, animate) => {
+  if (t.note) return `<li><p class="meta">${esc(t.note.charAt(0).toUpperCase() + t.note.slice(1))}.</p></li>`;   // not a tool call: no verdict to show
   const stop = t.verdict === 'DENY' || t.verdict === 'ESCALATE';
   const cls = `${stop ? 'lg ' : ''}${animate ? (stop ? 'vx-land' : 'vx-press') : ''}`;
   const reason = t.verdict === 'UNGUARDED' ? '' : t.verdict === 'ERROR'
