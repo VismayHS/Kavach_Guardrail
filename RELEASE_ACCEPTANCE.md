@@ -16,7 +16,7 @@ All tests: `.venv/bin/python -m pytest -q` (530 pass, 1 skipped). Live stack: `s
 | 1 | Decision path: provenance per value, rules R1–R42, risk model, only rules deny | `kavach/gateway.py`, `policy.py`, `provenance.py` | Verified | `pytest`; 0 verdict changes on 1,027 decisions across this release | `bench/results/RESULTS.md` | - |
 | 2 | Real agent able to act only through KAVACH | `scripts/demo_claude.sh`, `integrations/claude_demo/` | Verified live | `preflight.py --demo` (locked flags); stories A–C with real Claude | `DEMO.md` §2, §5 | - |
 | 3 | A: legitimate email reaches the inbox once | `/mcp` → hold → SMTP | Verified live | `demo_rehearse.py` (A); `tests/test_mailpit_e2e.py` | `X-Kavach-Correlation` header in Mailpit | - |
-| 4 | B: injected instruction blocked before the connector | R1, provenance | Verified live (scripted agent; real Claude resisted on its own) | `demo_rehearse.py` (B); `tests/test_trace.py` | trace shows *Never called* and the untrusted source msg-4471 | Real Claude can't be made to fall for it on demand: shown honestly |
+| 4 | B: injected instruction blocked before the connector (hidden order msg-4471 and the polite "Finance" msg-6103), next to a labelled replay without KAVACH | R1, provenance; `POST /api/stage/direct-send` (dev only) | Verified live (scripted agent; real Claude refused on its own) | `demo_rehearse.py` (B); `tests/test_trace.py`; `tests/test_with_without.py` | trace shows *Never called* and the untrusted source msg-4471 | Real Claude can't be made to fall for it on demand: shown honestly |
 | 5 | C: approval bound to the exact action (task, tool, arguments), used once, expires; a changed call needs its own approval | `Kavach.action_digest`, `resolve_hitl`, `hitl.py` | Verified | `tests/test_approval_binding.py`, `tests/test_r40_status_outputs.py` | digest on the card and receipts | Hook-only mode: binding is the host's job |
 | 6 | Invoice: pay only the account on record, for the invoice's amount (R41); approval R18 | `policy.py`, `environment.py` | Verified live | `tests/test_invoice_demo.py`, `tests/test_bank_e2e.py`, `demo_rehearse.py` (C) | bank page: INR 8,000 to TEST-ACCT-001, 0 to TEST-ACCT-999 | - |
 | 7 | D: cancel before delivery survives `kill -9`; a crash mid-send is `unknown`, never re-sent | `environment.py` holds, `store.py` | Verified live | `tests/test_email_window.py`; `scripts/demo_recovery.py` | `RECOVERY OK` | - |
@@ -44,7 +44,7 @@ All tests: `.venv/bin/python -m pytest -q` (530 pass, 1 skipped). Live stack: `s
 
 ## Verdict
 
-**DEMO READY WITH LIMITATIONS** for the documented workflows (email, poisoned inbox, invoice approval, recovery)
+**DEMO READY WITH LIMITATIONS** for the documented workflows (email, poisoned email with and without KAVACH, invoice approval, recovery)
 on one laptop.
 
 Limitations:
