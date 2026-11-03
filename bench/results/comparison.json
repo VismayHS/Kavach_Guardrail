@@ -1,6 +1,6 @@
 {
- "generated": "2026-11-03 04:47",
- "commit": "2f1548f",
+ "generated": "2026-11-03 09:53",
+ "commit": "c1c82a4",
  "hardware": "Darwin arm64, Python 3.14.6",
  "dataset": "AgentDojo v1.2.2",
  "model": "Llama-3.3-70B",
@@ -10,8 +10,8 @@
    "finished": {
     "none": 160,
     "spotlighting_with_delimiting": 160,
-    "kavach": 56,
-    "kavach_rules": 47
+    "kavach": 144,
+    "kavach_rules": 108
    },
    "paired": {
     "spotlighting_with_delimiting": {
@@ -42,57 +42,57 @@
      }
     },
     "kavach": {
-     "pairs": 56,
+     "pairs": 144,
      "kavach": {
       "benign": 16,
       "benign_done": 8,
-      "attacked": 40,
+      "attacked": 128,
       "attack_success": 0,
-      "utility_under_attack": 5,
+      "utility_under_attack": 62,
       "errors": 0,
-      "tasks_with_kavach_deny": 16,
-      "tasks_with_kavach_escalate": 25,
-      "agent_task_s_p50": 102.01442694664001,
-      "agent_task_s_p95": 2365.7030868530273
+      "tasks_with_kavach_deny": 62,
+      "tasks_with_kavach_escalate": 63,
+      "agent_task_s_p50": 90.37068009376526,
+      "agent_task_s_p95": 1277.7564990520477
      },
      "none": {
       "benign": 16,
       "benign_done": 8,
-      "attacked": 40,
-      "attack_success": 23,
-      "utility_under_attack": 6,
+      "attacked": 128,
+      "attack_success": 65,
+      "utility_under_attack": 53,
       "errors": 0,
       "tasks_with_kavach_deny": 0,
       "tasks_with_kavach_escalate": 0,
-      "agent_task_s_p50": 34.77109098434448,
-      "agent_task_s_p95": 99.1961190700531
+      "agent_task_s_p50": 30.087029933929443,
+      "agent_task_s_p95": 85.44535112380981
      }
     },
     "kavach_rules": {
-     "pairs": 47,
+     "pairs": 108,
      "kavach_rules": {
       "benign": 16,
       "benign_done": 8,
-      "attacked": 31,
+      "attacked": 92,
       "attack_success": 0,
-      "utility_under_attack": 6,
+      "utility_under_attack": 58,
       "errors": 0,
-      "tasks_with_kavach_deny": 10,
-      "tasks_with_kavach_escalate": 21,
-      "agent_task_s_p50": 149.38751006126404,
-      "agent_task_s_p95": 1066.0160641670227
+      "tasks_with_kavach_deny": 46,
+      "tasks_with_kavach_escalate": 46,
+      "agent_task_s_p50": 86.13032293319702,
+      "agent_task_s_p95": 1729.249969959259
      },
      "none": {
       "benign": 16,
       "benign_done": 8,
-      "attacked": 31,
-      "attack_success": 19,
-      "utility_under_attack": 2,
+      "attacked": 92,
+      "attack_success": 47,
+      "utility_under_attack": 47,
       "errors": 0,
       "tasks_with_kavach_deny": 0,
       "tasks_with_kavach_escalate": 0,
-      "agent_task_s_p50": 30.338561058044434,
-      "agent_task_s_p95": 99.1961190700531
+      "agent_task_s_p50": 32.91643500328064,
+      "agent_task_s_p95": 85.44535112380981
      }
     }
    },
@@ -128,62 +128,62 @@
    "tasks_per_full_run": 126,
    "finished": {
     "none": 126,
-    "spotlighting_with_delimiting": 17,
-    "kavach": 85
+    "spotlighting_with_delimiting": 126,
+    "kavach": 124
    },
    "paired": {
     "spotlighting_with_delimiting": {
-     "pairs": 17,
+     "pairs": 126,
      "spotlighting_with_delimiting": {
-      "benign": 17,
-      "benign_done": 9,
-      "attacked": 0,
-      "attack_success": 0,
-      "utility_under_attack": 0,
+      "benign": 21,
+      "benign_done": 11,
+      "attacked": 105,
+      "attack_success": 47,
+      "utility_under_attack": 34,
       "errors": 0,
       "tasks_with_kavach_deny": 0,
       "tasks_with_kavach_escalate": 0,
-      "agent_task_s_p50": 144.2206768989563,
-      "agent_task_s_p95": 692.3224949836731
+      "agent_task_s_p50": 92.22877788543701,
+      "agent_task_s_p95": 463.11865305900574
      },
      "none": {
-      "benign": 17,
+      "benign": 21,
       "benign_done": 9,
-      "attacked": 0,
-      "attack_success": 0,
-      "utility_under_attack": 0,
+      "attacked": 105,
+      "attack_success": 48,
+      "utility_under_attack": 36,
       "errors": 0,
       "tasks_with_kavach_deny": 0,
       "tasks_with_kavach_escalate": 0,
-      "agent_task_s_p50": 36.64513611793518,
-      "agent_task_s_p95": 174.1994218826294
+      "agent_task_s_p50": 59.21653389930725,
+      "agent_task_s_p95": 527.7841448783875
      }
     },
     "kavach": {
-     "pairs": 85,
+     "pairs": 124,
      "kavach": {
       "benign": 21,
       "benign_done": 6,
-      "attacked": 64,
-      "attack_success": 6,
-      "utility_under_attack": 20,
+      "attacked": 103,
+      "attack_success": 11,
+      "utility_under_attack": 21,
       "errors": 0,
-      "tasks_with_kavach_deny": 14,
-      "tasks_with_kavach_escalate": 26,
+      "tasks_with_kavach_deny": 26,
+      "tasks_with_kavach_escalate": 47,
       "agent_task_s_p50": 126.21565198898315,
-      "agent_task_s_p95": 588.0178158283234
+      "agent_task_s_p95": 921.8412721157074
      },
      "none": {
       "benign": 21,
       "benign_done": 9,
-      "attacked": 64,
-      "attack_success": 26,
-      "utility_under_attack": 26,
+      "attacked": 103,
+      "attack_success": 48,
+      "utility_under_attack": 36,
       "errors": 0,
       "tasks_with_kavach_deny": 0,
       "tasks_with_kavach_escalate": 0,
-      "agent_task_s_p50": 43.91845393180847,
-      "agent_task_s_p95": 167.4478030204773
+      "agent_task_s_p50": 58.027645111083984,
+      "agent_task_s_p95": 527.7841448783875
      }
     }
    },
@@ -199,6 +199,18 @@
      "tasks_with_kavach_escalate": 0,
      "agent_task_s_p50": 59.21653389930725,
      "agent_task_s_p95": 527.7841448783875
+    },
+    "spotlighting_with_delimiting": {
+     "benign": 21,
+     "benign_done": 11,
+     "attacked": 105,
+     "attack_success": 47,
+     "utility_under_attack": 34,
+     "errors": 0,
+     "tasks_with_kavach_deny": 0,
+     "tasks_with_kavach_escalate": 0,
+     "agent_task_s_p50": 92.22877788543701,
+     "agent_task_s_p95": 463.11865305900574
     }
    },
    "note_total_seen": 126
@@ -328,45 +340,10 @@
  ],
  "latency": {
   "decisions": 1027,
-  "p50_ms": 0.44,
-  "p95_ms": 3.63,
-  "p99_ms": 14.83,
-  "max_ms": 17.65,
-  "mean_ms": 0.99
- },
- "live_server": {
-  "url": "http://127.0.0.1:8000",
-  "at": "2026-11-03 04:47:30",
-  "mcp_requests": 1.0,
-  "p50_ms_at_most": 5.0,
-  "p95_ms_at_most": 5.0,
-  "p99_ms_at_most": 5.0,
-  "usage": {
-   "price_table": "2026-11-03.1",
-   "currency": "USD",
-   "note": "Estimates only. Qualcomm's Cloud AI Playground (Cirrascale Inference Cloud) publishes no per-token price: the playground is free with limited throughput, and paid access is priced after sign-in or as Cloud AI 100 servers by the month (searched 3 Nov 2026: cirrascale.com/inference-cloud-qualcomm, cirrascale.com/ai-innovation-cloud/inference). The Llama-3.3-70B row is a reference rate from other hosts' public list prices, NOT Qualcomm's, and not verified on those hosts' own pages. A model with no row is unpriced: its tokens are counted, its cost is unknown, never zero.",
-   "rows": [
-    {
-     "component": "agent",
-     "model": "Llama-3.3-70B",
-     "calls": 8,
-     "errors": 0,
-     "retries": 10,
-     "prompt_tokens": 18877,
-     "completion_tokens": 1525,
-     "usage_unknown": 0,
-     "cost_usd": 0.005863,
-     "priced": true
-    }
-   ],
-   "calls": 8,
-   "errors": 0,
-   "tokens": 20402,
-   "usage_unknown_calls": 0,
-   "estimated_cost_usd": 0.005863,
-   "unpriced_tokens": 0,
-   "decisions": 32,
-   "estimated_cost_per_decision_usd": 0.00018322
-  }
+  "p50_ms": 0.43,
+  "p95_ms": 3.48,
+  "p99_ms": 14.46,
+  "max_ms": 17.53,
+  "mean_ms": 0.97
  }
 }
