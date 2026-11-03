@@ -1,0 +1,22 @@
+{
+  "slides": 28,
+  "pdf_pages": 28,
+  "editable_diagrams_and_tables": true,
+  "all_slide_text_present_in_pdf": true,
+  "speaker_notes_with_sources": true,
+  "geometry_checked": true,
+  "calendar_and_authoring_properties_checked": true,
+  "synthetic_headline_metrics_checked_against_json": true,
+  "visual_review": "All slides inspected in rendered contact sheets; dense and main slides also inspected individually.",
+  "baseline_preserved": true,
+  "source_sha256": {
+    "results.json": "976df303427c91248846bd3dc02b32d7b6a44b349d739da1d0d5a4eb6aa57588",
+    "multiseed.json": "c1bb8f1ec3bae8f5891d3d8924e4cf8710e9bf684288f8d4fcba4daca8393faf",
+    "comparison.json": "b4af1b2156539a1b6da383f9cb1dc103f413673464414fc2f6df1c314231dc8b",
+    "infosys_compare.json": "f10d0e38d654de0a32744a3845c09a77e991672b972886a373f253338199fffb",
+    "layers.json": "db135ab2f5c8d19a31b251ed06f90b5737a70c92f8d4fd4231687cc6b91f43d8",
+    "semantic.json": "e3fbe9ceba095541b0fe3f8667cc6aa74c23ef0cf1cf33f8ef1733e2c085f83a",
+    "explain.json": "f3976b96d8418d49d2b2006a43386369382ceaa271503935a70c4f0610085a3a"
+  },
+  "failures": []
+}

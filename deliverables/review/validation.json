@@ -1,0 +1,10 @@
+{
+  "tests": {
+    "passed": 521,
+    "skipped": 14,
+    "scope": "Repository checkout; skip reasons recorded in test_results.json",
+    "command": ".venv/bin/python -m pytest -q",
+    "failed": 0
+  },
+  "live_services_rerun": false
+}

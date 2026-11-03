@@ -1,0 +1,572 @@
+{
+  "template_sha256": "cf3c95de665acf7ea6d19de8da6b617291dbe35a1a411058da860ce66fbc9126",
+  "submission_slides": 11,
+  "template_slides": 8,
+  "added_slides": 3,
+  "reference_slides": 28,
+  "authoring_dates_added": false,
+  "original_template_branding_retained": true,
+  "checks": [
+    {
+      "check": "Actual supplied template SHA-256 matches",
+      "passed": true
+    },
+    {
+      "check": "Eight template slides plus three added, and matching PDF pages",
+      "passed": true
+    },
+    {
+      "check": "Slide dimensions identical",
+      "passed": true
+    },
+    {
+      "check": "ppt/media/ identical to supplied template",
+      "passed": true
+    },
+    {
+      "check": "ppt/slideMasters/ identical to supplied template",
+      "passed": true
+    },
+    {
+      "check": "ppt/slideLayouts/ identical to supplied template",
+      "passed": true
+    },
+    {
+      "check": "ppt/theme/ identical to supplied template",
+      "passed": true
+    },
+    {
+      "check": "No added authoring calendar metadata",
+      "passed": true
+    },
+    {
+      "check": "Slide 1: original shape count preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 1: original names, positions and sizes preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 1: shape design properties preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 1: untouched labels preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 1: no unfilled template placeholders",
+      "passed": true
+    },
+    {
+      "check": "Slide 1: TextBox 1 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 1: source-backed notes present",
+      "passed": true
+    },
+    {
+      "check": "Slide 1: no added work dates/timestamps",
+      "passed": true
+    },
+    {
+      "check": "Slide 2: original shape count preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 2: original names, positions and sizes preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 2: shape design properties preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 2: original required title preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 2: untouched labels preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 2: no unfilled template placeholders",
+      "passed": true
+    },
+    {
+      "check": "Slide 2: Text 10 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 2: Text 6 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 2: Text 13 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 2: Text 22 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 2: Text 19 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 2: Text 3 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 2: source-backed notes present",
+      "passed": true
+    },
+    {
+      "check": "Slide 2: no added work dates/timestamps",
+      "passed": true
+    },
+    {
+      "check": "Slide 3: original shape count preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 3: original names, positions and sizes preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 3: shape design properties preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 3: original required title preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 3: untouched labels preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 3: no unfilled template placeholders",
+      "passed": true
+    },
+    {
+      "check": "Slide 3: Text 16 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 3: Text 10 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 3: Text 7 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 3: Text 22 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 3: Text 19 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 3: Text 13 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 3: source-backed notes present",
+      "passed": true
+    },
+    {
+      "check": "Slide 3: no added work dates/timestamps",
+      "passed": true
+    },
+    {
+      "check": "Slide 4: original shape count preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 4: original names, positions and sizes preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 4: shape design properties preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 4: original required title preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 4: untouched labels preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 4: no unfilled template placeholders",
+      "passed": true
+    },
+    {
+      "check": "Slide 4: Text 30 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 4: Text 31 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 4: Text 12 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 4: Text 7 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 4: Shape 25 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 4: Text 24 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 4: Text 3 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 4: Text 18 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 4: source-backed notes present",
+      "passed": true
+    },
+    {
+      "check": "Slide 4: no added work dates/timestamps",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: original shape count preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: original names, positions and sizes preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: shape design properties preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: original required title preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: untouched labels preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: no unfilled template placeholders",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: Text 28 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: Text 7 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: Text 22 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: Text 15 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: Text 11 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: Text 1 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: Text 31 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: Text 32 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: Text 19 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: Text 25 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: Text 3 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: source-backed notes present",
+      "passed": true
+    },
+    {
+      "check": "Slide 5: no added work dates/timestamps",
+      "passed": true
+    },
+    {
+      "check": "Slide 6: added slide keeps the template title style and has its title",
+      "passed": true
+    },
+    {
+      "check": "Slide 6: added slide text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 6: source-backed notes present",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: original shape count preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: original names, positions and sizes preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: shape design properties preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: original required title preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: untouched labels preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: no unfilled template placeholders",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: Text 7 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: Text 22 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: Text 26 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: Text 1 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: Text 16 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: Text 10 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: Text 13 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: Text 19 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: Text 25 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: Text 3 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: source-backed notes present",
+      "passed": true
+    },
+    {
+      "check": "Slide 7: no added work dates/timestamps",
+      "passed": true
+    },
+    {
+      "check": "Slide 8: added slide keeps the template title style and has its title",
+      "passed": true
+    },
+    {
+      "check": "Slide 8: added slide text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 8: source-backed notes present",
+      "passed": true
+    },
+    {
+      "check": "Slide 9: added slide keeps the template title style and has its title",
+      "passed": true
+    },
+    {
+      "check": "Slide 9: added slide text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 9: source-backed notes present",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: original shape count preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: original names, positions and sizes preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: shape design properties preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: original required title preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: untouched labels preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: no unfilled template placeholders",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: Text 12 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: Text 26 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: Text 15 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: Text 44 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: Text 34 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: Text 37 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: Text 1 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: Text 43 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: Text 31 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: Text 23 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: Text 20 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: Text 3 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: Text 9 filled text appears in PDF",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: source-backed notes present",
+      "passed": true
+    },
+    {
+      "check": "Slide 10: no added work dates/timestamps",
+      "passed": true
+    },
+    {
+      "check": "Slide 11: original shape count preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 11: original names, positions and sizes preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 11: shape design properties preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 11: untouched labels preserved",
+      "passed": true
+    },
+    {
+      "check": "Slide 11: no unfilled template placeholders",
+      "passed": true
+    },
+    {
+      "check": "Slide 11: source-backed notes present",
+      "passed": true
+    },
+    {
+      "check": "Slide 11: no added work dates/timestamps",
+      "passed": true
+    },
+    {
+      "check": "Team details match user input",
+      "passed": true
+    },
+    {
+      "check": "Local test count retained",
+      "passed": true
+    },
+    {
+      "check": "No rule IDs or rule ranges in slides or notes",
+      "passed": true
+    },
+    {
+      "check": "Exactly one diagram image added",
+      "passed": true
+    },
+    {
+      "check": "No template helper text left",
+      "passed": true
+    },
+    {
+      "check": "No PDF authoring dates",
+      "passed": true
+    }
+  ],
+  "failures": []
+}

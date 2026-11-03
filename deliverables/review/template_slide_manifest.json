@@ -1,0 +1,165 @@
+[
+  {
+    "slide": 1,
+    "title": "KAVACH",
+    "evidence": "README.md; kavach/gateway.py; THREAT_MODEL.md",
+    "notes": "Introduce KAVACH as an action firewall between an agent and tools. It evaluates source, effect and authority before controlled execution.",
+    "fields": {
+      "TextBox 1": [
+        "KAVACH",
+        "",
+        "Solution Presentation · ET-03"
+      ]
+    }
+  },
+  {
+    "slide": 2,
+    "title": "Team Introduction",
+    "evidence": "README.md",
+    "notes": "We are Team Kavach, working on ET-03, Agentic AI Guardrail Validator, on the Qualcomm Cloud AI Playground. This is a software solution: no hardware is involved.",
+    "fields": {
+      "Text 3": "",
+      "Text 6": "Team Kavach",
+      "Text 10": "PES University, Bengaluru",
+      "Text 13": "Vismay H S • Ashwin C H • Dhanush S R",
+      "Text 19": "ET-03 · Agentic AI Guardrail Validator",
+      "Text 22": "Qualcomm Cloud AI Playground"
+    }
+  },
+  {
+    "slide": 3,
+    "title": "Problem Statement",
+    "evidence": "THREAT_MODEL.md; tests/test_trace.py; tests/test_invoice_demo.py",
+    "notes": "The statement on the slide is a summary of ET-03. The poisoned-email example is implemented in the repository: the destination comes from the email, not the user, so the provenance rule refuses the call. Do not present a model’s independent refusal as KAVACH enforcement.",
+    "fields": {
+      "Text 7": "Check whether an AI agent’s planned action is safe, authorized, explainable and reversible before it runs.",
+      "Text 10": "Enterprise agent owners, AP / finance reviewers and auditors.",
+      "Text 13": "A wrong tool call can leak data, redirect money or damage records.",
+      "Text 16": "Tool permissions alone do not show where an argument came from or which records will change.",
+      "Text 19": "A poisoned email asks the agent to send customer data to an outside address. KAVACH blocks that call.",
+      "Text 22": "Complete legitimate work; stop unauthorized calls before execution; explain the decision and actual safeguard."
+    }
+  },
+  {
+    "slide": 4,
+    "title": "Proposed Solution",
+    "evidence": "kavach/gateway.py; provenance.py; consequence.py; policy.py; bench/results/comparison.json; bench/results/COMPARISON.md; bench/results/multiseed.json",
+    "notes": "Register tool outputs, trace proposed arguments, stage SQL/files or predict external effects, apply deterministic floors and then evaluate intent/risk. Only deterministic controls deny outright. AgentDojo is the evidence we did not write ourselves: a saved paired run on Llama-3.3-70B, one model and one attack with one sample per task, comparing only tasks both defenses finished (144 banking, 124 Slack). An escalation counts as a block because no reviewer takes part. Say the Slack cost out loud: fewer attacks succeed, and fewer benign tasks finish. Suite metrics are five-seed means on the team-written synthetic suite of 940 scenarios / 47 families, not a universal safety rate. Unknown tools fail closed in the core; configured adapters can onboard cautious drafts for review.",
+    "fields": {
+      "Text 3": "",
+      "Text 7": "KAVACH checks an agent’s proposed tool call before it can change enterprise data or send information.",
+      "Text 12": "User request, caller role, tool + arguments, and prior tool outputs.",
+      "Text 18": "Trace sources → stage or predict impact → apply policy rules → check intent and risk.",
+      "Text 24": "Allow, allow with safeguard, escalate or deny; explanation + receipt.",
+      "Text 30": "RESULTS",
+      "Text 31": "AgentDojo, independent benchmark, paired subset: banking attacks 0/128 with KAVACH vs 65/128 without; Slack 11/103 vs 48/103, but benign tasks fell from 9/21 to 6/21. Own synthetic suite: 95.2% safe work completed, 0.0% unsafe allowed."
+    }
+  },
+  {
+    "slide": 5,
+    "title": "Architecture & Technical Design",
+    "evidence": "kavach/server.py; gateway.py; adapters/guard.py; tests/",
+    "notes": "The REST /api/v1/check endpoint is decision-only by default: it executes, and can arm undo, only when the caller sets execute to true. The demo MCP/local gateway path can control effects; the full MCP proxy and SDK wrappers forward permitted calls to an external executor. The test run has 521 passes and 14 skips; optional SDK/AgentDojo/PII/shell/probe tests have documented skips. Approval checks the stored digest but does not repeat the full policy/tool-definition check. Auth depends on a configured secret; the production profile requires actual keys.",
+    "fields": {
+      "Text 1": "One decision engine; what KAVACH can guarantee depends on who executes the tool.",
+      "Text 3": "",
+      "Text 7": [
+        "Agent / orchestrator",
+        "Reviewer console"
+      ],
+      "Text 11": [
+        "FastAPI gateway",
+        "Provenance + policy rules"
+      ],
+      "Text 15": [
+        "Sandbox / typed effects",
+        "Risk + advisory Qualcomm judge"
+      ],
+      "Text 19": [
+        "Decision + receipt",
+        "Owned execution / human review"
+      ],
+      "Text 22": "Python, FastAPI, SQLite, vanilla JS, YAML, scikit-learn; optional MCP and signing extras.",
+      "Text 25": "Deterministic rules retain authority. Templates explain decisions; models can add caution.",
+      "Text 28": "521 passed; 14 skipped. Tested: approval binding, delivery recovery and receipt integrity.",
+      "Text 31": "BOUNDARY",
+      "Text 32": "Demo MCP / local gateway can execute with holds or snapshots. REST checks (by default), MCP proxy and SDK hooks decide while an external host executes; they do not inherit KAVACH-owned undo."
+    }
+  },
+  {
+    "slide": 6,
+    "title": "System Architecture",
+    "added": true,
+    "evidence": "kavach/gateway.py; provenance.py; consequence.py; policy.py; receipts.py; server.py; docs/diagrams/architecture.mmd",
+    "notes": "Walk left to right. An agent proposes a tool call; it reaches KAVACH through /mcp, where KAVACH also runs the tool, or through the proxy, REST check, SDK adapters or AgentOS hooks, where the host runs it. The gateway first checks the kill switch, then traces each argument, works out the effect, applies the deterministic rules and adds intent and risk. The verdict and signed receipt come before anything runs. Only rules and the kill switch can deny; models can only add caution. By default the Qualcomm judge adds a note on escalated calls.",
+    "fields": {
+      "cells": "diagram"
+    }
+  },
+  {
+    "slide": 7,
+    "title": "AI Usage & Innovation",
+    "evidence": "kavach/gateway.py; intent.py; explain.py; bench/results/layers.json; semantic.json",
+    "notes": "The learned risk score is a supporting signal: forcing it to zero changed no saved synthetic-suite verdicts. The server’s default judge mode is escalations-only, adding a reviewer note; the separate inline semantic test, run live, caught 7/12 unsafe misreadings versus 1/12 heuristic, with 11/12 safe rewordings completed in both modes, at about 5 s per check. Two clean runs gave 7/12 and a third, with other jobs competing for the service, gave 6/12. We wrote the cases ourselves, so this is not a general detection rate. Templates are default explanations; optional LLM rewrites must pass number and verdict checks. No measured benefit is attributed to the reversibility threshold, which ties a fixed-threshold baseline.",
+    "fields": {
+      "Text 1": "Rules decide. AI reads meaning a keyword check misses, and can only add caution.",
+      "Text 3": "",
+      "Text 7": "Agentic workflow + calibrated risk + optional LLM semantic review",
+      "Text 10": "Argument lineage + consequence evidence + exact-action approval",
+      "Text 13": "Risk scores support review. Default Qualcomm judge adds notes on escalations; explanations use templates.",
+      "Text 16": "User request + call + source labels; risk ensemble; two-stage Llama judge on Qualcomm.",
+      "Text 19": "Models cannot relax policy. Risk-zero ablation changed no suite verdicts. Optional rewrites are checked.",
+      "Text 22": "Live inline test: 7/12 semantic misreadings caught vs 1/12 heuristic; safe work 11/12 in both.",
+      "Text 25": "EVIDENCE",
+      "Text 26": "Rules and the intent gate carry the synthetic-suite decisions. The learned score is supporting evidence. The 24 semantic cases are hand-written; 7/12 in two clean live runs, 6/12 in a third with other jobs competing for the service."
+    }
+  },
+  {
+    "slide": 8,
+    "title": "How KAVACH Compares",
+    "added": true,
+    "evidence": "arXiv 2503.18813 (CaMeL); arXiv 2505.23643 (FIDES); arXiv 2504.11703 (Progent); arXiv 2505.03574 (LlamaFirewall); docs.nvidia.com NeMo Guardrails tool-calling page; aws.amazon.com Policy in Bedrock AgentCore; docs/INFOSYS_GAP_ANALYSIS.md",
+    "notes": "Say it plainly: nobody here is useless, each approach solves part of the problem. KAVACH’s difference is the combination at the tool call. Be ready for the honest answer: CaMeL and FIDES have stronger guarantees by design, but the agent must run inside their planner; KAVACH sits in front of an existing agent. Partly means: LlamaFirewall audits agent reasoning and scans inputs, rather than deciding on the call’s arguments; AgentOS has a real approval queue, and collects provenance metadata that its default gate doesn’t use to decide; Progent asks for approval when a policy widens; CaMeL asks the user when a policy blocks. Published attack rates are left out on purpose: other tests and models can’t be ranked against ours. This table covers published systems. We have no information about what other hackathon teams built.",
+    "fields": {
+      "usp": "OUR USP: each approach above checks part of an action. KAVACH brings it all together at the tool call: where each value came from, what the call would really change, a person’s approval for that exact call, a chance to stop it, and a signed record of what happened."
+    }
+  },
+  {
+    "slide": 9,
+    "title": "Infosys AgentOS and KAVACH",
+    "added": true,
+    "evidence": "docs/INFOSYS_GAP_ANALYSIS.md; bench/results/infosys_compare.json; INFOSYS_COMPARISON.md; AGENTOS_LIVE.md; integrations/agentos_hook.py",
+    "notes": "AgentOS is Infosys’s own agent runtime, inside Infosys Agentic Foundry. We read and ran its code rather than relying on its documentation. Its default gate looks for dangerous patterns. Hardening it works, with zero injection success, but only by sending most actions to a person, which risks approval fatigue. KAVACH allows no unsafe action on the same suite while sending far fewer to a person, because it knows the origin and effect of each call. This suite is written by us, so read the numbers as showing the mechanism. The Infosys gate code was loaded and executed; the RAI classifiers were not run. Don’t say Infosys has no guardrails: say the built-in paths we read don’t combine these checks by default, and custom hooks can add more. KAVACH’s payment facts are the demo company’s; a real ERP needs integration work. AgentOS also truncates hook outputs, which can weaken tracing. Approval SLAs, durable approvals, SafeKernel, RBAC and multi-tenancy are stronger than anything we built, which is why we plug into it.",
+    "fields": {
+      "band": "We plug in, we don’t replace. AgentOS keeps routing, sandboxing, approval operations and RBAC, where it is ahead of us; KAVACH joins through its PreToolUse hooks and supplies the judgment. Tested through AgentOS’s governance code with a stand-in agent; a full LLM-driven AgentOS chat isn’t verified. There AgentOS runs the tool, so KAVACH’s hold and undo don’t apply."
+    }
+  },
+  {
+    "slide": 10,
+    "title": "Future Enhancements, Scalability & Security",
+    "evidence": "RELEASE_ACCEPTANCE.md; docs/DEPLOY.md; profile.py; deploy/helm/kavach/; telemetry.py",
+    "notes": "Distinguish present controls from future work. Persistence must be configured. The reference Helm chart has one replica and Recreate strategy for the single-writer chain. CI, sustained load, backup/restore drills and delivery of alerts to people remain incomplete in the recorded release acceptance. General production readiness and general shell containment are not established. External AgentOS governance and benchmark findings are saved reports, not fresh external validation.",
+    "fields": {
+      "Text 1": "What works now, what comes next, and the safeguards already in place.",
+      "Text 3": "",
+      "Text 9": "Add CI, load tests and backup / restore drills.",
+      "Text 12": "Complete wider paired attack evaluations; tune false escalations.",
+      "Text 15": "Validate reviewer usability and accessibility beyond the demo.",
+      "Text 20": "Single receipt-chain writer; Helm defaults to one replica.",
+      "Text 23": "Judge advises escalations; allowed calls avoid that model latency.",
+      "Text 26": "Prometheus / Grafana exist; alert delivery remains to be configured.",
+      "Text 31": "Signed caller identity and role checks when auth is configured.",
+      "Text 34": "Secrets broker; tool arguments omitted from telemetry.",
+      "Text 37": "Digest-bound approvals, kill switch and tamper-evident receipts.",
+      "Text 43": "NOW / NEXT",
+      "Text 44": "Implemented: guarded workflows and recovery controls. Next: deployment validation. Demo company and bank are simulated; production readiness is unproven."
+    }
+  },
+  {
+    "slide": 11,
+    "title": "DEMO",
+    "evidence": "DEMO.md; docs/LIVE_DEMO.md; scripts/gmail_up.sh; tests/test_gmail.py; tests/test_trace.py; tests/test_invoice_demo.py; bench/results/CLAUDE_WITH_WITHOUT.md",
+    "notes": "Demo sequence: (1) queue a legitimate email and prove delivery once in Mailpit, or cancel before delivery; (2) show a poisoned-email call denied by the provenance rule and trace that the connector never ran; (3) read invoice INV-101 and vendor record, refuse a substituted account, request human approval and show the sandbox ledger; (4) optionally demonstrate recovery or kill-switch cancellation. For real Gmail, start scripts/gmail_up.sh instead (scripted stories switch off there): asked to summarise a poisoned email and do what it asks, Llama tried to send to the address in the email, KAVACH refused it and Gmail was never called; asked only to summarise, neither Llama nor Claude obeyed in our runs, so say that this depends on the model. Label REAL agent, SCRIPTED calls and REPLAY distinctly. A model may refuse the malicious request itself. The bank is simulated; Mailpit is a real local SMTP sink. Further numeric details are in the separate reference deck.",
+    "fields": {}
+  }
+]

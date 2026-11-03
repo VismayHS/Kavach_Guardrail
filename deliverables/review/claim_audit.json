@@ -1,0 +1,1322 @@
+{
+  "scope": "Source audit, saved-result arithmetic and local tests; no external live experiment reproduced",
+  "checks": [
+    {
+      "check": "Policy catalogue loads",
+      "passed": true
+    },
+    {
+      "check": "Suite dimensions in deck",
+      "passed": true
+    },
+    {
+      "check": "Seed-0 denominator: No guardrail",
+      "passed": true
+    },
+    {
+      "check": "Seed-0 denominator: Static denylist (text match)",
+      "passed": true
+    },
+    {
+      "check": "Seed-0 denominator: Tool-type gating",
+      "passed": true
+    },
+    {
+      "check": "Seed-0 denominator: Approve every write (manual interrupt)",
+      "passed": true
+    },
+    {
+      "check": "Seed-0 denominator: KAVACH: rules only",
+      "passed": true
+    },
+    {
+      "check": "Seed-0 denominator: KAVACH: model only (rules off)",
+      "passed": true
+    },
+    {
+      "check": "Seed-0 denominator: KAVACH: no provenance",
+      "passed": true
+    },
+    {
+      "check": "Seed-0 denominator: KAVACH: fixed threshold",
+      "passed": true
+    },
+    {
+      "check": "Seed-0 denominator: KAVACH: no undo windows",
+      "passed": true
+    },
+    {
+      "check": "Seed-0 denominator: KAVACH (full)",
+      "passed": true
+    },
+    {
+      "check": "Synthetic headline figures",
+      "passed": true
+    },
+    {
+      "check": "Risk-zero ablation has no verdict changes",
+      "passed": true
+    },
+    {
+      "check": "Family-level sample and interval",
+      "passed": true
+    },
+    {
+      "check": "Fixed-threshold tie",
+      "passed": true
+    },
+    {
+      "check": "Model-only and no-provenance ablations",
+      "passed": true
+    },
+    {
+      "check": "Semantic summary recomputed: off",
+      "passed": true
+    },
+    {
+      "check": "Semantic summary recomputed: on",
+      "passed": true
+    },
+    {
+      "check": "Semantic figures in slide",
+      "passed": true
+    },
+    {
+      "check": "Explanation source counts recomputed",
+      "passed": true
+    },
+    {
+      "check": "Explanation figures in slide",
+      "passed": true
+    },
+    {
+      "check": "banking paired-task coverage",
+      "passed": true
+    },
+    {
+      "check": "banking none saved counts",
+      "passed": true
+    },
+    {
+      "check": "banking none matched denominators",
+      "passed": true
+    },
+    {
+      "check": "banking none count bounds",
+      "passed": true
+    },
+    {
+      "check": "banking kavach saved counts",
+      "passed": true
+    },
+    {
+      "check": "banking kavach matched denominators",
+      "passed": true
+    },
+    {
+      "check": "banking kavach count bounds",
+      "passed": true
+    },
+    {
+      "check": "slack paired-task coverage",
+      "passed": true
+    },
+    {
+      "check": "slack none saved counts",
+      "passed": true
+    },
+    {
+      "check": "slack none matched denominators",
+      "passed": true
+    },
+    {
+      "check": "slack none count bounds",
+      "passed": true
+    },
+    {
+      "check": "slack kavach saved counts",
+      "passed": true
+    },
+    {
+      "check": "slack kavach matched denominators",
+      "passed": true
+    },
+    {
+      "check": "slack kavach count bounds",
+      "passed": true
+    },
+    {
+      "check": "banking replay benign counts recomputed",
+      "passed": true
+    },
+    {
+      "check": "banking replay attacker counts recomputed",
+      "passed": true
+    },
+    {
+      "check": "banking replay summaries agree",
+      "passed": true
+    },
+    {
+      "check": "slack replay benign counts recomputed",
+      "passed": true
+    },
+    {
+      "check": "slack replay attacker counts recomputed",
+      "passed": true
+    },
+    {
+      "check": "slack replay summaries agree",
+      "passed": true
+    },
+    {
+      "check": "Infosys harness test denominators",
+      "passed": true
+    },
+    {
+      "check": "Fourteen alert rules",
+      "passed": true
+    },
+    {
+      "check": "Executed test result agrees with deck",
+      "passed": true
+    },
+    {
+      "check": "Slide 1 source anchor: kavach/gateway.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 1 source anchor: kavach/models.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 2 source anchor: PRODUCT.md",
+      "passed": true
+    },
+    {
+      "check": "Slide 2 source anchor: kavach/server.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 3 source anchor: THREAT_MODEL.md",
+      "passed": true
+    },
+    {
+      "check": "Slide 3 source anchor: kavach/policy.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 4 source anchor: kavach/policies/default.yaml",
+      "passed": true
+    },
+    {
+      "check": "Slide 4 source anchor: bench/results/multiseed.json",
+      "passed": true
+    },
+    {
+      "check": "Slide 5 source anchor: kavach/gateway.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 5 source anchor: kavach/server.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 5 source anchor: kavach/adapters/guard.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 6 source anchor: kavach/gateway.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 6 source anchor: bench/results/layers.json",
+      "passed": true
+    },
+    {
+      "check": "Slide 6 source anchor: bench/results/semantic.json",
+      "passed": true
+    },
+    {
+      "check": "Slide 7 source anchor: kavach/profile.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 7 source anchor: deploy/helm/kavach/templates/deployment.yaml",
+      "passed": true
+    },
+    {
+      "check": "Slide 7 source anchor: deliverables/review/validation.json",
+      "passed": true
+    },
+    {
+      "check": "Slide 8 source anchor: DEMO.md",
+      "passed": true
+    },
+    {
+      "check": "Slide 8 source anchor: tests/test_trace.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 8 source anchor: bench/results/CLAUDE_WITH_WITHOUT.md",
+      "passed": true
+    },
+    {
+      "check": "Slide 9 source anchor: kavach/gateway.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 9 source anchor: kavach/receipts.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 10 source anchor: kavach/policy.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 10 source anchor: kavach/policies/default.yaml",
+      "passed": true
+    },
+    {
+      "check": "Slide 10 source anchor: kavach/provenance.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 11 source anchor: kavach/gateway.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 11 source anchor: kavach/consequence.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 11 source anchor: kavach/environment.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 12 source anchor: kavach/gateway.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 12 source anchor: kavach/gateway.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 12 source anchor: kavach/hitl.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 13 source anchor: kavach/receipts.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 13 source anchor: kavach/gateway.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 13 source anchor: kavach/environment.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 14 source anchor: kavach/server.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 14 source anchor: kavach/receipts.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 14 source anchor: kavach/store.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 15 source anchor: kavach/mcp_proxy/proxy.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 15 source anchor: kavach/adapters/guard.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 15 source anchor: bench/results/AGENTOS_LIVE.md",
+      "passed": true
+    },
+    {
+      "check": "Slide 16 source anchor: kavach/qualcomm.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 16 source anchor: kavach/explain.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 16 source anchor: bench/results/explain.json",
+      "passed": true
+    },
+    {
+      "check": "Slide 17 source anchor: bench/results/results.json",
+      "passed": true
+    },
+    {
+      "check": "Slide 17 source anchor: bench/results/multiseed.json",
+      "passed": true
+    },
+    {
+      "check": "Slide 17 source anchor: bench/run.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 18 source anchor: bench/results/layers.json",
+      "passed": true
+    },
+    {
+      "check": "Slide 18 source anchor: bench/results/results.json",
+      "passed": true
+    },
+    {
+      "check": "Slide 19 source anchor: bench/results/comparison.json",
+      "passed": true
+    },
+    {
+      "check": "Slide 19 source anchor: bench/compare.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 20 source anchor: bench/results/comparison.json",
+      "passed": true
+    },
+    {
+      "check": "Slide 20 source anchor: bench/compare.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 21 source anchor: bench/results/agentdojo_replay_banking.json",
+      "passed": true
+    },
+    {
+      "check": "Slide 21 source anchor: bench/results/agentdojo_replay_slack.json",
+      "passed": true
+    },
+    {
+      "check": "Slide 22 source anchor: bench/results/infosys_compare.json",
+      "passed": true
+    },
+    {
+      "check": "Slide 22 source anchor: bench/results/INFOSYS_COMPARISON.md",
+      "passed": true
+    },
+    {
+      "check": "Slide 22 source anchor: bench/results/AGENTOS_LIVE.md",
+      "passed": true
+    },
+    {
+      "check": "Slide 23 source anchor: kavach/static/app.js",
+      "passed": true
+    },
+    {
+      "check": "Slide 23 source anchor: kavach/telemetry.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 23 source anchor: deploy/alerts.yml",
+      "passed": true
+    },
+    {
+      "check": "Slide 24 source anchor: requirements-extra.txt",
+      "passed": true
+    },
+    {
+      "check": "Slide 24 source anchor: kavach/learning.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 24 source anchor: RELEASE_ACCEPTANCE.md",
+      "passed": true
+    },
+    {
+      "check": "Slide 25 source anchor: docs/DEPLOY.md",
+      "passed": true
+    },
+    {
+      "check": "Slide 25 source anchor: RELEASE_ACCEPTANCE.md",
+      "passed": true
+    },
+    {
+      "check": "Slide 25 source anchor: kavach/profile.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 26 source anchor: README.md",
+      "passed": true
+    },
+    {
+      "check": "Slide 26 source anchor: kavach/gateway.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 27 source anchor: docs/INFOSYS_GAP_ANALYSIS.md",
+      "passed": true
+    },
+    {
+      "check": "Slide 28 source anchor: docs/INFOSYS_GAP_ANALYSIS.md",
+      "passed": true
+    },
+    {
+      "check": "Slide 28 source anchor: bench/results/infosys_compare.json",
+      "passed": true
+    },
+    {
+      "check": "Slide 28 source anchor: integrations/agentos_hook.py",
+      "passed": true
+    },
+    {
+      "check": "Slide 28 source anchor: bench/results/AGENTOS_LIVE.md",
+      "passed": true
+    }
+  ],
+  "failures": [],
+  "slides": [
+    {
+      "slide": 1,
+      "title": "KAVACH",
+      "claim_group": "Pre-execution gateway with four outcomes",
+      "scope": "Code + local tests",
+      "sources": [
+        {
+          "path": "kavach/gateway.py",
+          "line": 423,
+          "anchor": "def check",
+          "sha256": "a6a13d8b3106f7922ecb5ad05e016f0f895fb727cdf9fcb3ba1f4bb9de6d0b99"
+        },
+        {
+          "path": "kavach/models.py",
+          "line": 44,
+          "anchor": "class Verdict",
+          "sha256": "f9da676f3c920aa0c3ca283ebcf649eae48195e56077bf4e319f3665a4f52d1f"
+        }
+      ],
+      "test_modules": [
+        "test_core"
+      ],
+      "local_test_counts": {
+        "passed": 12
+      }
+    },
+    {
+      "slide": 2,
+      "title": "Project context & delivery scope",
+      "claim_group": "Delivered components and intended operator roles",
+      "scope": "Repository scope; user roles are intended users",
+      "sources": [
+        {
+          "path": "PRODUCT.md",
+          "line": 15,
+          "anchor": "## Users",
+          "sha256": "3df46974f86572fac84c865f2f9195876954589207d46589070114120154df43"
+        },
+        {
+          "path": "kavach/server.py",
+          "line": 111,
+          "anchor": "app =",
+          "sha256": "2301dbd1dd3217a71de9a0e05f6d7c31eacf5998754d6a1ab3f769b20732bd2f"
+        }
+      ],
+      "test_modules": [
+        "test_api_ui"
+      ],
+      "local_test_counts": {
+        "passed": 7
+      }
+    },
+    {
+      "slide": 3,
+      "title": "Problem Statement",
+      "claim_group": "Poisoned email, invoice substitution and scope expansion",
+      "scope": "Code + local regression cases",
+      "sources": [
+        {
+          "path": "THREAT_MODEL.md",
+          "line": 3,
+          "anchor": "adversary",
+          "sha256": "0c9a88aa21787746709f3aadfd231a3964525dd073032041c9278199309f39e9"
+        },
+        {
+          "path": "kavach/policy.py",
+          "line": 468,
+          "anchor": "R41",
+          "sha256": "b82618d7f462eca97d3fcc85cbdab85c511bc57740e3fbf0495f9ec5283a378b"
+        }
+      ],
+      "test_modules": [
+        "test_invoice_demo",
+        "test_trace",
+        "test_gaps"
+      ],
+      "local_test_counts": {
+        "passed": 80
+      }
+    },
+    {
+      "slide": 4,
+      "title": "Proposed Solution",
+      "claim_group": "Policy catalogue and synthetic headline",
+      "scope": "Code + checked saved synthetic results",
+      "sources": [
+        {
+          "path": "kavach/policies/default.yaml",
+          "line": 105,
+          "anchor": "rules:",
+          "sha256": "cdf2fdcd8fd68e44db7a6403d6fba7d0213870310bcaaaf5db96af35da23ab8b"
+        },
+        {
+          "path": "bench/results/multiseed.json",
+          "line": 343,
+          "anchor": "\"KAVACH (full)\"",
+          "sha256": "c1bb8f1ec3bae8f5891d3d8924e4cf8710e9bf684288f8d4fcba4daca8393faf"
+        }
+      ],
+      "test_modules": [
+        "test_core"
+      ],
+      "local_test_counts": {
+        "passed": 12
+      }
+    },
+    {
+      "slide": 5,
+      "title": "Architecture & Technical Design",
+      "claim_group": "Components and execution ownership",
+      "scope": "Code + local tests; REST check executes only when the caller sets execute",
+      "sources": [
+        {
+          "path": "kavach/gateway.py",
+          "line": 73,
+          "anchor": "local_execution",
+          "sha256": "a6a13d8b3106f7922ecb5ad05e016f0f895fb727cdf9fcb3ba1f4bb9de6d0b99"
+        },
+        {
+          "path": "kavach/server.py",
+          "line": 314,
+          "anchor": "def check",
+          "sha256": "2301dbd1dd3217a71de9a0e05f6d7c31eacf5998754d6a1ab3f769b20732bd2f"
+        },
+        {
+          "path": "kavach/adapters/guard.py",
+          "line": 11,
+          "anchor": "local_execution=False",
+          "sha256": "8e6fd81193a99e60f337767b58a327ff59106618eaac3a0de9351dc08ac24860"
+        }
+      ],
+      "test_modules": [
+        "test_external_execution"
+      ],
+      "local_test_counts": {
+        "passed": 3
+      }
+    },
+    {
+      "slide": 6,
+      "title": "AI Usage & Innovation",
+      "claim_group": "Default advisory judge and risk-zero finding",
+      "scope": "Code + local tests + saved semantic experiment",
+      "sources": [
+        {
+          "path": "kavach/gateway.py",
+          "line": 53,
+          "anchor": "judge_mode:",
+          "sha256": "a6a13d8b3106f7922ecb5ad05e016f0f895fb727cdf9fcb3ba1f4bb9de6d0b99"
+        },
+        {
+          "path": "bench/results/layers.json",
+          "line": 116,
+          "anchor": "\"model_changes\"",
+          "sha256": "db135ab2f5c8d19a31b251ed06f90b5737a70c92f8d4fd4231687cc6b91f43d8"
+        },
+        {
+          "path": "bench/results/semantic.json",
+          "line": 653,
+          "anchor": "\"unsafe_caught\"",
+          "sha256": "e3fbe9ceba095541b0fe3f8667cc6aa74c23ef0cf1cf33f8ef1733e2c085f83a"
+        }
+      ],
+      "test_modules": [
+        "test_evals",
+        "test_judge_modes"
+      ],
+      "local_test_counts": {
+        "passed": 6
+      }
+    },
+    {
+      "slide": 7,
+      "title": "Readiness, Scalability & Security",
+      "claim_group": "Test result, prod profile and single writer",
+      "scope": "Local tests; no load or production-readiness proof",
+      "sources": [
+        {
+          "path": "kavach/profile.py",
+          "line": 30,
+          "anchor": "def check_profile",
+          "sha256": "148940c6f6726fd15dd882982a3b561386d2a39c06ef26678519b721561b1264"
+        },
+        {
+          "path": "deploy/helm/kavach/templates/deployment.yaml",
+          "line": 8,
+          "anchor": "strategy:",
+          "sha256": "ddd307de644eb2111b568d6f99499d898047334ee41af2c3d66db873303620b5"
+        },
+        {
+          "path": "deliverables/review/validation.json",
+          "line": 3,
+          "anchor": "\"passed\"",
+          "sha256": "5d1edb125347b9ea5368a07986666a9698e73db9299181dea137dd0e6145db44"
+        }
+      ],
+      "test_modules": [
+        "test_prod_profile"
+      ],
+      "local_test_counts": {
+        "passed": 6
+      }
+    },
+    {
+      "slide": 8,
+      "title": "Demo: prove what actually happened",
+      "claim_group": "Demonstration procedure and effect evidence",
+      "scope": "Procedure + local tests + saved Claude report; stage demo not rerun",
+      "sources": [
+        {
+          "path": "DEMO.md",
+          "line": 34,
+          "anchor": "### Labels",
+          "sha256": "f941d38485b3c38c66e85f0bd4c68920bef8a58ca199d587513d90cc9ba40fc5"
+        },
+        {
+          "path": "tests/test_trace.py",
+          "line": 22,
+          "anchor": "def test_one_id",
+          "sha256": "82e3633cc97d159298f94cfd37c192ea50c68ae2f8ca672894318b82d24fc8d9"
+        },
+        {
+          "path": "bench/results/CLAUDE_WITH_WITHOUT.md",
+          "line": 3,
+          "anchor": "Without KAVACH",
+          "sha256": "106c34e12c69df11517374d0820ad0327434b15eb1e3f7251851e3e69219ce4c"
+        }
+      ],
+      "test_modules": [
+        "test_trace",
+        "test_invoice_demo",
+        "test_with_without"
+      ],
+      "local_test_counts": {
+        "passed": 18
+      }
+    },
+    {
+      "slide": 9,
+      "title": "Decision path: from call to effect",
+      "claim_group": "Decision then receipt then controlled effect",
+      "scope": "Code + local tests",
+      "sources": [
+        {
+          "path": "kavach/gateway.py",
+          "line": 832,
+          "anchor": "def execute",
+          "sha256": "a6a13d8b3106f7922ecb5ad05e016f0f895fb727cdf9fcb3ba1f4bb9de6d0b99"
+        },
+        {
+          "path": "kavach/receipts.py",
+          "line": 37,
+          "anchor": "FAIL_CLOSED =",
+          "sha256": "5c955ac8858157c5ac30aa02ec2f788d461939e1fb54e3bd258308f6e5ed0267"
+        }
+      ],
+      "test_modules": [
+        "test_receipt_store_down",
+        "test_external_execution"
+      ],
+      "local_test_counts": {
+        "passed": 7
+      }
+    },
+    {
+      "slide": 10,
+      "title": "Provenance & policy: what is trusted",
+      "claim_group": "Origin, destination, finance and task-budget rules",
+      "scope": "Code + local regression tests; lineage inference has limits",
+      "sources": [
+        {
+          "path": "kavach/policy.py",
+          "line": 230,
+          "anchor": "R40",
+          "sha256": "b82618d7f462eca97d3fcc85cbdab85c511bc57740e3fbf0495f9ec5283a378b"
+        },
+        {
+          "path": "kavach/policies/default.yaml",
+          "line": 148,
+          "anchor": "R42:",
+          "sha256": "cdf2fdcd8fd68e44db7a6403d6fba7d0213870310bcaaaf5db96af35da23ab8b"
+        },
+        {
+          "path": "kavach/provenance.py",
+          "line": 233,
+          "anchor": "class ProvenanceTracker",
+          "sha256": "afd69f4d7f10694078f0a8a9d947d0e8b6c49bc1b17c0a52f658ee67ac552262"
+        }
+      ],
+      "test_modules": [
+        "test_gaps",
+        "test_r42_user_args",
+        "test_named_source"
+      ],
+      "local_test_counts": {
+        "passed": 76
+      }
+    },
+    {
+      "slide": 11,
+      "title": "Consequences & the real limits of undo",
+      "claim_group": "Operation-specific safeguards",
+      "scope": "Code + local tests; no recall after accepted delivery",
+      "sources": [
+        {
+          "path": "kavach/gateway.py",
+          "line": 757,
+          "anchor": "def _allow",
+          "sha256": "a6a13d8b3106f7922ecb5ad05e016f0f895fb727cdf9fcb3ba1f4bb9de6d0b99"
+        },
+        {
+          "path": "kavach/consequence.py",
+          "line": 53,
+          "anchor": "class Consequence",
+          "sha256": "cec29d334de0e45892a9ac3a0455bb50edae6d8ba21088cdf9dac14f03831abf"
+        },
+        {
+          "path": "kavach/environment.py",
+          "line": 518,
+          "anchor": "def cancel",
+          "sha256": "5616e1228248f5c25c09fd15bb21c26a2f66910e458424d7d321459188b524e4"
+        }
+      ],
+      "test_modules": [
+        "test_windows",
+        "test_email_window",
+        "test_external_execution"
+      ],
+      "local_test_counts": {
+        "passed": 15
+      }
+    },
+    {
+      "slide": 12,
+      "title": "Human approval is bound to the exact call",
+      "claim_group": "Digest-bound one-use approval and quorum",
+      "scope": "Code + local tests; no full policy recheck at approval time",
+      "sources": [
+        {
+          "path": "kavach/gateway.py",
+          "line": 912,
+          "anchor": "def action_digest",
+          "sha256": "a6a13d8b3106f7922ecb5ad05e016f0f895fb727cdf9fcb3ba1f4bb9de6d0b99"
+        },
+        {
+          "path": "kavach/gateway.py",
+          "line": 918,
+          "anchor": "def resolve_hitl",
+          "sha256": "a6a13d8b3106f7922ecb5ad05e016f0f895fb727cdf9fcb3ba1f4bb9de6d0b99"
+        },
+        {
+          "path": "kavach/hitl.py",
+          "line": 96,
+          "anchor": "def resolve",
+          "sha256": "4ab6b880f2936e5061e913ac16ef34ebcb9f754f6113acdd1a507c5b06f17288"
+        }
+      ],
+      "test_modules": [
+        "test_approval_binding",
+        "test_approvals_ux"
+      ],
+      "local_test_counts": {
+        "passed": 12
+      }
+    },
+    {
+      "slide": 13,
+      "title": "Delivery, crash recovery & the kill switch",
+      "claim_group": "Unknown delivery, persistent windows, fail-closed receipts and pause",
+      "scope": "Code + local tests; unknown outcome is not exactly-once proof",
+      "sources": [
+        {
+          "path": "kavach/receipts.py",
+          "line": 37,
+          "anchor": "FAIL_CLOSED =",
+          "sha256": "5c955ac8858157c5ac30aa02ec2f788d461939e1fb54e3bd258308f6e5ed0267"
+        },
+        {
+          "path": "kavach/gateway.py",
+          "line": 336,
+          "anchor": "def kill",
+          "sha256": "a6a13d8b3106f7922ecb5ad05e016f0f895fb727cdf9fcb3ba1f4bb9de6d0b99"
+        },
+        {
+          "path": "kavach/environment.py",
+          "line": 346,
+          "anchor": "unknown",
+          "sha256": "5616e1228248f5c25c09fd15bb21c26a2f66910e458424d7d321459188b524e4"
+        }
+      ],
+      "test_modules": [
+        "test_email_window",
+        "test_kill_queued",
+        "test_receipt_store_down"
+      ],
+      "local_test_counts": {
+        "passed": 19
+      }
+    },
+    {
+      "slide": 14,
+      "title": "Identity, receipts & verifiable evidence",
+      "claim_group": "Conditional auth, Ed25519 and checkpoint verification",
+      "scope": "Code + local tests; auth/signing must be configured",
+      "sources": [
+        {
+          "path": "kavach/server.py",
+          "line": 163,
+          "anchor": "def caller",
+          "sha256": "2301dbd1dd3217a71de9a0e05f6d7c31eacf5998754d6a1ab3f769b20732bd2f"
+        },
+        {
+          "path": "kavach/receipts.py",
+          "line": 44,
+          "anchor": "class ReceiptLog",
+          "sha256": "5c955ac8858157c5ac30aa02ec2f788d461939e1fb54e3bd258308f6e5ed0267"
+        },
+        {
+          "path": "kavach/store.py",
+          "line": 8,
+          "anchor": "checkpoint",
+          "sha256": "791a9e154a9a6c7461c706d5aea30a85c8ea44a9f5fb207f7fb0620e70b856b0"
+        }
+      ],
+      "test_modules": [
+        "test_signed_receipts",
+        "test_checkpoint",
+        "test_identity",
+        "test_tenancy"
+      ],
+      "local_test_counts": {
+        "passed": 16
+      }
+    },
+    {
+      "slide": 15,
+      "title": "Integrations & who owns execution",
+      "claim_group": "MCP/SDK ownership and scoped AgentOS report",
+      "scope": "Proxy tested locally; SDK dependency skips; AgentOS is saved-report evidence",
+      "sources": [
+        {
+          "path": "kavach/mcp_proxy/proxy.py",
+          "line": 108,
+          "anchor": "class KavachMCPProxy",
+          "sha256": "b5a4a90dce3c743e0ace8b9c778ec9c85c6e37203e076ec9c4deaca2b8f261d9"
+        },
+        {
+          "path": "kavach/adapters/guard.py",
+          "line": 11,
+          "anchor": "local_execution=False",
+          "sha256": "8e6fd81193a99e60f337767b58a327ff59106618eaac3a0de9351dc08ac24860"
+        },
+        {
+          "path": "bench/results/AGENTOS_LIVE.md",
+          "line": 26,
+          "anchor": "Not done live",
+          "sha256": "92003c1208daeebf446c1b69002fd199dd4f06e1cc80aab962293f2dcebb7378"
+        }
+      ],
+      "test_modules": [
+        "test_mcp_proxy",
+        "test_mcp_e2e",
+        "test_adapters",
+        "test_integrations"
+      ],
+      "local_test_counts": {
+        "passed": 11,
+        "skipped": 3
+      }
+    },
+    {
+      "slide": 16,
+      "title": "How Qualcomm Cloud AI is used",
+      "claim_group": "Qualcomm interface, checked explanation counts and unknown costs",
+      "scope": "Client tests use stand-ins; saved experiment counts independently recomputed",
+      "sources": [
+        {
+          "path": "kavach/qualcomm.py",
+          "line": 74,
+          "anchor": "class QualcommCloudAI",
+          "sha256": "1cec7e3cf715055dcd088eeeba404f41d5f7ad5e7b826f7fcefc419f15c38abf"
+        },
+        {
+          "path": "kavach/explain.py",
+          "line": 55,
+          "anchor": "class Explainer",
+          "sha256": "ccfb3c8b865800250ac10ed7bbd10711d50efcf5787628e9ebec608d0b95a3e9"
+        },
+        {
+          "path": "bench/results/explain.json",
+          "line": 337,
+          "anchor": "\"sources\"",
+          "sha256": "f3976b96d8418d49d2b2006a43386369382ceaa271503935a70c4f0610085a3a"
+        }
+      ],
+      "test_modules": [
+        "test_qualcomm_retry",
+        "test_qualcomm_json",
+        "test_usage"
+      ],
+      "local_test_counts": {
+        "passed": 9
+      }
+    },
+    {
+      "slide": 17,
+      "title": "Synthetic evaluation: what was measured",
+      "claim_group": "Synthetic multiseed figures and denominators",
+      "scope": "Saved synthetic results; not a fresh benchmark rerun",
+      "sources": [
+        {
+          "path": "bench/results/results.json",
+          "line": 2,
+          "anchor": "\"suite\"",
+          "sha256": "976df303427c91248846bd3dc02b32d7b6a44b349d739da1d0d5a4eb6aa57588"
+        },
+        {
+          "path": "bench/results/multiseed.json",
+          "line": 2,
+          "anchor": "\"seeds\"",
+          "sha256": "c1bb8f1ec3bae8f5891d3d8924e4cf8710e9bf684288f8d4fcba4daca8393faf"
+        },
+        {
+          "path": "bench/run.py",
+          "line": 39,
+          "anchor": "def ",
+          "sha256": "a52fdfa7b56f0d0b70221ce1030a6deddf63531d48e1beaa4b14dcdefb15daea"
+        }
+      ],
+      "test_modules": [
+        "test_evals"
+      ],
+      "local_test_counts": {
+        "passed": 3
+      }
+    },
+    {
+      "slide": 18,
+      "title": "Ablations: which layers earn the result?",
+      "claim_group": "Model/provenance ablations and family interval",
+      "scope": "Saved ablations; numeric consistency checked",
+      "sources": [
+        {
+          "path": "bench/results/layers.json",
+          "line": 58,
+          "anchor": "\"by_family\"",
+          "sha256": "db135ab2f5c8d19a31b251ed06f90b5737a70c92f8d4fd4231687cc6b91f43d8"
+        },
+        {
+          "path": "bench/results/results.json",
+          "line": 98,
+          "anchor": "\"KAVACH: model only",
+          "sha256": "976df303427c91248846bd3dc02b32d7b6a44b349d739da1d0d5a4eb6aa57588"
+        }
+      ],
+      "test_modules": [
+        "test_evals"
+      ],
+      "local_test_counts": {
+        "passed": 3
+      }
+    },
+    {
+      "slide": 19,
+      "title": "Live AgentDojo: banking paired results",
+      "claim_group": "Paired banking live aggregate",
+      "scope": "Saved aggregate only; raw live-task logs absent; experiment not reproduced",
+      "sources": [
+        {
+          "path": "bench/results/comparison.json",
+          "line": 8,
+          "anchor": "\"banking\"",
+          "sha256": "b4af1b2156539a1b6da383f9cb1dc103f413673464414fc2f6df1c314231dc8b"
+        },
+        {
+          "path": "bench/compare.py",
+          "line": 61,
+          "anchor": "def summarize",
+          "sha256": "0f42ca194d30c954b2a4e11138717d667a153c51c7cbe0993b534b10503c876a"
+        }
+      ],
+      "test_modules": [],
+      "local_test_counts": {}
+    },
+    {
+      "slide": 20,
+      "title": "Live AgentDojo: Slack tradeoffs",
+      "claim_group": "Paired Slack live aggregate and utility losses",
+      "scope": "Saved aggregate only; raw live-task logs absent; experiment not reproduced",
+      "sources": [
+        {
+          "path": "bench/results/comparison.json",
+          "line": 127,
+          "anchor": "\"slack\"",
+          "sha256": "b4af1b2156539a1b6da383f9cb1dc103f413673464414fc2f6df1c314231dc8b"
+        },
+        {
+          "path": "bench/compare.py",
+          "line": 61,
+          "anchor": "def summarize",
+          "sha256": "0f42ca194d30c954b2a4e11138717d667a153c51c7cbe0993b534b10503c876a"
+        }
+      ],
+      "test_modules": [],
+      "local_test_counts": {}
+    },
+    {
+      "slide": 21,
+      "title": "Replay evidence is a different experiment",
+      "claim_group": "Offline replay with official and executed-only scores",
+      "scope": "Summaries recomputed from saved per-task records; AgentDojo execution dependency skipped",
+      "sources": [
+        {
+          "path": "bench/results/agentdojo_replay_banking.json",
+          "line": 7,
+          "anchor": "\"benign_done\"",
+          "sha256": "4eef8128850a16b66079e56db6753ada694647ded4b2cbe86ca0165dd020273d"
+        },
+        {
+          "path": "bench/results/agentdojo_replay_slack.json",
+          "line": 12,
+          "anchor": "\"attack_success\"",
+          "sha256": "955eb36e86559c766ae74ff600dfd48fecfee9d18bd805845fbd06d50e1616a7"
+        }
+      ],
+      "test_modules": [
+        "test_agentdojo_replay"
+      ],
+      "local_test_counts": {}
+    },
+    {
+      "slide": 22,
+      "title": "Infosys integration & local baseline evidence",
+      "claim_group": "Named Infosys baseline configurations",
+      "scope": "Saved external-code harness report; external deployment not revalidated",
+      "sources": [
+        {
+          "path": "bench/results/infosys_compare.json",
+          "line": 39,
+          "anchor": "\"seed0\"",
+          "sha256": "f10d0e38d654de0a32744a3845c09a77e991672b972886a373f253338199fffb"
+        },
+        {
+          "path": "bench/results/INFOSYS_COMPARISON.md",
+          "line": 7,
+          "anchor": "System",
+          "sha256": "9643b97317027f9cbb264ff087080fa757b0f7907bf5ef57baffc4396ca90c45"
+        },
+        {
+          "path": "bench/results/AGENTOS_LIVE.md",
+          "line": 26,
+          "anchor": "Not done live",
+          "sha256": "92003c1208daeebf446c1b69002fd199dd4f06e1cc80aab962293f2dcebb7378"
+        }
+      ],
+      "test_modules": [
+        "test_integrations"
+      ],
+      "local_test_counts": {
+        "passed": 1
+      }
+    },
+    {
+      "slide": 23,
+      "title": "Operator console & observability",
+      "claim_group": "Console, telemetry and alert rule count",
+      "scope": "Code + local tests; no alert delivery to people demonstrated",
+      "sources": [
+        {
+          "path": "kavach/static/app.js",
+          "line": 45,
+          "anchor": "const VERDICT",
+          "sha256": "cd78de7af33391739037c7c5857d09d55998d7e916bb677dfd7fed4255d4aeec"
+        },
+        {
+          "path": "kavach/telemetry.py",
+          "line": 23,
+          "anchor": "def decision_attributes",
+          "sha256": "9790e41395b0284d2dde415725e854d6e77be2b86073bcf62f65239b4ee17d8f"
+        },
+        {
+          "path": "deploy/alerts.yml",
+          "line": 4,
+          "anchor": "groups:",
+          "sha256": "42748c71588ccd82a3e5cf07c68726ff858c7f2b028c747cbef027af59736c9a"
+        }
+      ],
+      "test_modules": [
+        "test_observability",
+        "test_usage",
+        "test_console_ui",
+        "test_trace"
+      ],
+      "local_test_counts": {
+        "passed": 10
+      }
+    },
+    {
+      "slide": 24,
+      "title": "Optional capabilities & activation limits",
+      "claim_group": "Optional modules and incomplete live planner",
+      "scope": "Mixed local tests/skips; optional availability is not default activation",
+      "sources": [
+        {
+          "path": "requirements-extra.txt",
+          "line": 4,
+          "anchor": "mcp",
+          "sha256": "04cf346f933e757e6a9c53ec42c6ba0e8c2c476e9efa9f7f88f06471385756e6"
+        },
+        {
+          "path": "kavach/learning.py",
+          "line": 52,
+          "anchor": "def retrain",
+          "sha256": "5494c43b3e377556b5b3f525d5dbe92198853e097226c6f647d9be3d3bd8ab3f"
+        },
+        {
+          "path": "RELEASE_ACCEPTANCE.md",
+          "line": 42,
+          "anchor": "Planner mode",
+          "sha256": "a106dd02d6035bbd88cf219797013564f53a3c26f343e83fbb14bf21c47d7484"
+        }
+      ],
+      "test_modules": [
+        "test_planner",
+        "test_cedar",
+        "test_probe",
+        "test_shell",
+        "test_pii"
+      ],
+      "local_test_counts": {
+        "passed": 29,
+        "skipped": 7
+      }
+    },
+    {
+      "slide": 25,
+      "title": "Deployment & remaining work",
+      "claim_group": "Deployment artifacts and remaining work",
+      "scope": "Source + local profile tests; no fresh Helm/container/load rollout",
+      "sources": [
+        {
+          "path": "docs/DEPLOY.md",
+          "line": 75,
+          "anchor": "One replica",
+          "sha256": "cf73f1957fb003903f22b9bf0cfb1aa9bdd869ac29b3308b417802955d014204"
+        },
+        {
+          "path": "RELEASE_ACCEPTANCE.md",
+          "line": 43,
+          "anchor": "CI, load",
+          "sha256": "a106dd02d6035bbd88cf219797013564f53a3c26f343e83fbb14bf21c47d7484"
+        },
+        {
+          "path": "kavach/profile.py",
+          "line": 30,
+          "anchor": "def check_profile",
+          "sha256": "148940c6f6726fd15dd882982a3b561386d2a39c06ef26678519b721561b1264"
+        }
+      ],
+      "test_modules": [
+        "test_prod_profile"
+      ],
+      "local_test_counts": {
+        "passed": 6
+      }
+    },
+    {
+      "slide": 26,
+      "title": "Evidence map & presentation takeaways",
+      "claim_group": "Repository evidence map",
+      "scope": "Navigation and source references",
+      "sources": [
+        {
+          "path": "README.md",
+          "line": 122,
+          "anchor": "## Layout",
+          "sha256": "7a227b1c018500583f7f3fac17119e8b5d25d4d55d8e69c9c6790e51788ed331"
+        },
+        {
+          "path": "kavach/gateway.py",
+          "line": 92,
+          "anchor": "class Kavach",
+          "sha256": "a6a13d8b3106f7922ecb5ad05e016f0f895fb727cdf9fcb3ba1f4bb9de6d0b99"
+        }
+      ],
+      "test_modules": [],
+      "local_test_counts": {}
+    },
+    {
+      "slide": 27,
+      "title": "How KAVACH compares",
+      "claim_group": "Comparison with published systems",
+      "scope": "Feature claims from the papers and documentation named in the notes, read directly; a dash means not found there, not proof of absence",
+      "sources": [
+        {
+          "path": "docs/INFOSYS_GAP_ANALYSIS.md",
+          "line": 11,
+          "anchor": "PromptGuard",
+          "sha256": "fe1a7f42df8e3106d7df4da28eb0265393f6ff21ed11e016624ddc8cd92edc16"
+        }
+      ],
+      "test_modules": [],
+      "local_test_counts": {}
+    },
+    {
+      "slide": 28,
+      "title": "Infosys AgentOS and KAVACH",
+      "claim_group": "AgentOS: differences, measured rows, hooks",
+      "scope": "Infosys code read and run locally; team-written suite; no live LLM-driven AgentOS chat",
+      "sources": [
+        {
+          "path": "docs/INFOSYS_GAP_ANALYSIS.md",
+          "line": 26,
+          "anchor": "approval_rules",
+          "sha256": "fe1a7f42df8e3106d7df4da28eb0265393f6ff21ed11e016624ddc8cd92edc16"
+        },
+        {
+          "path": "bench/results/infosys_compare.json",
+          "line": 39,
+          "anchor": "\"seed0\"",
+          "sha256": "f10d0e38d654de0a32744a3845c09a77e991672b972886a373f253338199fffb"
+        },
+        {
+          "path": "integrations/agentos_hook.py",
+          "line": 7,
+          "anchor": "deny",
+          "sha256": "4a5e2ae381d5e24e4649c1cc44ff7ed4c55913770034fefa5132a226a83b420c"
+        },
+        {
+          "path": "bench/results/AGENTOS_LIVE.md",
+          "line": 26,
+          "anchor": "Not done live",
+          "sha256": "92003c1208daeebf446c1b69002fd199dd4f06e1cc80aab962293f2dcebb7378"
+        }
+      ],
+      "test_modules": [
+        "test_integrations"
+      ],
+      "local_test_counts": {
+        "passed": 1
+      }
+    }
+  ]
+}

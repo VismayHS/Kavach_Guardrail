@@ -1,0 +1,3 @@
+# Authoring / verification only. PDF export also needs LibreOffice Impress.
+python-pptx>=1.0
+pypdf>=5
