@@ -325,11 +325,18 @@ class Kavach:
         return child_id
 
     def add_request(self, task_id: str, request: str) -> None:
-        """A later user turn in the same session: its values count as typed by the user, and intent follows it."""
+        """A later user turn in the same conversation: its values count as typed by the user, and the request becomes
+        every turn so far. Provenance already kept all of them ("reply" two messages ago still trusts the sender),
+        while intent saw only the last one, so "Read X and reply to its sender", then "the one titled Draft Quote
+        2041", sent the reply to a person as "the user never asked for an email" (3 Nov 2026, real Gmail). A later
+        turn still wins where it speaks: "don't send it after all" withdraws the earlier ask (policy._asked_for)."""
         task = self.tasks[task_id]
-        if request and request != task.ctx.user_request:
+        ctx = task.ctx
+        turns = ctx.turns or ([ctx.user_request] if ctx.user_request else [])
+        if request and (not turns or request != turns[-1]):
             task.prov.register_user(request)
-            task.ctx.user_request = request
+            ctx.turns = turns + [request]
+            ctx.user_request = "\n\n".join(ctx.turns)
 
     # ------------------------------------------------------------------ kill switch (F3)
     KILL_SCOPES = ("global", "user", "role", "task")

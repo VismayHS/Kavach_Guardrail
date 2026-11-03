@@ -93,6 +93,9 @@ class TaskContext:
     actions_run: set[str] = field(default_factory=set)  # digests of the outbound calls this task already ran (R36)
     outbound_chars: int = 0                             # characters this task has emailed to outside addresses (R36)
     plan: list[dict] | None = None
+    # every user turn of the conversation, oldest first; user_request is all of them, so a clarification ("the one
+    # titled Draft Quote 2041") doesn't erase what the user asked earlier ("reply to its sender")
+    turns: list[str] = field(default_factory=list)
     plan_findings: list[dict] = field(default_factory=list)
 
 

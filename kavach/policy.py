@@ -443,19 +443,32 @@ class PolicyEngine:
         """The user's request asks for this kind of action (its intent verbs), e.g. "pay" for a transfer. Names the
         user typed (a file, an address: 'address-change.txt', .../pay/dec-2023) are not words of the request, and a
         verb the user negated is not a request: "Do not send any emails" doesn't ask for an email (it read as one, so
-        a recipient taken from the email the user named went to a person instead of being refused)."""
+        a recipient taken from the email the user named went to a person instead of being refused).
+        Over a conversation the latest turn that speaks of it decides: an ask stands through later turns that don't
+        mention it ("the one titled X"), and a later "don't send it" withdraws it."""
         from .intent import TOOL_VERBS
-        req = NAME_TOKEN.sub(" ", ctx.user_request.lower())
-        for v in (spec.intent_verbs or TOOL_VERBS.get(tool, [])):
+        verbs = spec.intent_verbs or TOOL_VERBS.get(tool, [])
+        for turn in reversed(ctx.turns or [ctx.user_request]):
+            said = PolicyEngine._asks(turn, verbs)
+            if said is not None:
+                return said
+        return False
+
+    @staticmethod
+    def _asks(text: str, verbs) -> bool | None:
+        """True: this text asks for it; False: it speaks of it only to refuse it; None: it doesn't speak of it."""
+        req, refused = NAME_TOKEN.sub(" ", text.lower()), False
+        for v in verbs:
             for m in re.finditer(rf"\b{re.escape(v)}", req):
                 before, after = req[max(0, m.start() - 48):m.start()], req[m.end():m.end() + 16]
                 if NEGATED.search(before):
+                    refused = True
                     continue
                 if v in NOUNISH and (not VERB_POSITION.search(before) or after.startswith("s")
                                      or NOUN_AFTER.match(after)):
                     continue        # "the reconciliation email", "emails", "the email titled": a thing, not a request
                 return True
-        return False
+        return False if refused else None
 
     def _shell_rule(self, e: dict, add) -> None:
         """R34: a shell command is refused for what it reaches, and goes to a person for what it might do."""

@@ -236,6 +236,7 @@ class ProvenanceTracker:
     untrusted_shingles: dict[str, str] = field(default_factory=dict)   # shingle -> source
     pii_values: set[str] = field(default_factory=set)
     user_text: str = ""
+    user_turns: list = field(default_factory=list)   # each thing the user said, oldest first
     private_seen: bool = False      # the task has read PII / confidential data (lethal-trifecta leg 1)
     untrusted_seen: bool = False    # the task has read untrusted content (lethal-trifecta leg 2)
     senders: dict[str, str] = field(default_factory=dict)          # From: address of a message read -> source
@@ -252,6 +253,7 @@ class ProvenanceTracker:
 
     def register_user(self, text: str) -> None:
         self.user_text += " " + text
+        self.user_turns.append(text)
         self.user_entities |= entities(text)
         self.user_domains |= {h.lower() for h in HOST.findall(normalize(text))}
 
@@ -338,6 +340,21 @@ class ProvenanceTracker:
                     self.pii_values.add(e)
                     self.origins.setdefault(e, []).append(Label(Trust.DERIVED, Conf.PII, [src]))
 
+    def reply_asked(self) -> bool:
+        """The user asked to reply to a sender: the latest turn that speaks of replying decides, so "reply to its
+        sender" stands through "the one titled X", and "don't reply after all" withdraws it."""
+        from .policy import NEGATED
+        for turn in reversed(self.user_turns or [self.user_text]):
+            low, refused = turn.lower(), False
+            for m in REPLY.finditer(low):
+                if NEGATED.search(low[max(0, m.start() - 48):m.start()]):
+                    refused = True
+                else:
+                    return True
+            if refused:
+                return False
+        return False
+
     def reply_trusted(self, sender: str) -> bool:
         """'Reply to the sender' trust: not for lookalike domains (R25), nor for a message a classifier flagged."""
         if self.lookalike is not None and self.lookalike.check(domain_of(sender)):
@@ -374,7 +391,7 @@ class ProvenanceTracker:
                 if trust != Trust.UNTRUSTED or not is_control:
                     sources.append("user")
                 continue
-            if is_control and e in self.senders and REPLY.search(self.user_text):
+            if is_control and e in self.senders and self.reply_asked():
                 if self.reply_trusted(e):
                     sources.append(f"sender:{self.senders[e]}")   # the user asked to reply to this message's sender
                 else:   # the user asked to reply, but the sender is suspect: a human checks it (R25), not a hard block
