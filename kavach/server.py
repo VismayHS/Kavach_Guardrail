@@ -55,6 +55,18 @@ from .connectors import SandboxBank, SmtpMailer  # noqa: E402
 env.mailer = SmtpMailer.from_env()   # E7: with KAVACH_SMTP_HOST, emails KAVACH lets go really leave (after their window)
 env.bank = SandboxBank.from_env()   # with KAVACH_BANK_URL, payments KAVACH lets go reach that bank (after their hold)
 gw = Kavach(env)
+MAIL_MODE = os.environ.get("KAVACH_MAIL", "demo")
+if MAIL_MODE == "gmail":       # real Gmail only: the inbox is read over IMAP, emails go out through Gmail's SMTP
+    from .connectors import GmailInbox, gmail_sender
+    env.mailbox, env.mailer = GmailInbox.from_env(), gmail_sender()
+    if env.mailbox is None or env.mailer is None:
+        raise SystemExit("KAVACH_MAIL=gmail needs KAVACH_GMAIL_USER and KAVACH_GMAIL_APP_PASSWORD (scripts/gmail_up.sh)")
+    gw.registry.specs["mail.read_inbox"].description = (
+        "Read the newest emails in the user's Gmail inbox, newest first: sender, subject, date and text.")
+    gw.registry.specs["mail.send"].description = (
+        "Send an email from the user's Gmail account. It leaves after a short window in which a person can cancel it.")
+    for _t in ("mail.read_inbox", "mail.send"):     # the operator's own wording at start-up, pinned as the definition
+        gw.registry.pins[_t] = gw.registry.specs[_t].definition_hash()
 if PROFILE.require_tool_hash:
     gw.policy.cfg["require_tool_hash"] = True
 if os.environ.get("KAVACH_LOG_JSON") == "1":          # F11: structured logs, a line per decision (no arguments)
@@ -377,10 +389,19 @@ SIDE_BY_SIDE = {
 }
 
 
+def _scripted() -> None:
+    """Scripted scenarios play on the demo company (made-up inbox, CRM, invoices). With KAVACH on your real Gmail they
+    would read your real inbox or send through your real account, so they are refused: real and scripted never mix."""
+    if MAIL_MODE == "gmail":
+        raise HTTPException(409, "Scripted scenarios run on the demo company, and KAVACH is on your real Gmail now. "
+                                 "Use scripts/demo_up.sh for scenarios; here, use a real agent (scripts/demo_claude.sh).")
+
+
 @app.post("/api/demo/side-by-side")
 def demo_side_by_side():
     """The demo's opening: one request, one inbox, two actions. The email the user asked for goes out (after its
     recall window); the customer list the hidden instruction in the inbox asked for is stopped, with the reason."""
+    _scripted()
     if not PROFILE.demo_endpoints:
         raise HTTPException(404, "demo endpoints are off in this profile")
     env.reset()
@@ -404,6 +425,7 @@ def demo_side_by_side():
 
 @app.post("/api/demo/{name}", dependencies=[Depends(caller)])
 def demo(name: str, reset: bool = True):
+    _scripted()
     sc = SCENARIOS.get(name)
     if sc is None or not PROFILE.demo_endpoints:
         raise HTTPException(404, "unknown scenario")
@@ -623,6 +645,7 @@ def stage_direct_send(body: dict, who: dict | None = Depends(caller)):
     tool would, with no check, no hold and nothing to cancel. {"leak": true} sends the customer list (synthetic) to
     the address in the poisoned email. Dev profile only; it exists to show the difference. A receipt still records
     that the bypass was used, so the audit trail stays honest."""
+    _scripted()
     import smtplib
     from email.message import EmailMessage
     if not PROFILE.fast_forward or (who is not None and who["role"] != "admin"):
@@ -653,6 +676,7 @@ def stage_reset(who: dict | None = Depends(caller)):
     """The live demo page's Start over: a fresh demo company (anything still waiting is discarded, never sent) and
     approvals still open are closed. Dev profile only, like fast-forward; the receipt chain is append-only and keeps
     everything, with a demo-reset receipt marking where the new run starts."""
+    _scripted()
     if not PROFILE.fast_forward or (who is not None and who["role"] != "admin"):
         raise HTTPException(403, "only an admin, in the dev profile, can reset the demo")
     closed = [hid for hid, it in gw.hitl.items.items() if it["status"] == "pending"]
@@ -790,6 +814,7 @@ def state():
             "stopped": [h for h in env.holds if h["status"] == "cancelled"][-5:],
             "hold_s": {"mail": MAIL_RECALL_S, "payment": PAYMENT_HOLD_S},
             "demo": {"mail_to": os.environ.get("KAVACH_DEMO_MAIL_TO")},     # set by demo_up.sh when Gmail is on
+            "mail": {"mode": MAIL_MODE, "account": getattr(env.mailer, "sender", None) if MAIL_MODE == "gmail" else None},
             "parked": parked, "drafts": env.drafts[-5:],
             "risk_model": gw.risk.source, "c_block": gw.cfg.c_block, "policy": gw.policy.version,
             "qualcomm_llm": gw.judge.llm.enabled, "judge_models": list(gw.judge.llm.picked or [gw.judge.llm.model])}

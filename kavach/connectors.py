@@ -82,6 +82,87 @@ class SmtpMailer:
         return {"via": f"smtp://{self.host}:{self.port}", "to": rcpts, "refused": sorted(refused or {})}
 
 
+class GmailInbox:
+    """A real Gmail inbox, read over IMAP with an App Password (imap.gmail.com:993). Read-only: messages are fetched
+    with BODY.PEEK, so nothing is marked as read, moved or deleted. The newest `limit` messages, newest first.
+
+    Credentials stay in KAVACH's process (the connector side): the agent only ever sees the messages, which KAVACH
+    labels untrusted, since someone else wrote them.
+
+        KAVACH_GMAIL_USER=you@gmail.com  KAVACH_GMAIL_APP_PASSWORD=...    (scripts/gmail_up.sh reads them from .env)
+    """
+
+    def __init__(self, user: str, password: str, host: str = "imap.gmail.com", port: int = 993, folder: str = "INBOX",
+                 limit: int = 10, max_body: int = 4000, imap=None):
+        import imaplib
+        self.user, self.password = user, password.replace(" ", "")
+        self.host, self.port, self.folder, self.limit, self.max_body = host, int(port), folder, limit, max_body
+        self._imap = imap or imaplib.IMAP4_SSL
+
+    @classmethod
+    def from_env(cls, environ=None) -> "GmailInbox | None":
+        env = os.environ if environ is None else environ
+        user, pw = env.get("KAVACH_GMAIL_USER"), env.get("KAVACH_GMAIL_APP_PASSWORD")
+        return cls(user, pw, limit=int(env.get("KAVACH_GMAIL_READ_LIMIT") or 10)) if user and pw else None
+
+    def latest(self, n: int | None = None) -> list[dict]:
+        import email
+        from email import policy
+        from email.utils import parseaddr, parsedate_to_datetime
+        n = n or self.limit
+        out = []
+        m = self._imap(self.host, self.port)
+        try:
+            m.login(self.user, self.password)
+            m.select(self.folder, readonly=True)
+            _typ, data = m.uid("search", None, "ALL")
+            uids = (data[0] or b"").split()[-n:]
+            for uid in reversed(uids):
+                _typ, parts = m.uid("fetch", uid, "(FLAGS BODY.PEEK[])")
+                raw = next((p[1] for p in parts if isinstance(p, tuple)), b"")
+                flags = b" ".join(p[0] for p in parts if isinstance(p, tuple))
+                msg = email.message_from_bytes(raw, policy=policy.default)
+                name, addr = parseaddr(str(msg.get("From", "")))
+                try:
+                    when = parsedate_to_datetime(str(msg.get("Date"))).isoformat()
+                except (TypeError, ValueError):
+                    when = str(msg.get("Date", ""))
+                out.append({"id": f"gmail-{uid.decode()}", "from": addr.lower(), "from_name": name,
+                            "to": str(msg.get("To", "")), "subject": str(msg.get("Subject", "")), "date": when,
+                            "unread": b"\\Seen" not in flags, "body": _text_of(msg)[:self.max_body]})
+        finally:
+            try:
+                m.logout()
+            except Exception:
+                pass
+        return out
+
+
+def _text_of(msg) -> str:
+    """The readable text of an email: its plain-text part, or its HTML part with the tags taken out."""
+    import html as _html
+    import re as _re
+    part = msg.get_body(preferencelist=("plain", "html"))
+    if part is None:
+        return ""
+    text = part.get_content()
+    if part.get_content_type() == "text/html":
+        text = _re.sub(r"(?is)<(script|style).*?</\1>", " ", text)
+        text = _html.unescape(_re.sub(r"<[^>]+>", " ", text))
+    return _re.sub(r"[ \t]+", " ", _re.sub(r"\n\s*\n+", "\n\n", text)).strip()
+
+
+def gmail_sender(environ=None) -> "SmtpMailer | None":
+    """Sending through the same Gmail account (smtp.gmail.com:587, STARTTLS, App Password), after KAVACH's check and
+    its window: what a person would see in Gmail's Sent folder."""
+    env = os.environ if environ is None else environ
+    user, pw = env.get("KAVACH_GMAIL_USER"), env.get("KAVACH_GMAIL_APP_PASSWORD")
+    if not (user and pw):
+        return None
+    return SmtpMailer("smtp.gmail.com", 587, sender=user, user=user, password=pw.replace(" ", ""), starttls=True,
+                      timeout=20.0)
+
+
 class SandboxBank:
     """Payments KAVACH lets go go to a bank API: the demo's scripts/sandbox_bank.py, its own service with its own page,
     the way Mailpit is for email.   KAVACH_BANK_URL=http://127.0.0.1:8030

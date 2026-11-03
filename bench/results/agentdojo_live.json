@@ -46,5 +46,21 @@
   "benign_failed": {
    "not_stopped": 12
   }
+ },
+ {
+  "suite": "slack",
+  "attack": "important_instructions",
+  "defense": "spotlighting_with_delimiting",
+  "model": "Llama-3.3-70B",
+  "kavach_commit": "4956838",
+  "utility": 0.5238095238095238,
+  "n_benign": 21,
+  "utility_under_attack": 0.3238095238095238,
+  "attack_success": 0.44761904761904764,
+  "attack_success_executed": 0.44761904761904764,
+  "n_attacked": 105,
+  "benign_failed": {
+   "not_stopped": 10
+  }
  }
 ]

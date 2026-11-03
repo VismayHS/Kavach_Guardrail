@@ -1,6 +1,6 @@
 # KAVACH compared: no guardrail, a simple baseline, KAVACH
 
-Generated 2026-11-03 04:47 at commit `2f1548f` on Darwin arm64, Python 3.14.6. Regenerate: `python -m bench.compare`.
+Generated 2026-11-03 09:53 at commit `c1c82a4` on Darwin arm64, Python 3.14.6. Regenerate: `python -m bench.compare`.
 
 Three kinds of evidence, kept apart: (1) a live agent on ETH Zurich's AgentDojo (not written by us), (2) the same benchmark replayed with its ground-truth calls and an obedient attacker (no model), (3) our own synthetic suite (written by us; its rules target its families, so read it as a regression check, not as independent evidence).
 
@@ -8,26 +8,27 @@ Three kinds of evidence, kept apart: (1) a live agent on ETH Zurich's AgentDojo 
 
 Attack success = AgentDojo's own security check (the attacker's goal was reached). Benign = user tasks with no attack, utility = AgentDojo's own check. KAVACH counts an ESCALATE as a block here (in production a person would decide). Runs in progress are compared on the tasks both defenses finished (paired).
 
-### Banking (finished so far: No guardrail 160/160, Spotlighting (prompt delimiting, AgentDojo's baseline) 160/160, KAVACH 56/160, KAVACH, rules only 47/160)
+### Banking (finished so far: No guardrail 160/160, Spotlighting (prompt delimiting, AgentDojo's baseline) 160/160, KAVACH 144/160, KAVACH, rules only 108/160)
 
 | Defense | Tasks compared | Benign done | Attack success ↓ | Utility under attack | Tasks with a KAVACH deny / escalate | Errors | Agent time per task p50 / p95 |
 |---|---|---|---|---|---|---|---|
 | No guardrail | 160 (paired with Spotlighting (prompt delimiting, AgentDojo's baseline)) | 8/16 (50.0%) | 66/144 (45.8%) | 54/144 (37.5%) | 0 / 0 | 0 | 27 s / 85 s |
 | Spotlighting (prompt delimiting, AgentDojo's baseline) | 160 (paired with No guardrail) | 8/16 (50.0%) | 69/144 (47.9%) | 74/144 (51.4%) | 0 / 0 | 0 | 50 s / 249 s |
-| No guardrail | 56 (paired with KAVACH) | 8/16 (50.0%) | 23/40 (57.5%) | 6/40 (15.0%) | 0 / 0 | 0 | 35 s / 99 s |
-| KAVACH | 56 (paired with No guardrail) | 8/16 (50.0%) | 0/40 (0.0%) | 5/40 (12.5%) | 16 / 25 | 0 | 102 s / 2366 s |
-| No guardrail | 47 (paired with KAVACH, rules only) | 8/16 (50.0%) | 19/31 (61.3%) | 2/31 (6.5%) | 0 / 0 | 0 | 30 s / 99 s |
-| KAVACH, rules only | 47 (paired with No guardrail) | 8/16 (50.0%) | 0/31 (0.0%) | 6/31 (19.4%) | 10 / 21 | 0 | 149 s / 1066 s |
+| No guardrail | 144 (paired with KAVACH) | 8/16 (50.0%) | 65/128 (50.8%) | 53/128 (41.4%) | 0 / 0 | 0 | 30 s / 85 s |
+| KAVACH | 144 (paired with No guardrail) | 8/16 (50.0%) | 0/128 (0.0%) | 62/128 (48.4%) | 62 / 63 | 0 | 90 s / 1278 s |
+| No guardrail | 108 (paired with KAVACH, rules only) | 8/16 (50.0%) | 47/92 (51.1%) | 47/92 (51.1%) | 0 / 0 | 0 | 33 s / 85 s |
+| KAVACH, rules only | 108 (paired with No guardrail) | 8/16 (50.0%) | 0/92 (0.0%) | 58/92 (63.0%) | 46 / 46 | 0 | 86 s / 1729 s |
 
 Agent time is the whole AgentDojo task as the agent lived it, and is dominated by Qualcomm rate-limit waits: several runs shared one key, and KAVACH's runs overlapped with the most others. KAVACH's own decision time is below (Decision latency).
 
-### Slack (finished so far: No guardrail 126/126, Spotlighting (prompt delimiting, AgentDojo's baseline) 17/126, KAVACH 85/126)
+### Slack (finished so far: No guardrail 126/126, Spotlighting (prompt delimiting, AgentDojo's baseline) 126/126, KAVACH 124/126)
 
 | Defense | Tasks compared | Benign done | Attack success ↓ | Utility under attack | Tasks with a KAVACH deny / escalate | Errors | Agent time per task p50 / p95 |
 |---|---|---|---|---|---|---|---|
-| Spotlighting (prompt delimiting, AgentDojo's baseline) | in progress: 17 tasks paired so far, too few to compare | | | | | | |
-| No guardrail | 85 (paired with KAVACH) | 9/21 (42.9%) | 26/64 (40.6%) | 26/64 (40.6%) | 0 / 0 | 0 | 44 s / 167 s |
-| KAVACH | 85 (paired with No guardrail) | 6/21 (28.6%) | 6/64 (9.4%) | 20/64 (31.2%) | 14 / 26 | 0 | 126 s / 588 s |
+| No guardrail | 126 (paired with Spotlighting (prompt delimiting, AgentDojo's baseline)) | 9/21 (42.9%) | 48/105 (45.7%) | 36/105 (34.3%) | 0 / 0 | 0 | 59 s / 528 s |
+| Spotlighting (prompt delimiting, AgentDojo's baseline) | 126 (paired with No guardrail) | 11/21 (52.4%) | 47/105 (44.8%) | 34/105 (32.4%) | 0 / 0 | 0 | 92 s / 463 s |
+| No guardrail | 124 (paired with KAVACH) | 9/21 (42.9%) | 48/103 (46.6%) | 36/103 (35.0%) | 0 / 0 | 0 | 58 s / 528 s |
+| KAVACH | 124 (paired with No guardrail) | 6/21 (28.6%) | 11/103 (10.7%) | 21/103 (20.4%) | 26 / 47 | 0 | 126 s / 922 s |
 
 Agent time is the whole AgentDojo task as the agent lived it, and is dominated by Qualcomm rate-limit waits: several runs shared one key, and KAVACH's runs overlapped with the most others. KAVACH's own decision time is below (Decision latency).
 
@@ -57,11 +58,7 @@ No guardrail: every one of these obedient attacks succeeds by construction (144/
 
 ## Decision latency (measured here)
 
-1027 decisions (synthetic suite, holdout, demo scenarios), LLM judge off: p50 0.44 ms, p95 3.63 ms, p99 14.83 ms, max 17.65 ms. The Qualcomm judge, when on, runs only for calls already waiting for a person (escalations-only), so it never delays an allowed call.
-
-## Live demo server (what a running KAVACH measured)
-
-At 2026-11-03 04:47:30: 1 /mcp requests, end-to-end p50 ≤ 5.0 ms, p95 ≤ 5.0 ms, p99 ≤ 5.0 ms (histogram bucket bounds). Model: 8 calls (0 errors), 20402 tokens as reported by the API, 0 calls without usage; estimated cost USD 0.005863 (price table 2026-11-03.1; 0 tokens of unpriced models: cost unknown).
+1027 decisions (synthetic suite, holdout, demo scenarios), LLM judge off: p50 0.43 ms, p95 3.48 ms, p99 14.46 ms, max 17.53 ms. The Qualcomm judge, when on, runs only for calls already waiting for a person (escalations-only), so it never delays an allowed call.
 
 ## Model usage and cost of the live AgentDojo runs
 
