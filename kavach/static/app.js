@@ -1114,8 +1114,46 @@ function actCard(a) {
     ${a.verdict === 'ALLOW' ? '' : `<p class="act-why">${plainReason(a.reason)}</p>`}
     <div class="act-status">${stamp(tone, word)}<span>${esc(a.status.text)}</span>${hold}</div>
     ${ask}
-    <p class="act-links">${traceLink(a.corr, 'Trace')} · <a href="#" data-act="open-receipt" data-id="${esc(a.receipt)}">Receipt ${esc(a.receipt)}</a> · <span class="meta">${esc(a.corr)}</span></p>
+    <p class="act-links"><button class="btn quiet sm" type="button" data-act="how" data-id="${esc(a.receipt)}" aria-expanded="${S.howOpen?.has(a.receipt) ? 'true' : 'false'}">${icon('list-checks')}How KAVACH decided</button> ${traceLink(a.corr, 'Trace')} · <a href="#" data-act="open-receipt" data-id="${esc(a.receipt)}">Receipt ${esc(a.receipt)}</a> · <span class="meta">${esc(a.corr)}</span></p>
+    <div class="act-how" data-how="${esc(a.receipt)}"${S.howOpen?.has(a.receipt) && S.howHtml?.[a.receipt] ? '' : ' hidden'}>${S.howHtml?.[a.receipt] || ''}</div>
   </li>`;
+}
+// every step KAVACH took on one action, from its signed decision receipt: what the user asked, where each value came
+// from, what the action would do, every rule it checked, risk and intent, and how the verdict follows from them
+const TRUST_WORD = { trusted: ['done', 'From the user'], derived: ['info', 'Written by the agent'], untrusted: ['failed', 'From untrusted content'] };
+function howSource(s) {
+  if (s === 'user') return "the user's own words";
+  if (s === 'agent') return 'the agent (not traced to any source)';
+  const m = s.match(/^tool:mail\.read_inbox#(.+)$/);
+  if (m) return `the email ${m[1]} the agent read`;
+  if (s.startsWith('sender:')) return `the sender of ${s.slice(7).replace(/^tool:mail\.read_inbox#/, 'email ')} (the user asked to reply)`;
+  return s.replace(/^tool:/, 'the tool ');
+}
+function howSteps(rec, rules) {
+  const b = rec.body, d = b.decision, risk = d.risk || {}, eff = d.effect || {}, gates = d.gates || [];
+  const hit = gates.filter(g => g.outcome !== 'PASS'), pass = gates.filter(g => g.outcome === 'PASS');
+  const gate = g => `<li>${stamp(g.outcome === 'DENY' ? 'failed' : g.outcome === 'PASS' ? 'done' : 'possible', g.outcome === 'PASS' ? 'Passed' : g.outcome === 'DENY' ? 'Blocks' : 'Needs a person')}
+      <div><b>${esc(g.rule_id)}</b> <span class="meta">${esc(rules[g.rule_id] || '')}</span><p>${esc(g.message)}</p></div></li>`;
+  const labels = Object.entries(d.labels || {}).map(([k, l]) => {
+    const [tone, word] = TRUST_WORD[l.trust] || ['info', l.trust];
+    return `<li><code>${esc(k)}</code>${stamp(tone, word)}<span class="meta">${(l.sources || []).map(howSource).map(esc).join('; ')}${l.delegated ? '; a source the user pointed at' : ''}${l.conf && l.conf !== 'internal' ? `; ${esc(l.conf)} data` : ''}${l.pii_entities ? `; ${l.pii_entities} personal values` : ''}</span></li>`;
+  }).join('');
+  const intent = risk.intent || {}, review = intent.review;
+  const follows = hit.some(g => g.outcome === 'DENY')
+    ? `A rule blocks it (${hit.filter(g => g.outcome === 'DENY').map(g => g.rule_id).join(', ')}), so it is refused and the tool never runs. Only deterministic rules can block; no model and no approval can override a block.`
+    : hit.length ? `No rule blocks it, but ${hit.map(g => g.rule_id).join(', ')} ${hit.length === 1 ? 'asks' : 'ask'} for a person, so it waits for approval; if nobody answers in time, the answer is no.`
+    : d.verdict === 'ESCALATE' ? `No rule objected, but ${plainReason(d.reason)}`
+    : `No rule objected, and the estimated chance of harm (at most ${(100 * (risk.p_hi ?? 0)).toFixed(1)}%) is under the limit for this action (${(100 * (risk.tau ?? 0)).toFixed(1)}%), so it is allowed${d.verdict === 'ALLOW_WITH_SAFEGUARD' ? ', with a window in which a person can still cancel it' : ''}.`;
+  const step = (n, title, body) => `<li><span class="how-n">${n}</span><div><h4>${title}</h4>${body}</div></li>`;
+  return `<ol class="how">
+    ${step(1, 'What the user asked', `<p>“${esc(b.request || '(no request stated)')}”</p><p class="meta">${esc(titleCase(b.principal || ''))} · role ${esc(b.role || '?')} · the request comes from the person, never from the agent</p>`)}
+    ${step(2, 'Where each value in the call came from', labels ? `<ul class="how-list">${labels}</ul>` : '<p class="meta">No arguments.</p>')}
+    ${step(3, 'What it would do', `<p>${esc(eff.summary || 'Read only: nothing changes.')}</p>${eff.reversibility ? `<p class="meta">Reversibility: ${esc(eff.reversibility)}${eff.safeguard ? ` · safeguard: ${esc(eff.safeguard)}` : ''}</p>` : ''}`)}
+    ${step(4, `The rules it checked (${gates.length})`, `<ul class="how-list">${hit.map(gate).join('')}</ul>${pass.length ? `<details${hit.length ? '' : ' open'}><summary>${plural(pass.length, 'rule')} passed</summary><ul class="how-list">${pass.map(gate).join('')}</ul></details>` : ''}`)}
+    ${step(5, 'Risk and intent', `<p>Chance of harm: ${(100 * (risk.p_harm ?? 0)).toFixed(1)}% (between ${(100 * (risk.p_lo ?? 0)).toFixed(1)}% and ${(100 * (risk.p_hi ?? 0)).toFixed(1)}%), limit for this action ${(100 * (risk.tau ?? 0)).toFixed(1)}%.</p><p class="meta">Fit with the request: ${intent.alignment != null ? Number(intent.alignment).toFixed(2) : '?'} (${esc(intent.source || 'heuristic')}${intent.reason ? `: ${esc(intent.reason)}` : ''}). The risk model can only let it through or send it to a person; it never blocks.</p>${review?.llm_reason ? `<p><b>Qualcomm judge:</b> ${esc(review.llm_reason)}</p>` : ''}`)}
+    ${step(6, 'How the verdict follows', `<p>${verdictStamp(d.verdict)} ${follows}</p>`)}
+    ${step(7, 'The record', `<p class="meta">Receipt ${esc(rec.id)} · hash ${esc(rec.hash.slice(0, 16))}… · policy ${esc(d.policy_version || '')} · decided in ${Number(d.latency_ms || 0).toFixed(1)} ms</p>`)}
+  </ol>`;
 }
 async function pageActivity() {
   const [st, acts] = await Promise.all([api('/api/state'), api('/api/activity?limit=40')]);
@@ -1641,6 +1679,22 @@ const ACT = {
     const r = (S.receipts || []).find(x => x.id === b.dataset.id);
     if (!r) return;
     openDialog(`Receipt ${r.seq}`, `<div class="tag" style="margin-bottom:16px">${field('Receipt', copyValue(r.id))}${field('Written at', esc(new Date(r.ts * 1000).toLocaleString()))}${field('Hash', copyValue(r.hash))}${field('Links to the hash', copyValue(r.prev_hash))}</div><pre class="pre">${esc(JSON.stringify(r.body, null, 2))}</pre>`);
+  },
+  async how(b) {
+    const id = b.dataset.id, box = $(`[data-how="${CSS.escape(id)}"]`);
+    S.howOpen = S.howOpen || new Set(); S.howHtml = S.howHtml || {};
+    if (S.howOpen.has(id)) { S.howOpen.delete(id); if (box) box.hidden = true; b.setAttribute('aria-expanded', 'false'); return; }
+    if (!S.howHtml[id]) {
+      flip(b, true);
+      try {
+        S.ruleText = S.ruleText || (await api('/api/policy')).rules || {};
+        S.howHtml[id] = howSteps(await api(`/api/receipt/${encodeURIComponent(id)}`), S.ruleText);
+      } catch (e) { S.howHtml[id] = `<p class="notice err">${esc(e.message)}</p>`; }
+      flip(b, false);
+    }
+    S.howOpen.add(id);
+    if (box) { box.innerHTML = S.howHtml[id]; box.hidden = false; }
+    b.setAttribute('aria-expanded', 'true');
   },
   async 'open-receipt'(b, e) {
     e?.preventDefault?.();
