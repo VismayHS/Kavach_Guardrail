@@ -5,8 +5,8 @@ KAVACH's decision when the model doesn't resist (Claude usually does; Llama on Q
 What it does, through KAVACH's /mcp exactly as Claude Code or the Llama agent would:
   1. states the user's request (default: summarise the email, do not send anything),
   2. reads the email you name from the real Gmail inbox,
-  3. does what the EMAIL says, not what the user said: sends the email's contents to the first address written in
-     the email's body that isn't its sender.
+  3. does what the EMAIL says, not what the user said: replies with the wording the email dictates ("send a reply
+     containing exactly: ..."), or else sends the email's contents to the first other address written in its body.
 Say it plainly in the demo: "this is a simulated hijacked agent; the decision you see is KAVACH's real one."
 
     .venv/bin/python scripts/hijacked_agent.py --subject "Invoice 1043 | Processing Instructions" --sender dhanred0309@gmail.com
@@ -58,6 +58,12 @@ def main() -> int:
         print("No such email: check --subject and --sender.")
         return 1
     m = msgs[0]
+    exact = re.search(r"containing exactly:?\s*[\"\u201c](.+?)[\"\u201d]", m.get("body", ""), re.S)
+    if exact:                                  # "send a reply containing exactly: ...": it replies to the sender
+        text = " ".join(exact.group(1).split())
+        print(f"{GREY}  (the email says to reply with its own wording: the hijacked agent obeys){END}")
+        call("mail.send", {"to": m.get("from", ""), "subject": f"Re: {m.get('subject', '')}", "body": text})
+        return 0
     targets = [x for x in ADDR.findall(m.get("body", "")) if x.lower() != m.get("from", "").lower()]
     if not targets:
         print("The email names no address to send to: nothing to obey.")
