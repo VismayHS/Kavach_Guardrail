@@ -8,6 +8,10 @@ if [ -f .kavach/kavach.pid ] && kill -0 "$(cat .kavach/kavach.pid)" 2>/dev/null;
   kill "$(cat .kavach/kavach.pid)" && echo "KAVACH stopped"
   sleep 1
 fi
+if [ -f .kavach/metrics-bridge.pid ]; then
+  kill "$(cat .kavach/metrics-bridge.pid)" 2>/dev/null
+  rm -f .kavach/metrics-bridge.pid
+fi
 rm -f .kavach/kavach.pid .kavach/demo.db .kavach/demo.db.checkpoint.json && echo "KAVACH demo state cleared"
 if curl -sf -X DELETE http://127.0.0.1:8025/api/v1/messages >/dev/null; then
   echo "Mailpit inbox emptied"

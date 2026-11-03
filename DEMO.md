@@ -31,8 +31,9 @@ npm i -g @anthropic-ai/claude-code                   # for the REAL stories (sig
 #   INFERENCE_CLOUD_API_KEY=...   INFERENCE_CLOUD_ENDPOINT=https://aisuite.cirrascale.com/apis/v2
 ```
 
-Docker Desktop is needed for Grafana, Prometheus, Jaeger and Mailpit. Without Docker, `brew install mailpit` and
-skip the Grafana parts. The demo itself still works.
+Docker is needed for Grafana, Prometheus, Jaeger and Mailpit (Docker Desktop on macOS, Docker Engine on Linux). Without
+Docker, `brew install mailpit` and skip the Grafana parts. The demo itself still works. On Linux, `demo_up.sh` also
+starts `scripts/metrics_bridge.py`, because Prometheus in Docker can't reach 127.0.0.1 there; it forwards `/metrics` only.
 
 ## 1. Start (30 minutes before)
 
@@ -185,7 +186,7 @@ switch. The email left waiting from before the crash never leaves (`PAUSE OK`).
 | Port 8000 busy at `demo_up.sh` | `scripts/demo_reset.sh` stops an earlier KAVACH. The compose KAVACH is stopped automatically. |
 | Inbox panel says "Can't reach Mailpit" | `docker compose up -d mailpit` (or `brew install mailpit`). Then reload the console. |
 | Top bar says CHAIN BROKEN | The database was edited or the checkpoint removed. `/readyz` says which (`chain_reason`). For a clean demo: `scripts/demo_reset.sh` then `scripts/demo_up.sh`. Older databases are adopted automatically. |
-| Grafana panels empty | Prometheus at http://127.0.0.1:9090/targets: the `host` target must be UP. `demo_up.sh` must be running. |
+| Grafana panels empty | Prometheus at http://127.0.0.1:9090/targets: the `host` target must be UP (the `compose` target stays down in the live demo; that's expected). `demo_up.sh` must be running. On Linux, a firewall (ufw) can block the bridge: `sudo ufw allow in on docker0 to any port 8000`, or the compose network's interface if that's where Prometheus runs. |
 | Payment goes to Approvals instead of being refused | That's R41 passing: it is the account on record. Use **The scam email's account** button. |
 | INV-101 says already paid | **Start over** (top right of the Live demo page), or `scripts/demo_reset.sh`. |
 

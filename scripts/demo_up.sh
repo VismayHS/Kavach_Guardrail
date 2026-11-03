@@ -48,7 +48,7 @@ if curl -sf http://127.0.0.1:8025/api/v1/info >/dev/null && [ ${#RELAY[@]} -gt 0
   kill "$(lsof -nP -tiTCP:8025 -sTCP:LISTEN)" 2>/dev/null && sleep 1        # restart it with Gmail forwarding on
 fi
 if ! curl -sf http://127.0.0.1:8025/api/v1/info >/dev/null; then
-  command -v mailpit >/dev/null || { echo "Mailpit is not installed (macOS: brew install mailpit)"; exit 1; }
+  command -v mailpit >/dev/null || { echo "Mailpit isn't running. Start it: docker compose up -d mailpit (or brew install mailpit on macOS)"; exit 1; }
   nohup mailpit --listen 127.0.0.1:8025 --smtp 127.0.0.1:1025 --api-cors "127.0.0.1:${PORT},localhost:${PORT}" \
     ${RELAY[@]+"${RELAY[@]}"} > .kavach/mailpit.log 2>&1 &      # --api-cors: the Live demo page reads the inbox
   for _ in 1 2 3 4 5 6 7 8 9 10; do curl -sf http://127.0.0.1:8025/api/v1/info >/dev/null && break; sleep 0.5; done
@@ -63,6 +63,18 @@ if ! curl -sf http://127.0.0.1:8030/transfers >/dev/null; then       # the sandb
   for _ in 1 2 3 4 5 6 7 8 9 10; do curl -sf http://127.0.0.1:8030/transfers >/dev/null && break; sleep 0.5; done
 fi
 echo "Bank:    http://127.0.0.1:8030"
+
+# Linux: Prometheus in Docker reaches this machine at Docker's bridge address, not 127.0.0.1 (Docker Desktop hides the
+# difference). The bridge forwards GET /metrics only: the console stays on 127.0.0.1. It outlives a KAVACH restart, so
+# demo_recovery.py doesn't blank Grafana; demo_reset.sh stops it.
+if [ "$(uname -s)" = Linux ] && command -v docker >/dev/null 2>&1; then
+  GW=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || true)
+  if [ -n "$GW" ] && ip -4 addr 2>/dev/null | grep -q "inet $GW/" && ! curl -s -o /dev/null --max-time 1 "http://$GW:8000/metrics"; then
+    nohup "$PY" scripts/metrics_bridge.py "$GW" --upstream "http://127.0.0.1:$PORT" > .kavach/metrics-bridge.log 2>&1 &
+    echo $! > .kavach/metrics-bridge.pid
+    echo "Metrics: http://$GW:8000/metrics, for Prometheus in Docker (forwards /metrics only)"
+  fi
+fi
 
 if [ -f .env ] && [ -z "${KAVACH_NO_DOTENV:-}" ]; then   # the Qualcomm key: the judge writes its note on approval cards
   set -a; . ./.env; set +a                                 # (values are never printed; KAVACH_NO_DOTENV=1 skips it)
