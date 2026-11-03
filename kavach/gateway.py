@@ -47,7 +47,7 @@ def is_classified(msg: dict) -> bool:
     return bool(CLASSIFIED_SUBJECT.search(str(msg.get("subject", "")))
                 or CLASSIFIED_LINE.search(str(msg.get("body", ""))))
 AUTH_RULES = {"R1", "R3", "R4", "R5", "R6", "R7", "R8", "R11", "R12", "R14", "R15", "R18", "R19", "R20", "R21",
-              "R35", "R38", "R39", "R40", "R41", "R42", "R43", "KILL"}
+              "R35", "R38", "R39", "R40", "R41", "R42", "R43", "R45", "KILL"}
 
 
 @dataclass
@@ -854,6 +854,8 @@ class Kavach:
             "R20": "Don't change bank details from an email or document. Flag it for verification by phone with the "
                    "vendor's registered number.",
             "R21": "Don't pay this vendor. Escalate to compliance.",
+            "R45": "Don't announce an approval or a settlement; acknowledge receipt and say it is pending review. Only "
+                   "the authorised reviewer can approve, on KAVACH's approval queue.",
             "R44": "Don't send content from a message marked Internal Only or Confidential outside; tell the user, and "
                    "send a version without it, or ask the owner of that content.",
             "R41": "Look up the vendor on the invoice (vendor.read with the vendor_id from invoice.read) and pay its "

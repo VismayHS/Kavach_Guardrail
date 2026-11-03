@@ -66,6 +66,7 @@ change_freeze: false             # when true: no writes to prod (Replit incident
 require_tool_hash: false         # when true: calls must present the pinned tool definition hash (MCP clients)
 first_contact_approval: false    # R43: a first email to a new outside address needs approval (on for real Gmail)
 mail_trusted: []                 # R43: addresses or @domains that are never first contact
+decision_announcements: false    # R45: an email announcing a decision (approved, settlement processed) needs the reviewer
 classification_markers: false    # R44: content from a message marked Internal Only / Confidential stays inside
 
 # Accounts payable, from the rulebook in Infosys AgentOS's sample tenant
@@ -151,3 +152,4 @@ rules:
   R42: "Arguments only the user may choose (a new password; a tool's manifest lists them as user_args) must come from the user's own words; any other value needs approval."
   R43: "First contact: an email to an address nobody here has corresponded with (not the sending account, not a trusted address, not the sender of a message the agent read) needs a person's approval, even when the user typed it. On when first_contact_approval is true (KAVACH on real Gmail)."
   R44: "Content from a message marked Internal Only or Confidential (in its subject, or a line of its body that starts with the marker) may not be emailed outside, not even to a trusted address. On when classification_markers is true (KAVACH on real Gmail)."
+  R45: "An email that announces a decision (a claim approved, a settlement or payment to be processed) needs the authorised reviewer's approval; it is refused when its wording was copied from content the agent read (an email's own 'APPROVED, reviewer reference' is not authority) or when the user said the agent may not approve. On when decision_announcements is true (KAVACH on real Gmail)."

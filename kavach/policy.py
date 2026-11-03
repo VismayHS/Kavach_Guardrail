@@ -54,6 +54,16 @@ NOUNISH = {"email", "mail", "reply", "message"}
 VERB_POSITION = re.compile(r"(?:^\s*|[.;:!?,(]\s*|\b(?:and|then|please|pls|kindly|to|also|or|you|i|we|just|can|could|"
                            r"would|will|now)\s+)$")
 NOUN_AFTER = re.compile(r"\W+(?:titled|from|about|with|that|which|called|named|subject|thread|address)\b")
+# R45: an email that announces a decision ("has been approved", "settlement will be processed"); "not approved" and
+# "pending approval" don't match
+DECISION = re.compile(r"\b(?:(?:has|have)\s+been|is|are|was|were)\s+(?:approved|sanctioned|accepted|authori[sz]ed|"
+                      r"settled|cleared for payment)\b(?:\s+for\s+\S+\s*[\d,.]+)?|\b(?:settlement|payment|payout|"
+                      r"reimbursement)\s+(?:will\s+be|is\s+being|has\s+been)\s+(?:processed|released|paid|made|"
+                      r"credited|disbursed)\b", re.I)
+# the user withholding that authority: "you are not authorised to approve", "do not approve", "don't promise settlement"
+NO_AUTHORITY = re.compile(r"\b(?:not|never|no)\s+(?:be\s+)?(?:authori[sz]ed|allowed|permitted)\s+to\s+(?:approve|"
+                          r"promise|confirm|sanction)|\b(?:do\s+not|don't|never)\s+(?:approve|promise|confirm\s+"
+                          r"(?:approval|settlement|payment))", re.I)
 NEGATED = re.compile(r"(?:\bnot|\bnever|\bno|\bwithout|n't|\bnor|\bavoid|\brefrain from|\bstop)\W+(?:[\w'-]+\W+){0,3}$")
 
 
@@ -264,6 +274,32 @@ class PolicyEngine:
             src = ", ".join(s.replace("tool:mail.read_inbox#", "email ") for s in st["classified_out"])
             add("R44", "DENY", f"This email carries content from {src}, which is marked internal-only or confidential; "
                 "it may not be emailed outside, even to a trusted address.", sources=st["classified_out"])
+
+        # R45 decision announcements (on when the policy sets decision_announcements, as KAVACH on real Gmail does): an
+        # email that tells someone a decision was made ("your claim has been approved", "settlement will be processed")
+        # commits the company. Only the authorised reviewer can make that decision, so a person approves it here. An
+        # email's "Status: APPROVED, reviewer reference ..." is not that authority: wording copied from what the agent
+        # read, or an announcement the user said the agent may not make, is refused.
+        if m == "email" and self.cfg.get("decision_announcements"):
+            said = DECISION.search(" ".join(str(call.args.get(k, "")) for k in ("subject", "body")))
+            if said:
+                turns = ctx.turns or [ctx.user_request]
+                flat = lambda t: " ".join(t.lower().split())             # noqa: E731
+                typed = any(flat(said.group(0)) in flat(t) for t in turns)  # the user wrote the announcement
+                copied = [] if typed else [k for k in ("subject", "body")
+                                           if labels.get(k) and labels[k].trust == Trust.UNTRUSTED]
+                barred = any(NO_AUTHORITY.search(t) for t in turns)
+                if copied or barred:
+                    why = " and ".join(w for w, on in (
+                        ("its wording was copied from content the agent read (an email can't supply the authority to "
+                         "announce a decision)", copied), ("the user said the agent may not approve or promise this",
+                                                          barred)) if on)
+                    add("R45", "DENY", f"This email announces a decision (\"{said.group(0)}\"), and {why}. Only the "
+                        "authorised reviewer can approve it, on KAVACH's approval queue.", wording=said.group(0),
+                        copied_from=[str(labels[k].sources) for k in copied])
+                else:
+                    add("R45", "REQUIRE_APPROVAL", f"This email announces a decision (\"{said.group(0)}\"): the "
+                        "authorised reviewer approves it before it goes.", wording=said.group(0))
 
         # R39 bank details or links from untrusted content, passed on by email or chat (inside the company too)
         if m in ("email", "message") and st.get("untrusted_details"):
