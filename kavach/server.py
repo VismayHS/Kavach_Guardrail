@@ -55,6 +55,18 @@ from .connectors import SandboxBank, SmtpMailer  # noqa: E402
 env.mailer = SmtpMailer.from_env()   # E7: with KAVACH_SMTP_HOST, emails KAVACH lets go really leave (after their window)
 env.bank = SandboxBank.from_env()   # with KAVACH_BANK_URL, payments KAVACH lets go reach that bank (after their hold)
 gw = Kavach(env)
+MAIL_MODE = os.environ.get("KAVACH_MAIL", "demo")
+if MAIL_MODE == "gmail":       # real Gmail only: the inbox is read over IMAP, emails go out through Gmail's SMTP
+    from .connectors import GmailInbox, gmail_sender
+    env.mailbox, env.mailer = GmailInbox.from_env(), gmail_sender()
+    if env.mailbox is None or env.mailer is None:
+        raise SystemExit("KAVACH_MAIL=gmail needs KAVACH_GMAIL_USER and KAVACH_GMAIL_APP_PASSWORD (scripts/gmail_up.sh)")
+    gw.registry.specs["mail.read_inbox"].description = (
+        "Read the newest emails in the user's Gmail inbox, newest first: sender, subject, date and text.")
+    gw.registry.specs["mail.send"].description = (
+        "Send an email from the user's Gmail account. It leaves after a short window in which a person can cancel it.")
+    for _t in ("mail.read_inbox", "mail.send"):     # the operator's own wording at start-up, pinned as the definition
+        gw.registry.pins[_t] = gw.registry.specs[_t].definition_hash()
 if PROFILE.require_tool_hash:
     gw.policy.cfg["require_tool_hash"] = True
 if os.environ.get("KAVACH_LOG_JSON") == "1":          # F11: structured logs, a line per decision (no arguments)
@@ -790,6 +802,7 @@ def state():
             "stopped": [h for h in env.holds if h["status"] == "cancelled"][-5:],
             "hold_s": {"mail": MAIL_RECALL_S, "payment": PAYMENT_HOLD_S},
             "demo": {"mail_to": os.environ.get("KAVACH_DEMO_MAIL_TO")},     # set by demo_up.sh when Gmail is on
+            "mail": {"mode": MAIL_MODE, "account": getattr(env.mailer, "sender", None) if MAIL_MODE == "gmail" else None},
             "parked": parked, "drafts": env.drafts[-5:],
             "risk_model": gw.risk.source, "c_block": gw.cfg.c_block, "policy": gw.policy.version,
             "qualcomm_llm": gw.judge.llm.enabled, "judge_models": list(gw.judge.llm.picked or [gw.judge.llm.model])}
