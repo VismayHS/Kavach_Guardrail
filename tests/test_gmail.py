@@ -35,6 +35,7 @@ class FakeImap:
 
     def uid(self, cmd, *a):
         if cmd == "search":
+            FakeImap.calls.append(("search",) + a)
             return "OK", [b" ".join(str(u).encode() for u, _, _ in FakeImap.box)]
         FakeImap.calls.append(("fetch", a[1]))
         uid = int(a[0])
@@ -91,3 +92,15 @@ def test_sending_goes_through_gmail_with_the_same_account():
     s = gmail_sender({"KAVACH_GMAIL_USER": ME, "KAVACH_GMAIL_APP_PASSWORD": "abcd efgh ijkl mnop"})
     assert (s.host, s.port, s.starttls, s.user, s.sender, s.password) == ("smtp.gmail.com", 587, True, ME, ME, "abcdefghijklmnop")
     assert gmail_sender({}) is None and GmailInbox.from_env({}) is None
+
+
+def test_a_gmail_search_is_run_by_gmail_and_the_demo_inbox_matches_words():
+    FakeImap.box = [mail(5, "Northwind <accounts@northwind.example>", "Invoice 1042", "INR 18,400")]
+    inbox().latest(3, query='subject:"Invoice 1042"')
+    assert ("search", None, "X-GM-RAW", '"subject:\\"Invoice 1042\\""') in FakeImap.calls
+    from kavach.environment import Environment
+    import tempfile
+    env = Environment(tempfile.mkdtemp())
+    hits = env.mail_read_inbox(query="subject:Reconciliation")
+    assert [m["id"] for m in hits] == ["msg-4471"] and len(env.mail_read_inbox(limit=1)) == 1
+

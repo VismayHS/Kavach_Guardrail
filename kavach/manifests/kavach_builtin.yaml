@@ -36,6 +36,8 @@ tools:
     description: Read emails from the shared inbox.
     params:
       unread_only: bool
+      query: str
+      limit: int
     effect: ingress
     sink: none
     reversibility: idempotent

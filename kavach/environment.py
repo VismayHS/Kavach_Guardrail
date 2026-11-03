@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import random
+import re
 import shutil
 import sqlite3
 import threading
@@ -319,10 +320,20 @@ class Environment:
             self.db.commit()
             return {"rowcount": cur.rowcount}
 
-    def mail_read_inbox(self, unread_only: bool = True) -> list[dict]:
-        if self.mailbox is not None:          # a real inbox (Gmail): its newest messages, read or not, newest first
-            return self.mailbox.latest()
-        return [m for m in self.inbox if m["unread"] or not unread_only]
+    def mail_read_inbox(self, unread_only: bool = True, query: str | None = None, limit: int | None = None) -> list[dict]:
+        """query: Gmail search syntax (subject:invoice, from:a@b.com...). On a real inbox (Gmail) Gmail runs it and the
+        newest matches come back, read or not; on the demo company's inbox every word must appear in the message."""
+        if limit is not None:
+            limit = max(1, min(int(limit), 25))
+        if self.mailbox is not None:
+            return self.mailbox.latest(limit, query=query)
+        msgs = [m for m in self.inbox if m["unread"] or not unread_only]
+        if query:
+            words = re.findall(r"[\w@.+-]+", re.sub(r"\b(subject|from|to|in|is|label|has|newer_than|older_than):",
+                                                    " ", query.lower()))
+            msgs = [m for m in msgs if all(w in f"{m.get('subject', '')} {m.get('from', '')} {m.get('body', '')}".lower()
+                                           for w in words)]
+        return msgs[:limit] if limit else msgs
 
     def mail_send(self, to: str, subject: str, body: str, hold: bool = False) -> dict:
         msg = {"to": to, "subject": subject, "body": body}

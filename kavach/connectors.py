@@ -105,7 +105,9 @@ class GmailInbox:
         user, pw = env.get("KAVACH_GMAIL_USER"), env.get("KAVACH_GMAIL_APP_PASSWORD")
         return cls(user, pw, limit=int(env.get("KAVACH_GMAIL_READ_LIMIT") or 10)) if user and pw else None
 
-    def latest(self, n: int | None = None) -> list[dict]:
+    def latest(self, n: int | None = None, query: str | None = None) -> list[dict]:
+        """The newest n messages, or the newest n that match a Gmail search (query: the same syntax as Gmail's search
+        box, e.g. subject:"Invoice 1042" or from:alice@example.com, run by Gmail itself through X-GM-RAW)."""
         import email
         from email import policy
         from email.utils import parseaddr, parsedate_to_datetime
@@ -115,7 +117,11 @@ class GmailInbox:
         try:
             m.login(self.user, self.password)
             m.select(self.folder, readonly=True)
-            _typ, data = m.uid("search", None, "ALL")
+            if query and query.strip():
+                q = query.strip().encode("ascii", "ignore").decode().replace("\\", "\\\\").replace('"', '\\"')
+                _typ, data = m.uid("search", None, "X-GM-RAW", f'"{q}"')
+            else:
+                _typ, data = m.uid("search", None, "ALL")
             uids = (data[0] or b"").split()[-n:]
             for uid in reversed(uids):
                 _typ, parts = m.uid("fetch", uid, "(FLAGS BODY.PEEK[])")

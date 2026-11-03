@@ -62,7 +62,9 @@ if MAIL_MODE == "gmail":       # real Gmail only: the inbox is read over IMAP, e
     if env.mailbox is None or env.mailer is None:
         raise SystemExit("KAVACH_MAIL=gmail needs KAVACH_GMAIL_USER and KAVACH_GMAIL_APP_PASSWORD (scripts/gmail_up.sh)")
     gw.registry.specs["mail.read_inbox"].description = (
-        "Read the newest emails in the user's Gmail inbox, newest first: sender, subject, date and text.")
+        "Read emails from the user's Gmail inbox, newest first: sender, subject, date and text. query: a Gmail search "
+        "(the same syntax as Gmail's search box, e.g. subject:\"Invoice 1042\" or from:alice@example.com); limit: how "
+        "many (default 10, at most 25). unread_only is ignored: read and unread mail both come back.")
     gw.registry.specs["mail.send"].description = (
         "Send an email from the user's Gmail account. It leaves after a short window in which a person can cancel it.")
     for _t in ("mail.read_inbox", "mail.send"):     # the operator's own wording at start-up, pinned as the definition
