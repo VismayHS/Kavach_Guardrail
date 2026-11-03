@@ -71,6 +71,7 @@ if MAIL_MODE == "gmail":       # real Gmail only: the inbox is read over IMAP, e
         gw.registry.pins[_t] = gw.registry.specs[_t].definition_hash()
     # R43: on real mail, a first email to an address nobody here has corresponded with waits for a person
     gw.policy.cfg["first_contact_approval"] = True
+    gw.policy.cfg["classification_markers"] = True        # R44: Internal Only / Confidential content stays inside
     gw.policy.cfg["mail_trusted"] = [t.strip().lower() for t in os.environ.get("KAVACH_MAIL_TRUSTED", "").split(",")
                                      if t.strip()]
     gw.policy.version = f"{gw.policy.version}+gmail"     # receipts say which rules were on

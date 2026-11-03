@@ -257,6 +257,14 @@ class PolicyEngine:
                 f"{'this address' if len(new) == 1 else 'these addresses'} before, so a person confirms the recipient "
                 "and what is leaving before it goes.", recipients=new)
 
+        # R44 classified content (on when the policy sets classification_markers, as KAVACH on real Gmail does): what a
+        # message marked Internal Only or Confidential says may not be emailed outside, not even to a trusted address:
+        # the destination being trusted doesn't make the content shareable
+        if m == "email" and st.get("classified_out"):
+            src = ", ".join(s.replace("tool:mail.read_inbox#", "email ") for s in st["classified_out"])
+            add("R44", "DENY", f"This email carries content from {src}, which is marked internal-only or confidential; "
+                "it may not be emailed outside, even to a trusted address.", sources=st["classified_out"])
+
         # R39 bank details or links from untrusted content, passed on by email or chat (inside the company too)
         if m in ("email", "message") and st.get("untrusted_details"):
             add("R39", "REQUIRE_APPROVAL", f"The {m} repeats {', '.join(st['untrusted_details'])} from untrusted "

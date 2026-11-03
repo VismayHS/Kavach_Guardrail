@@ -239,6 +239,7 @@ class ProvenanceTracker:
     private_seen: bool = False      # the task has read PII / confidential data (lethal-trifecta leg 1)
     untrusted_seen: bool = False    # the task has read untrusted content (lethal-trifecta leg 2)
     senders: dict[str, str] = field(default_factory=dict)          # From: address of a message read -> source
+    classified: set[str] = field(default_factory=set)              # sources marked Internal Only / Confidential (R44)
     pii_owner: dict[str, set[str]] = field(default_factory=dict)   # PII value -> the records (people) it belongs to
     n_outputs: int = 0
     lookalike: object | None = None      # kavach.lookalike.Lookalike; a lookalike sender is never "reply to sender"

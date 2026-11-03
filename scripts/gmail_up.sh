@@ -35,8 +35,8 @@ setting() {
     [ -n "$v" ] && { export "$k=$v"; return 0; }
   done
 }
-for k in KAVACH_GMAIL_USER KAVACH_GMAIL_APP_PASSWORD INFERENCE_CLOUD_API_KEY INFERENCE_CLOUD_ENDPOINT \
-         IMAGINE_API_KEY IMAGINE_API_ENDPOINT; do setting "$k"; done
+for k in KAVACH_GMAIL_USER KAVACH_GMAIL_APP_PASSWORD KAVACH_MAIL_TRUSTED INFERENCE_CLOUD_API_KEY \
+         INFERENCE_CLOUD_ENDPOINT IMAGINE_API_KEY IMAGINE_API_ENDPOINT; do setting "$k"; done
 if [ -z "${KAVACH_GMAIL_USER:-}" ] || [ -z "${KAVACH_GMAIL_APP_PASSWORD:-}" ]; then
   echo "Put KAVACH_GMAIL_USER and KAVACH_GMAIL_APP_PASSWORD in .env first (see the top of this script)."
   exit 1
