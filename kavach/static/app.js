@@ -642,7 +642,7 @@ async function decide(btn) {
 }
 
 // ---------------------------------------------------------------- undo windows
-const money = tx => `${tx.invoice ? 'EUR ' : ''}${Number(tx.amount).toLocaleString()}`;
+const money = tx => `${tx.currency ? `${tx.currency} ` : tx.invoice ? 'EUR ' : ''}${Number(tx.amount).toLocaleString()}`;
 function waitingRow(h) {
   const pay = h.kind === 'payment';
   const title = pay ? `Payment of ${money(h.tx)}${h.tx.invoice ? ` for ${h.tx.invoice}` : ''}` : `Email to ${h.msg.to}`;
