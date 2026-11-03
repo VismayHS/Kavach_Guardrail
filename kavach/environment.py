@@ -77,6 +77,7 @@ class Environment:
         self.on_hold: list = []    # callbacks(hold) when a hold is created, settles or is cancelled (E6: persisted)
         self.claim = None          # (hold, from, to) -> status now: a shared database decides each move (store.attach)
         self.mailer = None        # E7: a real mail connector (kavach/connectors.py); None = the simulated outbox only
+        self.mailbox = None       # a real inbox to read (connectors.GmailInbox); None = the demo company's inbox
         self.shell = None          # E10: kavach.shell.DockerSandbox; None = shell commands are never run here
         self.reset()
 
@@ -319,6 +320,8 @@ class Environment:
             return {"rowcount": cur.rowcount}
 
     def mail_read_inbox(self, unread_only: bool = True) -> list[dict]:
+        if self.mailbox is not None:          # a real inbox (Gmail): its newest messages, read or not, newest first
+            return self.mailbox.latest()
         return [m for m in self.inbox if m["unread"] or not unread_only]
 
     def mail_send(self, to: str, subject: str, body: str, hold: bool = False) -> dict:
