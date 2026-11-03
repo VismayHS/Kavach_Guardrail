@@ -1,9 +1,10 @@
 {
- "version": "2026-11-03.1",
+ "version": "2026-11-03.2",
  "currency": "USD",
  "unit": "per 1M tokens",
- "note": "Estimates only. Qualcomm's Cloud AI Playground (Cirrascale Inference Cloud) publishes no per-token price: the playground is free with limited throughput, and paid access is priced after sign-in or as Cloud AI 100 servers by the month (searched 3 Nov 2026: cirrascale.com/inference-cloud-qualcomm, cirrascale.com/ai-innovation-cloud/inference). The Llama-3.3-70B row is a reference rate from other hosts' public list prices, NOT Qualcomm's, and not verified on those hosts' own pages. A model with no row is unpriced: its tokens are counted, its cost is unknown, never zero.",
+ "note": "Reference list prices, not Qualcomm's. KAVACH's models run on Qualcomm's Cloud AI Playground (Cirrascale Inference Cloud), which is free with limited throughput and publishes no per-token price: Cirrascale says customers 'pay only for their AI model usage' but shows rates only after sign-in, and its public Qualcomm prices are servers by the month (8x AI 100 Ultra, $4,699/month) (searched 3 Nov 2026: cirrascale.com/inference-cloud-qualcomm, cirrascale.com/ai-innovation-cloud/training). So the money spent on the playground is $0; these rows say what the same tokens would cost on a public pay-per-token host. Both rows come from one host (Groq) so they are comparable. A model with no row is unpriced: its tokens are counted, its cost is unknown, never zero.",
  "models": {
-  "Llama-3.3-70B": {"input": 0.25, "output": 0.75, "source": "reference: GMI Cloud list price for Llama 3.3 70B as quoted at gmicloud.ai (Nov 2026); other hosts quote 0.20 / 0.50", "qualcomm": false}
+  "Llama-3.1-8B": {"input": 0.05, "output": 0.08, "source": "reference: Groq list price for 'Llama 3.1 8B Instant', groq.com/pricing (seen in search results 3 Nov 2026; one report of 26 Aug 2026 says Groq moved it to contact-sales, not confirmed on Groq's page)", "qualcomm": false},
+  "Llama-3.3-70B": {"input": 0.59, "output": 0.79, "source": "reference: Groq list price for 'Llama 3.3 70B Versatile', groq.com/pricing (seen in search results 3 Nov 2026; same caveat as the 8B row). Other hosts range from 0.10 to 1.04 per 1M input tokens", "qualcomm": false}
  }
 }

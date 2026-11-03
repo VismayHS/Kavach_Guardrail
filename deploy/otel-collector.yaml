@@ -1,5 +1,6 @@
 # OpenTelemetry collector: KAVACH sends one span per decision (OTLP/HTTP); the collector batches them and forwards
-# to Jaeger (trace UI on :16686). Add any other exporter here (Grafana Tempo, Datadog, Honeycomb...) without
+# to Jaeger (trace UI on :16686). Agents send their own model usage here as metrics (Claude Code's telemetry, the Llama
+# agent's tokens and cost); they leave on :8889 for Prometheus, with who-you-are attributes removed first. Add any other exporter here (Grafana Tempo, Datadog, Honeycomb...) without
 # touching KAVACH. Tool arguments and results are never in the spans.
 receivers:
   otlp:
@@ -12,6 +13,11 @@ receivers:
 processors:
   batch:
     timeout: 2s
+  attributes/private:              # Claude Code labels its metrics with the account: not needed to count cost
+    actions:
+      - {key: user.email, action: delete}
+      - {key: user.account_uuid, action: delete}
+      - {key: organization.id, action: delete}
 
 exporters:
   otlp/jaeger:
@@ -20,6 +26,11 @@ exporters:
       insecure: true
   debug:
     verbosity: basic
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    metric_expiration: 24h         # an agent that exited keeps its total (the default 5m made cost fall back down)
+    resource_to_telemetry_conversion:
+      enabled: false
 
 service:
   pipelines:
@@ -27,3 +38,7 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [otlp/jaeger, debug]
+    metrics:
+      receivers: [otlp]
+      processors: [attributes/private, batch]
+      exporters: [prometheus]

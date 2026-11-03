@@ -1685,7 +1685,7 @@
    "gridPos": {
     "x": 0,
     "y": 45,
-    "w": 12,
+    "w": 24,
     "h": 8
    },
    "targets": [
@@ -1753,18 +1753,698 @@
   },
   {
    "id": 27,
-   "type": "timeseries",
-   "title": "Model calls per minute, by component",
-   "description": "judge, explainer, planner, agent: each Qualcomm call, and retries (rate limits, 5xx, timeouts).",
+   "type": "stat",
+   "title": "KAVACH's own model cost",
+   "description": "What KAVACH itself spent deciding: the Qualcomm judge's notes on escalations, explanations, the planner. Money is an estimate: tokens x reference list prices (Groq's public prices for the same Llama models, kavach/model_prices.json). Qualcomm's Cloud AI Playground is free and publishes no per-token price, so what was actually paid on it is $0.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 53,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum(kavach_model_cost_usd_total{side=\"kavach\"}) or vector(0)",
+     "instant": true,
+     "legendFormat": "KAVACH's own model cost"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "currencyUSD",
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 6,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#2a78d6",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 28,
+   "type": "stat",
+   "title": "KAVACH cost per 1,000 decisions",
+   "description": "KAVACH's own model cost divided by its decisions, times 1,000. Most decisions use no model at all (rules and the risk model run on CPU).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 4,
+    "y": 53,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "1000 * (sum(kavach_model_cost_usd_total{side=\"kavach\"}) or vector(0)) / sum(kavach_decisions_total)",
+     "instant": true,
+     "legendFormat": "KAVACH cost per 1,000 decisions"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "currencyUSD",
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 4,
+     "noValue": "no decisions yet",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#2a78d6",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 29,
+   "type": "stat",
+   "title": "Agent cost: Claude",
+   "description": "Claude's own spend as Claude Code reports it (claude_code.cost.usage, with CLAUDE_CODE_ENABLE_TELEMETRY on: scripts/demo_claude.sh sets it). Claude Code's figure is an approximation; the bill is in the Claude Console. On a Pro/Max subscription it is notional: what the same tokens would cost on the API.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 53,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum({__name__=~\"claude_code_cost_usage.*\"}) or vector(0)",
+     "instant": true,
+     "legendFormat": "Agent cost: Claude"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "currencyUSD",
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 4,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#2a78d6",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 30,
+   "type": "stat",
+   "title": "Agent cost: Llama",
+   "description": "The Llama agent's own tokens (scripts/llama_agent.py reports them after each turn) x the reference price. Money is an estimate: tokens x reference list prices (Groq's public prices for the same Llama models, kavach/model_prices.json). Qualcomm's Cloud AI Playground is free and publishes no per-token price, so what was actually paid on it is $0.",
    "datasource": {
     "type": "prometheus",
     "uid": "kavach-prom"
    },
    "gridPos": {
     "x": 12,
-    "y": 45,
+    "y": 53,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "(sum({__name__=~\"kavach_agent_cost.*\"}) or vector(0)) + (sum(kavach_model_cost_usd_total{side=\"agent\"}) or vector(0))",
+     "instant": true,
+     "legendFormat": "Agent cost: Llama"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "currencyUSD",
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 4,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#2a78d6",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 31,
+   "type": "stat",
+   "title": "KAVACH overhead, % of agent cost",
+   "description": "KAVACH's own model cost as a share of what the agents spent. Empty until an agent has reported a cost.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 53,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "100 * (sum(kavach_model_cost_usd_total{side=\"kavach\"}) or vector(0)) / (((sum({__name__=~\"claude_code_cost_usage.*\"}) or vector(0)) + ((sum({__name__=~\"kavach_agent_cost.*\"}) or vector(0)) + (sum(kavach_model_cost_usd_total{side=\"agent\"}) or vector(0)))) > 0)",
+     "instant": true,
+     "legendFormat": "KAVACH overhead, % of agent cost"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 3,
+     "noValue": "no agent cost yet",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#2a78d6",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 32,
+   "type": "stat",
+   "title": "Failed model calls (may be billed)",
+   "description": "KAVACH's model calls that errored or timed out. No tokens came back, so no cost is counted, but a call that timed out may still have been billed. The judge and explainer fall back to deterministic text; decisions never loosen.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 20,
+    "y": 53,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum(kavach_model_calls_total{outcome=\"error\"}) or vector(0)",
+     "instant": true,
+     "legendFormat": "Failed model calls (may be billed)"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#6b6b6b",
+        "value": null
+       },
+       {
+        "color": "#ec835a",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 33,
+   "type": "timeseries",
+   "title": "Claude tokens per 5 min, by model and kind (as Claude Code reports them)",
+   "description": "input, output, cacheRead, cacheCreation: cached tokens are billed at a different rate, which is why Claude Code's own cost is used rather than tokens x one price.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 57,
     "w": 12,
     "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum by (model, type) (increase({__name__=~\"claude_code_token_usage.*\"}[5m]))",
+     "legendFormat": "{{model}} {{type}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "pointSize": 8,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "drawStyle": "line",
+      "axisSoftMin": 0,
+      "gradientMode": "none"
+     },
+     "color": {
+      "mode": "palette-classic"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 34,
+   "type": "timeseries",
+   "title": "KAVACH and Llama tokens per 5 min, by component and model",
+   "description": "From each reply's usage field. Calls without one are counted apart (Usage unknown).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 57,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum by (component, model, kind) (increase(kavach_model_tokens_total[5m]))",
+     "legendFormat": "kavach {{component}} {{model}} {{kind}}"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum by (model, kind) (increase({__name__=~\"kavach_agent_tokens.*\"}[5m]))",
+     "legendFormat": "llama agent {{model}} {{kind}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "pointSize": 8,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "drawStyle": "line",
+      "axisSoftMin": 0,
+      "gradientMode": "none"
+     },
+     "color": {
+      "mode": "palette-classic"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 35,
+   "type": "stat",
+   "title": "Unpriced tokens",
+   "description": "Tokens of models with no price in the table: their cost is unknown, not zero.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 65,
+    "w": 6,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "(sum(kavach_model_unpriced_tokens_total) or vector(0)) + (sum({__name__=~\"kavach_agent_unpriced_tokens.*\"}) or vector(0))",
+     "instant": true,
+     "legendFormat": "Unpriced tokens"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#2a78d6",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 36,
+   "type": "stat",
+   "title": "Usage unknown (calls)",
+   "description": "Successful calls whose reply had no usage field: their tokens and cost are unknown, not zero.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 6,
+    "y": 65,
+    "w": 6,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum(kavach_model_usage_unknown_total) or vector(0)",
+     "instant": true,
+     "legendFormat": "Usage unknown (calls)"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#2a78d6",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 37,
+   "type": "stat",
+   "title": "KAVACH model calls",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 65,
+    "w": 6,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "kavach-prom"
+     },
+     "expr": "sum(kavach_model_calls_total{side=\"kavach\"}) or vector(0)",
+     "instant": true,
+     "legendFormat": "KAVACH model calls"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#2a78d6",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 38,
+   "type": "timeseries",
+   "title": "Model calls per minute, by component",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "kavach-prom"
+   },
+   "gridPos": {
+    "x": 18,
+    "y": 65,
+    "w": 6,
+    "h": 4
    },
    "targets": [
     {
@@ -1818,430 +2498,6 @@
      "placement": "bottom",
      "showLegend": true
     }
-   }
-  },
-  {
-   "id": 28,
-   "type": "timeseries",
-   "title": "Tokens per 5 min, by component (as the API reported them)",
-   "description": "From each reply's usage field. Calls without one are counted apart (Usage unknown).",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "kavach-prom"
-   },
-   "gridPos": {
-    "x": 0,
-    "y": 53,
-    "w": 12,
-    "h": 8
-   },
-   "targets": [
-    {
-     "refId": "A",
-     "datasource": {
-      "type": "prometheus",
-      "uid": "kavach-prom"
-     },
-     "expr": "sum by (component, kind) (increase(kavach_model_tokens_total[5m]))",
-     "legendFormat": "{{component}} {{kind}}"
-    }
-   ],
-   "fieldConfig": {
-    "defaults": {
-     "unit": "none",
-     "custom": {
-      "lineWidth": 2,
-      "fillOpacity": 0,
-      "pointSize": 8,
-      "showPoints": "never",
-      "stacking": {
-       "mode": "none",
-       "group": "A"
-      },
-      "drawStyle": "line",
-      "axisSoftMin": 0,
-      "gradientMode": "none"
-     },
-     "color": {
-      "mode": "palette-classic"
-     }
-    },
-    "overrides": []
-   },
-   "options": {
-    "tooltip": {
-     "mode": "multi",
-     "sort": "desc"
-    },
-    "legend": {
-     "displayMode": "list",
-     "placement": "bottom",
-     "showLegend": true
-    }
-   }
-  },
-  {
-   "id": 29,
-   "type": "stat",
-   "title": "Estimated model cost",
-   "description": "Tokens x the versioned price table (kavach/model_prices.json). Qualcomm publishes no per-token price; the 70B row is a reference rate from other hosts, not Qualcomm's.",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "kavach-prom"
-   },
-   "gridPos": {
-    "x": 12,
-    "y": 53,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "refId": "A",
-     "datasource": {
-      "type": "prometheus",
-      "uid": "kavach-prom"
-     },
-     "expr": "sum(kavach_model_cost_usd_total) or vector(0)",
-     "instant": true,
-     "legendFormat": "Estimated model cost"
-    }
-   ],
-   "fieldConfig": {
-    "defaults": {
-     "unit": "currencyUSD",
-     "color": {
-      "mode": "thresholds"
-     },
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "#2a78d6",
-        "value": null
-       }
-      ]
-     }
-    },
-    "overrides": []
-   },
-   "options": {
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    },
-    "colorMode": "value",
-    "graphMode": "none",
-    "textMode": "value",
-    "justifyMode": "auto",
-    "orientation": "auto"
-   }
-  },
-  {
-   "id": 30,
-   "type": "stat",
-   "title": "Est. cost per decision",
-   "description": "Estimated model cost divided by decisions KAVACH made.",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "kavach-prom"
-   },
-   "gridPos": {
-    "x": 16,
-    "y": 53,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "refId": "A",
-     "datasource": {
-      "type": "prometheus",
-      "uid": "kavach-prom"
-     },
-     "expr": "(sum(kavach_model_cost_usd_total) or vector(0)) / sum(kavach_decisions_total)",
-     "instant": true,
-     "legendFormat": "Est. cost per decision"
-    }
-   ],
-   "fieldConfig": {
-    "defaults": {
-     "unit": "currencyUSD",
-     "color": {
-      "mode": "thresholds"
-     },
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "#2a78d6",
-        "value": null
-       }
-      ]
-     }
-    },
-    "overrides": []
-   },
-   "options": {
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    },
-    "colorMode": "value",
-    "graphMode": "none",
-    "textMode": "value",
-    "justifyMode": "auto",
-    "orientation": "auto"
-   }
-  },
-  {
-   "id": 31,
-   "type": "stat",
-   "title": "Unpriced tokens",
-   "description": "Tokens of models with no price in the table: their cost is unknown, not zero.",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "kavach-prom"
-   },
-   "gridPos": {
-    "x": 20,
-    "y": 53,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "refId": "A",
-     "datasource": {
-      "type": "prometheus",
-      "uid": "kavach-prom"
-     },
-     "expr": "sum(kavach_model_unpriced_tokens_total) or vector(0)",
-     "instant": true,
-     "legendFormat": "Unpriced tokens"
-    }
-   ],
-   "fieldConfig": {
-    "defaults": {
-     "unit": "none",
-     "color": {
-      "mode": "thresholds"
-     },
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "#2a78d6",
-        "value": null
-       }
-      ]
-     }
-    },
-    "overrides": []
-   },
-   "options": {
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    },
-    "colorMode": "value",
-    "graphMode": "none",
-    "textMode": "value",
-    "justifyMode": "auto",
-    "orientation": "auto"
-   }
-  },
-  {
-   "id": 32,
-   "type": "stat",
-   "title": "Usage unknown (calls)",
-   "description": "Successful calls whose reply had no usage field.",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "kavach-prom"
-   },
-   "gridPos": {
-    "x": 12,
-    "y": 57,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "refId": "A",
-     "datasource": {
-      "type": "prometheus",
-      "uid": "kavach-prom"
-     },
-     "expr": "sum(kavach_model_usage_unknown_total) or vector(0)",
-     "instant": true,
-     "legendFormat": "Usage unknown (calls)"
-    }
-   ],
-   "fieldConfig": {
-    "defaults": {
-     "unit": "none",
-     "color": {
-      "mode": "thresholds"
-     },
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "#2a78d6",
-        "value": null
-       }
-      ]
-     }
-    },
-    "overrides": []
-   },
-   "options": {
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    },
-    "colorMode": "value",
-    "graphMode": "none",
-    "textMode": "value",
-    "justifyMode": "auto",
-    "orientation": "auto"
-   }
-  },
-  {
-   "id": 33,
-   "type": "stat",
-   "title": "Model call errors",
-   "description": "The judge and explainer fall back to deterministic text; decisions never loosen.",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "kavach-prom"
-   },
-   "gridPos": {
-    "x": 16,
-    "y": 57,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "refId": "A",
-     "datasource": {
-      "type": "prometheus",
-      "uid": "kavach-prom"
-     },
-     "expr": "sum(kavach_model_calls_total{outcome=\"error\"}) or vector(0)",
-     "instant": true,
-     "legendFormat": "Model call errors"
-    }
-   ],
-   "fieldConfig": {
-    "defaults": {
-     "unit": "none",
-     "color": {
-      "mode": "thresholds"
-     },
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "#6b6b6b",
-        "value": null
-       },
-       {
-        "color": "#ec835a",
-        "value": 1
-       }
-      ]
-     }
-    },
-    "overrides": []
-   },
-   "options": {
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    },
-    "colorMode": "value",
-    "graphMode": "none",
-    "textMode": "value",
-    "justifyMode": "auto",
-    "orientation": "auto"
-   }
-  },
-  {
-   "id": 34,
-   "type": "stat",
-   "title": "Model calls",
-   "description": "",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "kavach-prom"
-   },
-   "gridPos": {
-    "x": 20,
-    "y": 57,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "refId": "A",
-     "datasource": {
-      "type": "prometheus",
-      "uid": "kavach-prom"
-     },
-     "expr": "sum(kavach_model_calls_total) or vector(0)",
-     "instant": true,
-     "legendFormat": "Model calls"
-    }
-   ],
-   "fieldConfig": {
-    "defaults": {
-     "unit": "none",
-     "color": {
-      "mode": "thresholds"
-     },
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "#2a78d6",
-        "value": null
-       }
-      ]
-     }
-    },
-    "overrides": []
-   },
-   "options": {
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    },
-    "colorMode": "value",
-    "graphMode": "none",
-    "textMode": "value",
-    "justifyMode": "auto",
-    "orientation": "auto"
    }
   }
  ],

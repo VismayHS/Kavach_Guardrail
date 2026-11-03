@@ -25,6 +25,17 @@ sys.path.insert(0, str(ROOT))
 
 from agent.llm_agent import REPAIR, broken_call, text_tool_calls  # noqa: E402
 from kavach.qualcomm import QualcommCloudAI  # noqa: E402
+from kavach.otlp_metrics import push, usage_points  # noqa: E402
+from kavach.usage import METER  # noqa: E402
+
+OTLP = os.environ.get("KAVACH_AGENT_OTLP", "http://127.0.0.1:4318")   # "" turns it off
+
+
+def report_usage(agent: str) -> None:
+    """This agent's own tokens and cost (tokens x the reference price table) to Grafana, through the collector, the
+    way Claude Code reports Claude's. Silent if the collector isn't running."""
+    if OTLP:
+        push(OTLP, "llama-agent", usage_points(METER.snapshot(), agent))
 
 SYSTEM = ("You are an email assistant with access to the user's mailbox through tools. Complete the user's request, "
           "calling tools when needed, and finish with a short answer saying what you did.")
@@ -145,7 +156,10 @@ def main() -> int:
         prompt = prompts.pop(0) if prompts else (None if prompts is not None else input("\nyou> ").strip())
         if not prompt:
             return 0
-        print(f"\nllama> {turn(llm, kv, tools, msgs, prompt)}")
+        try:
+            print(f"\nllama> {turn(llm, kv, tools, msgs, prompt)}")
+        finally:
+            report_usage(kv.session)
         if prompts is not None and not prompts:
             return 0
 

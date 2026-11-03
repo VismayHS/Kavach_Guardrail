@@ -45,7 +45,9 @@ services:
   otel-collector:
     image: otel/opentelemetry-collector:0.139.0
     command: ["--config=/etc/otelcol/config.yaml"]
-    ports: ["127.0.0.1:4318:4318"]     # KAVACH on the host (scripts/demo_up.sh) sends its spans here too
+    ports: ["127.0.0.1:4318:4318", "127.0.0.1:8889:8889"]   # 4318: spans from KAVACH, and agents' usage metrics
+                                                             # (Claude Code, scripts/llama_agent.py); 8889: those
+                                                             # metrics for Prometheus
     volumes:
       - ./deploy/otel-collector.yaml:/etc/otelcol/config.yaml:ro
     depends_on: [jaeger]

@@ -19,6 +19,13 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 DEMO_HOME=${KAVACH_CLAUDE_HOME:-$HOME/.kavach-demo}
 mkdir -p "$DEMO_HOME" && cd "$DEMO_HOME"
 export KAVACH_REPO=$REPO                               # where the hook lives (settings.json uses it)
+# Claude's own token use and cost, as Claude Code reports it, go to Grafana through the collector (when it runs):
+# claude_code.cost.usage / claude_code.token.usage. The collector drops the account attributes before Prometheus.
+if curl -s -o /dev/null --max-time 1 http://127.0.0.1:4318/ 2>/dev/null; then
+  export CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=otlp OTEL_EXPORTER_OTLP_PROTOCOL=http/json \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_METRIC_EXPORT_INTERVAL=5000 \
+    OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false
+fi
 if [ "${1:-}" = "--without-kavach" ]; then
   shift
   PY=$REPO/.venv/bin/python

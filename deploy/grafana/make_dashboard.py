@@ -16,13 +16,15 @@ def verdict_overrides():
 
 
 def stat(title, expr, x, y, w=4, h=4, color="#2a78d6", desc="", unit="none", alarm=None, steps=None, legend=None,
-         names=False):
+         names=False, decimals=None, no_value=None):
     steps = steps or ([{"color": color, "value": None}] if alarm is None else [{"color": "#6b6b6b", "value": None},
                                                                                {"color": alarm, "value": 1}])
     return {"id": next(NID), "type": "stat", "title": title, "description": desc, "datasource": DS,
             "gridPos": {"x": x, "y": y, "w": w, "h": h},
             "targets": [{"refId": "A", "datasource": DS, "expr": expr, "instant": True, "legendFormat": legend or title}],
             "fieldConfig": {"defaults": {"unit": unit, "color": {"mode": "thresholds"},
+                                         **({"decimals": decimals} if decimals is not None else {}),
+                                         **({"noValue": no_value} if no_value else {}),
                                          "thresholds": {"mode": "absolute", "steps": steps}},
                             "overrides": []},
             "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
@@ -140,30 +142,59 @@ P.append(stat("KAVACH up", 'sum(up{job="kavach"})', 20, y, w=4, steps=GOOD,
 y += 4
 P.append(ts("End-to-end time of an agent's request (ms)",
             [(f'histogram_quantile({q}, sum by (le) (rate(kavach_request_latency_ms_bucket{{route="mcp"}}[5m])))', f"p{int(q * 100)}")
-             for q in (0.5, 0.95, 0.99)], 0, y, unit="ms",
+             for q in (0.5, 0.95, 0.99)], 0, y, w=24, unit="ms",
             desc="/mcp tools/call, from request in to answer out: what the agent waits. Spikes of seconds are escalated calls carrying the live Qualcomm judge's note."))
-P.append(ts("Model calls per minute, by component",
-            [('sum by (component, outcome) (rate(kavach_model_calls_total[5m])) * 60', "{{component}} {{outcome}}"),
-             ("sum by (component) (rate(kavach_model_retries_total[5m])) * 60", "{{component}} retries")], 12, y,
-            desc="judge, explainer, planner, agent: each Qualcomm call, and retries (rate limits, 5xx, timeouts)."))
 y += 8
 
-# ---- model usage and cost (usage is measured; currency is an estimate)
-P.append(ts("Tokens per 5 min, by component (as the API reported them)",
-            [("sum by (component, kind) (increase(kavach_model_tokens_total[5m]))", "{{component}} {{kind}}")], 0, y,
-            desc="From each reply's usage field. Calls without one are counted apart (Usage unknown)."))
-P.append(stat("Estimated model cost", "sum(kavach_model_cost_usd_total) or vector(0)", 12, y, unit="currencyUSD",
-              desc="Tokens x the versioned price table (kavach/model_prices.json). Qualcomm publishes no per-token "
-                   "price; the 70B row is a reference rate from other hosts, not Qualcomm's."))
-P.append(stat("Est. cost per decision", "(sum(kavach_model_cost_usd_total) or vector(0)) / sum(kavach_decisions_total)",
-              16, y, unit="currencyUSD", desc="Estimated model cost divided by decisions KAVACH made."))
-P.append(stat("Unpriced tokens", "sum(kavach_model_unpriced_tokens_total) or vector(0)", 20, y,
+# ---- model usage and cost. Tokens are measured (each reply's usage field, or the agent's own report); money is
+# tokens x reference list prices (kavach/model_prices.json), because Qualcomm's playground is free and publishes none.
+KV = 'sum(kavach_model_cost_usd_total{side="kavach"}) or vector(0)'
+CLAUDE = 'sum({__name__=~"claude_code_cost_usage.*"}) or vector(0)'
+LLAMA = ('(sum({__name__=~"kavach_agent_cost.*"}) or vector(0)) + '
+         '(sum(kavach_model_cost_usd_total{side="agent"}) or vector(0))')
+PRICE_NOTE = ("Money is an estimate: tokens x reference list prices (Groq's public prices for the same Llama models, "
+              "kavach/model_prices.json). Qualcomm's Cloud AI Playground is free and publishes no per-token price, "
+              "so what was actually paid on it is $0.")
+P.append(stat("KAVACH's own model cost", KV, 0, y, unit="currencyUSD", decimals=6,
+              desc="What KAVACH itself spent deciding: the Qualcomm judge's notes on escalations, explanations, the "
+                   "planner. " + PRICE_NOTE))
+P.append(stat("KAVACH cost per 1,000 decisions", f"1000 * ({KV}) / sum(kavach_decisions_total)", 4, y,
+              unit="currencyUSD", decimals=4, no_value="no decisions yet", desc="KAVACH's own model cost divided by its decisions, times 1,000. "
+              "Most decisions use no model at all (rules and the risk model run on CPU)."))
+P.append(stat("Agent cost: Claude", CLAUDE, 8, y, unit="currencyUSD", decimals=4,
+              desc="Claude's own spend as Claude Code reports it (claude_code.cost.usage, with "
+                   "CLAUDE_CODE_ENABLE_TELEMETRY on: scripts/demo_claude.sh sets it). Claude Code's figure is an "
+                   "approximation; the bill is in the Claude Console. On a Pro/Max subscription it is notional: "
+                   "what the same tokens would cost on the API."))
+P.append(stat("Agent cost: Llama", LLAMA, 12, y, unit="currencyUSD", decimals=4,
+              desc="The Llama agent's own tokens (scripts/llama_agent.py reports them after each turn) x the "
+                   "reference price. " + PRICE_NOTE))
+P.append(stat("KAVACH overhead, % of agent cost", f"100 * ({KV}) / ((({CLAUDE}) + ({LLAMA})) > 0)", 16, y,
+              unit="percent", decimals=3, no_value="no agent cost yet", desc="KAVACH's own model cost as a share of what the agents spent. Empty "
+              "until an agent has reported a cost."))
+P.append(stat("Failed model calls (may be billed)", 'sum(kavach_model_calls_total{outcome="error"}) or vector(0)', 20, y,
+              alarm=STATUS["ESCALATE"], desc="KAVACH's model calls that errored or timed out. No tokens came back, so "
+              "no cost is counted, but a call that timed out may still have been billed. The judge and explainer "
+              "fall back to deterministic text; decisions never loosen."))
+y += 4
+P.append(ts("Claude tokens per 5 min, by model and kind (as Claude Code reports them)",
+            [('sum by (model, type) (increase({__name__=~"claude_code_token_usage.*"}[5m]))', "{{model}} {{type}}")],
+            0, y, desc="input, output, cacheRead, cacheCreation: cached tokens are billed at a different rate, which "
+                       "is why Claude Code's own cost is used rather than tokens x one price."))
+P.append(ts("KAVACH and Llama tokens per 5 min, by component and model",
+            [("sum by (component, model, kind) (increase(kavach_model_tokens_total[5m]))", "kavach {{component}} {{model}} {{kind}}"),
+             ('sum by (model, kind) (increase({__name__=~"kavach_agent_tokens.*"}[5m]))', "llama agent {{model}} {{kind}}")],
+            12, y, desc="From each reply's usage field. Calls without one are counted apart (Usage unknown)."))
+y += 8
+P.append(stat("Unpriced tokens", '(sum(kavach_model_unpriced_tokens_total) or vector(0)) + '
+              '(sum({__name__=~"kavach_agent_unpriced_tokens.*"}) or vector(0))', 0, y, w=6,
               desc="Tokens of models with no price in the table: their cost is unknown, not zero."))
-P.append(stat("Usage unknown (calls)", "sum(kavach_model_usage_unknown_total) or vector(0)", 12, y + 4,
-              desc="Successful calls whose reply had no usage field."))
-P.append(stat("Model call errors", 'sum(kavach_model_calls_total{outcome="error"}) or vector(0)', 16, y + 4,
-              alarm=STATUS["ESCALATE"], desc="The judge and explainer fall back to deterministic text; decisions never loosen."))
-P.append(stat("Model calls", "sum(kavach_model_calls_total) or vector(0)", 20, y + 4))
+P.append(stat("Usage unknown (calls)", "sum(kavach_model_usage_unknown_total) or vector(0)", 6, y, w=6,
+              desc="Successful calls whose reply had no usage field: their tokens and cost are unknown, not zero."))
+P.append(stat("KAVACH model calls", 'sum(kavach_model_calls_total{side="kavach"}) or vector(0)', 12, y, w=6))
+P.append(ts("Model calls per minute, by component", [
+    ('sum by (component, outcome) (rate(kavach_model_calls_total[5m])) * 60', "{{component}} {{outcome}}"),
+    ("sum by (component) (rate(kavach_model_retries_total[5m])) * 60", "{{component}} retries")], 18, y, w=6, h=4))
 
 dash = {"uid": "kavach-overview", "title": "KAVACH: agent action firewall", "tags": ["kavach", "security"],
         "timezone": "browser", "schemaVersion": 39, "version": 1, "refresh": "5s",

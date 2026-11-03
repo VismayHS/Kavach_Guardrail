@@ -17,3 +17,9 @@ scrape_configs:
         labels: {where: compose}
       - targets: ["host.docker.internal:8000"]
         labels: {where: host}
+
+  # Agents' own model usage and cost, pushed over OTLP to the collector: Claude Code's telemetry
+  # (claude_code_cost_usage*, claude_code_token_usage*) and scripts/llama_agent.py (kavach_agent_*).
+  - job_name: agents
+    static_configs:
+      - targets: ["otel-collector:8889"]
