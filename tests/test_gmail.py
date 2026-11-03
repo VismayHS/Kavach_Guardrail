@@ -104,3 +104,41 @@ def test_a_gmail_search_is_run_by_gmail_and_the_demo_inbox_matches_words():
     hits = env.mail_read_inbox(query="subject:Reconciliation")
     assert [m["id"] for m in hits] == ["msg-4471"] and len(env.mail_read_inbox(limit=1)) == 1
 
+
+
+def test_bars_inside_quotes_are_spaces_then_a_word_group():
+    """Gmail reads '|' as OR even inside quotes: subject:"DEMO-04 | Draft Quote 2041" found nothing (3 Nov 2026),
+    so the demo prompt "read the email with subject 'DEMO-04 | ...'" missed and the user had to retype it."""
+    qs = GmailInbox.gmail_queries('subject:"DEMO-04 | Draft Quote 2041 | Figures"')
+    assert qs == ['subject:"DEMO-04 Draft Quote 2041 Figures"', 'subject:(DEMO-04 Draft Quote 2041 Figures)']
+    assert GmailInbox.gmail_queries("from:a@b.com") == ["from:a@b.com"]
+
+
+def test_a_search_with_no_hit_asks_again_as_a_word_group():
+    class Picky(FakeImap):
+        def uid(self, cmd, *a):
+            if cmd == "search" and "(" not in a[-1]:
+                FakeImap.calls.append(("search",) + a)
+                return "OK", [b""]
+            return super().uid(cmd, *a)
+    FakeImap.box = [(7, b"From: x@y.com\r\nSubject: DEMO-04 | Quote\r\n\r\nhi", False)]
+    got = GmailInbox(ME, "pw", imap=Picky).latest(5, query='subject:"DEMO-04 | Quote"')
+    assert [g["id"] for g in got] == ["gmail-7"]
+    searches = [c[-1] for c in FakeImap.calls if c[0] == "search"]
+    assert searches == ['"subject:\\"DEMO-04 Quote\\""', '"subject:(DEMO-04 Quote)"']
+
+
+def test_a_dropped_connection_is_retried(monkeypatch):
+    import ssl
+    import time
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    tries = []
+
+    class Flaky(FakeImap):
+        def __init__(self, host, port):
+            tries.append(1)
+            if len(tries) == 1:
+                raise ssl.SSLEOFError("EOF occurred in violation of protocol")
+            super().__init__(host, port)
+    FakeImap.box = [(3, b"From: x@y.com\r\nSubject: s\r\n\r\nhi", False)]
+    assert len(GmailInbox(ME, "pw", imap=Flaky).latest(5)) == 1 and len(tries) == 2

@@ -16,6 +16,7 @@ be matched to KAVACH's receipts: GET /api/trace/<correlation id> shows the decis
 from __future__ import annotations
 
 import json
+import re
 import os
 import smtplib
 import urllib.error
@@ -107,7 +108,35 @@ class GmailInbox:
 
     def latest(self, n: int | None = None, query: str | None = None) -> list[dict]:
         """The newest n messages, or the newest n that match a Gmail search (query: the same syntax as Gmail's search
-        box, e.g. subject:"Invoice 1042" or from:alice@example.com, run by Gmail itself through X-GM-RAW)."""
+        box, e.g. subject:"Invoice 1042" or from:alice@example.com, run by Gmail itself through X-GM-RAW).
+        Reading is retried once on a dropped connection (Gmail sometimes refuses a quick second login): it changes
+        nothing, so a retry is safe."""
+        import imaplib
+        import ssl
+        for attempt in range(3):
+            try:
+                return self._latest(n, query)
+            except (imaplib.IMAP4.abort, ssl.SSLError, ConnectionError, TimeoutError) as e:
+                if attempt == 2:
+                    raise
+                import time
+                time.sleep(1.0 + attempt)
+
+    @staticmethod
+    def gmail_queries(query: str) -> list[str]:
+        """What to ask Gmail, in order, for one search. Gmail reads "|" as OR even inside quotes, so
+        subject:"DEMO-04 | Draft Quote 2041" matches nothing (measured 3 Nov 2026) while the same words without the
+        bar match the email: bars inside quotes become spaces. If that still finds nothing, each quoted phrase is
+        asked again as a group of words, subject:(DEMO-04 Draft Quote 2041), in any order."""
+        q = query.strip().encode("ascii", "ignore").decode()
+        q = re.sub(r'"([^"]*)"', lambda m: '"' + " ".join(m.group(1).replace("|", " ").split()) + '"', q)
+        out = [q]
+        loose = re.sub(r'"([^"]*)"', lambda m: "(" + m.group(1) + ")", q)
+        if loose != q:
+            out.append(loose)
+        return out
+
+    def _latest(self, n: int | None, query: str | None) -> list[dict]:
         import email
         from email import policy
         from email.utils import parseaddr, parsedate_to_datetime
@@ -118,8 +147,12 @@ class GmailInbox:
             m.login(self.user, self.password)
             m.select(self.folder, readonly=True)
             if query and query.strip():
-                q = query.strip().encode("ascii", "ignore").decode().replace("\\", "\\\\").replace('"', '\\"')
-                _typ, data = m.uid("search", None, "X-GM-RAW", f'"{q}"')
+                data = [b""]
+                for q in self.gmail_queries(query):
+                    q = q.replace("\\", "\\\\").replace('"', '\\"')
+                    _typ, data = m.uid("search", None, "X-GM-RAW", f'"{q}"')
+                    if (data[0] or b"").split():
+                        break
             else:
                 _typ, data = m.uid("search", None, "ALL")
             uids = (data[0] or b"").split()[-n:]
