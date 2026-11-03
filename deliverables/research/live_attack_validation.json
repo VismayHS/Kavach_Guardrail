@@ -1,0 +1,23 @@
+{
+  "focused_tests": {
+    "passed": 26,
+    "failed": 0
+  },
+  "main_episodes": 28,
+  "main_request_attempts": 66,
+  "main_response_ids": 56,
+  "unique_main_response_ids": 56,
+  "supplementary_email_episodes": 4,
+  "qwen_incomplete_episodes": 4,
+  "main_independent_audit_passed": true,
+  "pdf_pages": 6,
+  "missing_pdf_text": [],
+  "broken_local_links": [],
+  "calendar_metadata_absent": true,
+  "work_dates_added": false,
+  "credential_exposure_check_passed": true,
+  "report_sha256": {
+    "KAVACH_Live_Attack_Results.md": "705b6344dc13d5e5866417e08da5042bd8dd16a5f2adc68b8c5cba062411cbdb",
+    "KAVACH_Live_Attack_Results.pdf": "51c06ed6566d35e5326b6a7b9ce883c2d39c8d8aaf8335cc3c6986a80717cc62"
+  }
+}

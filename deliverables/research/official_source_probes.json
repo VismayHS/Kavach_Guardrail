@@ -1,0 +1,98 @@
+{
+  "scope": "Offline function/AST probes, not a full AgentOS integration or RAI-model evaluation",
+  "source_commit": "49fe687e68e60656fb75397d504739b11ddbe5ca",
+  "checks": [
+    {
+      "probe": "Default gate does not classify ordinary SQL UPDATE as dangerous",
+      "expected": false,
+      "observed": false,
+      "passed": true,
+      "scope": "One gate function; other platform layers may still restrict execution"
+    },
+    {
+      "probe": "Hardened gate classifies ordinary SQL UPDATE for approval",
+      "expected": true,
+      "observed": true,
+      "passed": true,
+      "scope": "Configuration includes SQL mutation patterns"
+    },
+    {
+      "probe": "Default gate catches destructive rm shell pattern",
+      "expected": true,
+      "observed": true,
+      "passed": true,
+      "scope": "Classification only; command never executed"
+    },
+    {
+      "probe": "Regex gate gives both small and unbounded UPDATE an approval hold",
+      "expected": [
+        true,
+        true
+      ],
+      "observed": [
+        true,
+        true
+      ],
+      "passed": true,
+      "scope": "Shows coarse classification; not a bypass of full AgentOS"
+    },
+    {
+      "probe": "Documented proxy pre-call role selection excludes tool-output message",
+      "expected": false,
+      "observed": false,
+      "passed": true,
+      "scope": "Same inspected role filter; RAI model itself is not invoked"
+    },
+    {
+      "probe": "PromptGuard catches a direct role-override example",
+      "expected": true,
+      "observed": true,
+      "passed": true,
+      "scope": "Regex behavior on one input, not a classifier benchmark"
+    },
+    {
+      "probe": "Approval evaluator detects a threshold with amount in context",
+      "expected": true,
+      "observed": true,
+      "passed": true,
+      "scope": "Deterministic evaluator exists; blanket claim that all rules are LLM-only is wrong"
+    },
+    {
+      "probe": "Approval evaluator cannot infer amount from invoice ID alone",
+      "expected": null,
+      "observed": null,
+      "passed": true,
+      "scope": "Requires trusted fact enrichment or an appropriate tool-specific hook"
+    },
+    {
+      "probe": "Inspected agent evaluator call occurs within approval-request tool",
+      "expected": true,
+      "observed": true,
+      "passed": true,
+      "scope": "Combined with governance-path source review; other custom hooks remain possible"
+    },
+    {
+      "probe": "KAVACH REST check defaults execute to false",
+      "expected": false,
+      "observed": false,
+      "passed": true,
+      "scope": "Default configuration, not an assertion that execution is impossible"
+    },
+    {
+      "probe": "KAVACH REST check supports an explicit execution branch",
+      "expected": true,
+      "observed": true,
+      "passed": true,
+      "scope": "Corrects the earlier strictly decision-only description"
+    },
+    {
+      "probe": "AgentOS external-hook environment allowlist omits KAVACH_TOKEN",
+      "expected": false,
+      "observed": false,
+      "passed": true,
+      "scope": "Source-level integration limitation; authenticated bridge needs explicit credential propagation"
+    }
+  ],
+  "passed": 12,
+  "total": 12
+}

@@ -1,0 +1,19 @@
+{
+  "official_sources": 41,
+  "official_source_blob_checks": "All cached sources match GitHub blob SHA-1 exactly",
+  "source_function_probes": {
+    "passed": 12,
+    "total": 12
+  },
+  "fresh_synthetic_comparison_cases": 282,
+  "repository_tests": {
+    "passed": 521,
+    "skipped": 14,
+    "failed": 0
+  },
+  "pdf_pages": 15,
+  "missing_pdf_text": [],
+  "authoring_calendar_metadata_absent": true,
+  "external_experiments_reproduced": false,
+  "scope": "Fresh local tests and source-function comparison; no RAI model execution or full AgentOS deployment"
+}

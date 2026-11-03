@@ -1,0 +1,384 @@
+{
+  "review_scope": "End-to-end component review; implementation and evidence boundaries described in the report. This is not an exhaustive vulnerability assessment.",
+  "components": [
+    {
+      "path": "kavach/server.py",
+      "role": "session_identity",
+      "exists": true,
+      "sha256": "2301dbd1dd3217a71de9a0e05f6d7c31eacf5998754d6a1ab3f769b20732bd2f"
+    },
+    {
+      "path": "kavach/auth.py",
+      "role": "session_identity",
+      "exists": true,
+      "sha256": "bc5b0a5e0d25e4b4f3ce6e45eb7d86b14db98237ef0de99f520a88f82da49f8d"
+    },
+    {
+      "path": "kavach/identity.py",
+      "role": "session_identity",
+      "exists": true,
+      "sha256": "590a76245e877d4f3750e319b0080ebfc2ffa5e5a408cb44194a372eccf9bbf7"
+    },
+    {
+      "path": "kavach/profile.py",
+      "role": "session_identity",
+      "exists": true,
+      "sha256": "148940c6f6726fd15dd882982a3b561386d2a39c06ef26678519b721561b1264"
+    },
+    {
+      "path": "kavach/manifest.py",
+      "role": "tool_contracts",
+      "exists": true,
+      "sha256": "3935bdeea079f19a47e7e0e1952d70bbd1cf25e410eb6956f32ecf201d5a0daa"
+    },
+    {
+      "path": "kavach/addresses.py",
+      "role": "tool_contracts",
+      "exists": true,
+      "sha256": "25c5af368261199694f72ced47e32301a89edc91d2fd40b4b4c77d1ccff4ecc4"
+    },
+    {
+      "path": "kavach/lookalike.py",
+      "role": "tool_contracts",
+      "exists": true,
+      "sha256": "866277e254245178474ffa209eff4fb8f86dcc8b3840aec97dcafa8d22727f7b"
+    },
+    {
+      "path": "kavach/provenance.py",
+      "role": "provenance",
+      "exists": true,
+      "sha256": "afd69f4d7f10694078f0a8a9d947d0e8b6c49bc1b17c0a52f658ee67ac552262"
+    },
+    {
+      "path": "kavach/plan.py",
+      "role": "provenance",
+      "exists": true,
+      "sha256": "6cc3bf2f2c41933b2b56d250ef861c9278130a0b06a5945eac449daba5e90c78"
+    },
+    {
+      "path": "kavach/planner.py",
+      "role": "provenance",
+      "exists": true,
+      "sha256": "79edce94f16008c54e3926e2f5ae1d4e69834db7ce08211418a9cbe6c7205ce9"
+    },
+    {
+      "path": "kavach/consequence.py",
+      "role": "consequence_and_execution",
+      "exists": true,
+      "sha256": "cec29d334de0e45892a9ac3a0455bb50edae6d8ba21088cdf9dac14f03831abf"
+    },
+    {
+      "path": "kavach/environment.py",
+      "role": "consequence_and_execution",
+      "exists": true,
+      "sha256": "5616e1228248f5c25c09fd15bb21c26a2f66910e458424d7d321459188b524e4"
+    },
+    {
+      "path": "kavach/sql.py",
+      "role": "consequence_and_execution",
+      "exists": true,
+      "sha256": "cb2123b946b18d2bdc2affb0441f34038ff2138493dc4a91901712091b339b63"
+    },
+    {
+      "path": "kavach/changelog.py",
+      "role": "consequence_and_execution",
+      "exists": true,
+      "sha256": "9d9c13e98b15d7d1c87342382cc12ff1d47805983110343e81f665429f405415"
+    },
+    {
+      "path": "kavach/connectors.py",
+      "role": "consequence_and_execution",
+      "exists": true,
+      "sha256": "ce799f9f9b77edc754d0a1ae805241b8387832c6d0a6fb35cbfeb3f2fce36c04"
+    },
+    {
+      "path": "kavach/windows.py",
+      "role": "consequence_and_execution",
+      "exists": true,
+      "sha256": "c63c4f3d2bab66b7d1b26dadcb541eb1ee23bd0adedf5a5d587588887c5a4042"
+    },
+    {
+      "path": "kavach/shell.py",
+      "role": "consequence_and_execution",
+      "exists": true,
+      "sha256": "df72fafeb8c92af73ba5b8089ba03d259c3fcbb77de4d1db12a46f4151088bc5"
+    },
+    {
+      "path": "kavach/policy.py",
+      "role": "policy_and_review",
+      "exists": true,
+      "sha256": "b82618d7f462eca97d3fcc85cbdab85c511bc57740e3fbf0495f9ec5283a378b"
+    },
+    {
+      "path": "kavach/hitl.py",
+      "role": "policy_and_review",
+      "exists": true,
+      "sha256": "4ab6b880f2936e5061e913ac16ef34ebcb9f754f6113acdd1a507c5b06f17288"
+    },
+    {
+      "path": "kavach/finance.py",
+      "role": "policy_and_review",
+      "exists": true,
+      "sha256": "cd9c4d57ec7fa866d9637807d7bc0506363b7641f57710ad13e1be879c03b8d4"
+    },
+    {
+      "path": "kavach/cedar_policy.py",
+      "role": "policy_and_review",
+      "exists": true,
+      "sha256": "b54cc185459b00c08f2fac77f98e1961934a2485a42df712ad30bf66374227b6"
+    },
+    {
+      "path": "kavach/policy_verify.py",
+      "role": "policy_and_review",
+      "exists": true,
+      "sha256": "e0284eae8a6526ff6c96358ccf3222f0f41d9ee5a17385c389fe362c5b2a15b5"
+    },
+    {
+      "path": "kavach/policy_bundle.py",
+      "role": "policy_and_review",
+      "exists": true,
+      "sha256": "dd26f30c9bf89fce5faa8557d32dd466ca643c679d7f0b9f992046dcd61e8a35"
+    },
+    {
+      "path": "kavach/risk.py",
+      "role": "advisory_models",
+      "exists": true,
+      "sha256": "82155516cb70bf350f0a020c6c79081a18e6ef86c4e1f7052a9f035f5a0dc617"
+    },
+    {
+      "path": "kavach/intent.py",
+      "role": "advisory_models",
+      "exists": true,
+      "sha256": "ff7af916e8538879d40a29e189a779ae33f057f397c0b7ed64e4263082b76948"
+    },
+    {
+      "path": "kavach/qualcomm.py",
+      "role": "advisory_models",
+      "exists": true,
+      "sha256": "1cec7e3cf715055dcd088eeeba404f41d5f7ad5e7b826f7fcefc419f15c38abf"
+    },
+    {
+      "path": "kavach/explain.py",
+      "role": "advisory_models",
+      "exists": true,
+      "sha256": "ccfb3c8b865800250ac10ed7bbd10711d50efcf5787628e9ebec608d0b95a3e9"
+    },
+    {
+      "path": "kavach/injection_probe.py",
+      "role": "advisory_models",
+      "exists": true,
+      "sha256": "1d22822f87cb5c322ebb66ce43f9a819cdb50cea22206cc4ea4979d83471d28a"
+    },
+    {
+      "path": "kavach/pii.py",
+      "role": "advisory_models",
+      "exists": true,
+      "sha256": "6b6f26f5175e6f8e294a85a74abae98a2e985dae8d9fed90bf8ba53884656499"
+    },
+    {
+      "path": "kavach/melon.py",
+      "role": "advisory_models",
+      "exists": true,
+      "sha256": "6de7ae5c8c7bc3b5503a1f33cc709dcfaa5f5d2626b5bd6acfe117bdefa549fd"
+    },
+    {
+      "path": "kavach/conformal.py",
+      "role": "advisory_models",
+      "exists": true,
+      "sha256": "26d77a14267fc99886d626ff1b8c6d37402eb5f3fb3237fa906fb67f69f9597b"
+    },
+    {
+      "path": "kavach/learning.py",
+      "role": "advisory_models",
+      "exists": true,
+      "sha256": "5494c43b3e377556b5b3f525d5dbe92198853e097226c6f647d9be3d3bd8ab3f"
+    },
+    {
+      "path": "kavach/receipts.py",
+      "role": "evidence_and_operations",
+      "exists": true,
+      "sha256": "5c955ac8858157c5ac30aa02ec2f788d461939e1fb54e3bd258308f6e5ed0267"
+    },
+    {
+      "path": "kavach/store.py",
+      "role": "evidence_and_operations",
+      "exists": true,
+      "sha256": "791a9e154a9a6c7461c706d5aea30a85c8ea44a9f5fb207f7fb0620e70b856b0"
+    },
+    {
+      "path": "kavach/signing.py",
+      "role": "evidence_and_operations",
+      "exists": true,
+      "sha256": "aef18fb2c5647b199a39ab2f06b93cba9e656bad57db1ffa5cd06d0155ba1247"
+    },
+    {
+      "path": "kavach/anchor.py",
+      "role": "evidence_and_operations",
+      "exists": true,
+      "sha256": "9da4437938c6f9c92309b0902750a97f383516163ba9c55a1ec1913a245cdcf6"
+    },
+    {
+      "path": "kavach/evidence.py",
+      "role": "evidence_and_operations",
+      "exists": true,
+      "sha256": "fe51e16974638e5d07d365fe7307c3ef13e939098599ef290aaadd8bc15ddec9"
+    },
+    {
+      "path": "kavach/telemetry.py",
+      "role": "evidence_and_operations",
+      "exists": true,
+      "sha256": "9790e41395b0284d2dde415725e854d6e77be2b86073bcf62f65239b4ee17d8f"
+    },
+    {
+      "path": "kavach/logs.py",
+      "role": "evidence_and_operations",
+      "exists": true,
+      "sha256": "9ab5f0c71d16a5cb10065efd4a5345be74665618696114513bf371cd4218387b"
+    },
+    {
+      "path": "kavach/usage.py",
+      "role": "evidence_and_operations",
+      "exists": true,
+      "sha256": "2daab11d0680ce90021b717ec225789c7396c81b79a5ca1f95334facd5b08e1b"
+    },
+    {
+      "path": "kavach/notify.py",
+      "role": "evidence_and_operations",
+      "exists": true,
+      "sha256": "c702a9c8a31d47e006cd2b3e1503cfc06ef7367d243d2e823b02d6ded9aafefc"
+    },
+    {
+      "path": "kavach/replay.py",
+      "role": "evidence_and_operations",
+      "exists": true,
+      "sha256": "954486403d6c51cd06de62b61e74afd2b9ff10f4b39b965bfa088d0bd86c1d11"
+    },
+    {
+      "path": "kavach/secret_broker.py",
+      "role": "evidence_and_operations",
+      "exists": true,
+      "sha256": "651791d6303b91de06cee8e2b4b21ae5fcf1852680339cd021093528bc7ccbe9"
+    },
+    {
+      "path": "kavach/scenarios.py",
+      "role": "demo",
+      "exists": true,
+      "sha256": "c4c5bdd1f5bbeecdd4a869f64d144f847748682ec049bc6ff5b3215c8f147f66"
+    },
+    {
+      "path": "kavach/fatigue_demo.py",
+      "role": "demo",
+      "exists": true,
+      "sha256": "776c3f7037132806e05963e0881922e70779eec4c39af09482a6011f108d6f72"
+    },
+    {
+      "path": "agent/llm_agent.py",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "1758c3134175280b23cb0d5fa7adc94fdee183eaee80ee56e3a69d456af0af42"
+    },
+    {
+      "path": "integrations/agentos_hook.py",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "4a5e2ae381d5e24e4649c1cc44ff7ed4c55913770034fefa5132a226a83b420c"
+    },
+    {
+      "path": "kavach/adapters/guard.py",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "8e6fd81193a99e60f337767b58a327ff59106618eaac3a0de9351dc08ac24860"
+    },
+    {
+      "path": "kavach/adapters/openai_agents.py",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "24ac49ef4b47f635ede4ca948bca60deb3e3d49ba2a285ba5252fb61128d2c1c"
+    },
+    {
+      "path": "kavach/adapters/langchain.py",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "900024941f7a2a2baf566cb56394dbb005a7523147a6184f6c7db65912592967"
+    },
+    {
+      "path": "kavach/adapters/claude_agent_sdk.py",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "658cf920a712cf9c8343cb73ee25442bfa060470ef2449a199575b9934d4ff49"
+    },
+    {
+      "path": "kavach/mcp_proxy/proxy.py",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "b5a4a90dce3c743e0ace8b9c778ec9c85c6e37203e076ec9c4deaca2b8f261d9"
+    },
+    {
+      "path": "kavach/mcp_proxy/scan.py",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "b6c53308880b9d8c1e826e56303502f4fa6984dd94a2e17c0523cc77bd7be019"
+    },
+    {
+      "path": "kavach/static/app.js",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "cd78de7af33391739037c7c5857d09d55998d7e916bb677dfd7fed4255d4aeec"
+    },
+    {
+      "path": "kavach/static/index.html",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "3575b1ee2d0bc2ec5b462f02d4c2b8d8b3f7a0aa622d94ba2de43270ba0091ae"
+    },
+    {
+      "path": "kavach/static/vx.css",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "3e53c5395724823b8079481736306522fd37e2537df20aebd99eff1473fb8fee"
+    },
+    {
+      "path": "Dockerfile",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "0b6679e62d51094aab15bb525dd3ff31749a6808e1f3310276f420fd17da1093"
+    },
+    {
+      "path": "docker-compose.yml",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "de0f3ced8a6b28f1ae9fc59cb3a15c5d4ce1922e75a98abcc74ef647b20af644"
+    },
+    {
+      "path": "deploy/helm/kavach/values.yaml",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "7c21290cb7c012899631a90b2968e7bfefb2ab2ae76b6a824b5dbb32d3fc60e6"
+    },
+    {
+      "path": "deploy/alerts.yml",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "42748c71588ccd82a3e5cf07c68726ff858c7f2b028c747cbef027af59736c9a"
+    },
+    {
+      "path": "bench/infosys_compare.py",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "800a233d8bba77d123cc2994d75adac0f5d4455af1211761ed98d8e743c28e9c"
+    },
+    {
+      "path": "bench/run.py",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "a52fdfa7b56f0d0b70221ce1030a6deddf63531d48e1beaa4b14dcdefb15daea"
+    },
+    {
+      "path": "bench/compare.py",
+      "role": "integration_or_delivery",
+      "exists": true,
+      "sha256": "0f42ca194d30c954b2a4e11138717d667a153c51c7cbe0993b534b10503c876a"
+    }
+  ],
+  "new_application_code_changes": false
+}
