@@ -5,6 +5,7 @@ through Gmail's SMTP with the same account. A stand-in IMAP server here; scripts
 from email.message import EmailMessage
 
 from kavach.connectors import GmailInbox, gmail_sender
+from kavach.environment import Environment
 from kavach.models import ToolCall, Verdict
 from tests.test_email_window import Smtp, kavach, setup_function  # noqa: F401
 
@@ -24,8 +25,8 @@ class FakeImap:
     """IMAP4_SSL stand-in: records how it was used."""
     box, calls = [], []
 
-    def __init__(self, host, port):
-        FakeImap.calls = [("connect", host, port)]
+    def __init__(self, host, port, timeout=None):
+        FakeImap.calls, FakeImap.timeout = [("connect", host, port)], timeout
 
     def login(self, user, pw):
         FakeImap.calls.append(("login", user, pw))
@@ -91,3 +92,33 @@ def test_sending_goes_through_gmail_with_the_same_account():
     s = gmail_sender({"KAVACH_GMAIL_USER": ME, "KAVACH_GMAIL_APP_PASSWORD": "abcd efgh ijkl mnop"})
     assert (s.host, s.port, s.starttls, s.user, s.sender, s.password) == ("smtp.gmail.com", 587, True, ME, ME, "abcdefghijklmnop")
     assert gmail_sender({}) is None and GmailInbox.from_env({}) is None
+
+
+def test_a_stalled_gmail_connection_cannot_hang_the_agent_forever():
+    """Seen live: one dead IMAP socket left an agent's call waiting with no end, and no way to tell it why."""
+    FakeImap.box = []
+    inbox().latest()
+    assert FakeImap.timeout and FakeImap.timeout <= 30
+
+
+def test_reading_retries_once_then_tells_the_agent_plainly(tmp_path):
+    env = Environment(tmp_path)
+
+    class Flaky:
+        calls = 0
+
+        def __init__(self, fails):
+            self.fails = fails
+
+        def latest(self):
+            Flaky.calls += 1
+            if Flaky.calls <= self.fails:
+                raise TimeoutError("timed out")
+            return [{"id": "gmail-1"}]
+
+    env.mailbox = Flaky(1)
+    assert env.mail_read_inbox() == [{"id": "gmail-1"}]     # a stall, then it answers: the agent never notices
+    Flaky.calls = 0
+    env.mailbox = Flaky(2)
+    out = env.mail_read_inbox()
+    assert Flaky.calls == 2 and "Could not read the inbox" in out["error"]

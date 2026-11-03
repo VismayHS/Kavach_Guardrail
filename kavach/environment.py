@@ -5,6 +5,7 @@ environment so the gateway's staging, diffing and undo are measured, not faked.
 """
 from __future__ import annotations
 
+import imaplib
 import os
 import random
 import shutil
@@ -321,7 +322,12 @@ class Environment:
 
     def mail_read_inbox(self, unread_only: bool = True) -> list[dict]:
         if self.mailbox is not None:          # a real inbox (Gmail): its newest messages, read or not, newest first
-            return self.mailbox.latest()
+            for attempt in (1, 2):            # reading changes nothing, so one more try is safe
+                try:
+                    return self.mailbox.latest()
+                except (OSError, imaplib.IMAP4.error) as e:
+                    if attempt == 2:
+                        return {"error": f"Could not read the inbox ({type(e).__name__}). Nothing was changed; try again."}
         return [m for m in self.inbox if m["unread"] or not unread_only]
 
     def mail_send(self, to: str, subject: str, body: str, hold: bool = False) -> dict:

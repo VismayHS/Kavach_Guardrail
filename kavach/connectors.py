@@ -93,10 +93,11 @@ class GmailInbox:
     """
 
     def __init__(self, user: str, password: str, host: str = "imap.gmail.com", port: int = 993, folder: str = "INBOX",
-                 limit: int = 10, max_body: int = 4000, imap=None):
+                 limit: int = 10, max_body: int = 4000, imap=None, timeout: float = 20.0):
         import imaplib
         self.user, self.password = user, password.replace(" ", "")
         self.host, self.port, self.folder, self.limit, self.max_body = host, int(port), folder, limit, max_body
+        self.timeout = timeout                          # a stalled connection raises instead of waiting forever
         self._imap = imap or imaplib.IMAP4_SSL
 
     @classmethod
@@ -111,7 +112,7 @@ class GmailInbox:
         from email.utils import parseaddr, parsedate_to_datetime
         n = n or self.limit
         out = []
-        m = self._imap(self.host, self.port)
+        m = self._imap(self.host, self.port, timeout=self.timeout)
         try:
             m.login(self.user, self.password)
             m.select(self.folder, readonly=True)
