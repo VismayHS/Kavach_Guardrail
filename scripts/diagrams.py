@@ -37,7 +37,7 @@ def architecture(path):
     top = [("1  INGEST + PLAN CHECK", "tool manifest (hash-pinned,\nunknown = fail-closed);\nwhole-plan scan: lethal-\ntrifecta path, unrequested\nstate changes, RBAC", PURPLE),
            ("2  PROVENANCE", "label every argument:\ntrust user / derived / untrusted,\nconfidentiality, PII count\n(value lineage from the request\nand every tool output)", PURPLE),
            ("3  CONSEQUENCE", "sandbox diff (SQL, files) |\nstatic | typed prediction\n(email, payments) -> blast\nradius, harm H, reversibility\nclass r, safeguard", ORANGE),
-           ("4  HARD GATES (no AI)", "policy-as-code R1-R12: RBAC,\nuntrusted destination, PII out,\nfreeze, DDL, limits, secrets,\nrug pull, workspace\nDENY is final", RED)]
+           ("4  HARD GATES (no AI)", "policy-as-code R1-R42: RBAC,\nuntrusted destination, PII out,\nfreeze, DDL, limits, secrets,\nrug pull, workspace\nDENY is final", RED)]
     for x, (t, b, c) in zip(xs, top):
         box(ax, x, 0.51, W, H, t, b, c)
     for i in range(3):

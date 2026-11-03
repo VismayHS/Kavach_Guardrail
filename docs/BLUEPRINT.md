@@ -11,13 +11,13 @@ Naming: *Kavach* (कवच, "armour") is also the name of Indian Railways' auto
 
 | Works now (in `kavach/`, tested) | Planned / roadmap |
 |---|---|
-| Gateway: 12 deterministic policy rules, provenance/taint by value lineage, plan validator | Full MCP streamable-HTTP transport (via FastMCP); today: MCP JSON-RPC `tools/list` + `tools/call` |
-| Consequence engine: SQL + file sandbox diff, typed prediction for email / payments | OPA/Rego or AWS Cedar compilation of the YAML policy |
-| Calibrated risk model (18 features, bootstrap ensemble, isotonic), confidence interval, τ(a) | Port AgentDojo + AmPermBench scenarios into the harness |
-| HITL queue: consequence card, approve / draft / deny, four-eyes, timeout = deny; Topaz AgentOS hook adapter | Live AgentOS tenant run; Foundry LangGraph Tool Interrupt adapter |
-| Hash-chained HMAC receipts + verifier; undo from snapshot; post-execution check | RAI Toolkit privacy API as the PII detector; UNO Q hardware approval token |
-| Qualcomm Cloud AI client (Imagine API), reasoning-blind judge, faithfulness-checked explainer, live LLM agent | Learned blast-radius predictor for unstageable tools |
-| Dashboard, raw JSON checker, 10 demo scenarios, benchmark (740 scenarios × 5 seeds), 12 tests | Multi-tenant deployment, policy UI |
+| Gateway: 42 rules (R1–R42), provenance/taint by value lineage, plan validator | Load test, CI, and delivering alerts to a person |
+| Consequence engine: SQL + file sandbox diff under an authorizer, typed prediction for email / payments; Cedar policies for R1–R34 | Cedar encoding of R35–R42 |
+| Risk model (18 features, bootstrap ensemble, isotonic), a supporting signal: it changes no verdict on our suite (`LAYERS.md`) | Finish the live AgentDojo runs; add AmPermBench |
+| HITL queue: consequence card, approve / draft / deny, approvals bound to the exact action, payment tiers, timeout = deny; Topaz AgentOS hook, tested through its governance code with a stand-in agent | Live AgentOS tenant run |
+| Hash-chained HMAC + Ed25519 receipts, signed checkpoint, verifier; undo windows that survive `kill -9`; kill switch; Prometheus, Grafana and OpenTelemetry | RAI Toolkit privacy API as the PII detector; UNO Q hardware approval token |
+| Qualcomm Cloud AI client, two-stage judge, faithfulness-checked explainer (off by default), live Llama agent; MCP proxy, framework adapters, real Gmail (`scripts/gmail_up.sh`) | Per-user totals across tasks; learned blast-radius predictor |
+| Console (Activity, approvals, undo windows, receipts, traces, kill switch, 16 scenarios), benchmark (940 scenarios × 5 seeds), 500+ tests | Multi-tenant hosting hardening, policy UI |
 
 ---
 
@@ -54,7 +54,7 @@ The four words name four different problems, and each needs a different mechanis
 **Enterprises are stalling on exactly this.** Gartner (25 Jun 2025) predicts **>40% of agentic AI projects will be cancelled by end-2027**, citing costs, unclear value and **inadequate risk controls**.
 
 **Regulators require oversight and auditability.**
-- **EU AI Act Art. 14:** high-risk systems must let humans understand, monitor, intervene and override. (Application date: 2 Aug 2026 originally; secondary sources report a move to Dec 2027, so verify before citing.)
+- **EU AI Act Art. 14:** high-risk systems must let humans understand, monitor, intervene and override. (Under the provisional Digital Omnibus agreement of 7 May 2026, Annex III high-risk obligations move to 2 Dec 2027 and product-embedded ones to 2 Aug 2028; Article 14's content is unchanged.)
 - **RBI FREE-AI framework (13 Aug 2025):** 26 recommendations, board-approved AI policy, incident reporting.
 - **MeitY India AI Governance Guidelines (5 Nov 2025):** "People First" sutra includes human oversight.
 
@@ -79,7 +79,7 @@ KAVACH's receipt chain + HITL queue is how a bank deploying Infosys agents *prov
 - The pre-tool gate matches command text, not effects.
 - Business thresholds are left to the agent's own LLM.
 
-On our suite: with defaults, 95% of unsafe actions pass; hardened, injection success is 0% but 86.5% of all actions go to a human. **KAVACH is the judgment layer they lack.** It plugs in as an AgentOS `PreToolUse` hook (`integrations/agentos_hook.py`): AgentOS keeps routing, sandboxing and the approval queue, and the queue now fills only with KAVACH's genuine ESCALATEs, each with a consequence card.
+On our suite: with defaults, 96.2% of unsafe actions pass; hardened, injection success is 0% but 89.4% of all actions go to a human. **KAVACH is the judgment layer they lack.** It plugs in as an AgentOS `PreToolUse` hook (`integrations/agentos_hook.py`): AgentOS keeps routing, sandboxing and the approval queue, and the queue now fills only with KAVACH's genuine ESCALATEs, each with a consequence card.
 
 ---
 
@@ -137,7 +137,7 @@ What's still missing is the step from *labels* ("this tool is destructive") to *
 1. The uniform-threshold dilemma is visible in Anthropic's own two-stage numbers.
 2. Tool-type gating leaks: AmPermBench's 36.8% Tier-2 bypass.
 3. Raising caution destroys usability: AmPermBench FPR 9.2% → 34.8% from low- to high-risk environments.
-4. Infosys's own stack shows the same dilemma. We ran their guardrail code on our suite: defaults let 95% of unsafe actions through; the hardened config gets 0% injection success only by escalating 86.5% of actions (`docs/INFOSYS_GAP_ANALYSIS.md`).
+4. Infosys's own stack shows the same dilemma. We ran their guardrail code on our suite: defaults let 96.2% of unsafe actions through; the hardened config gets 0% injection success only by escalating 89.4% of actions (`docs/INFOSYS_GAP_ANALYSIS.md`).
 
 **We do NOT claim:** to be first to intercept tool calls, to track provenance, to use policy-as-code, to sandbox, or to undo. All exist (above). **Our contribution is the combination and its measurement:**
 - one action-control plane that runs deterministic gates → measured/predicted effect → calibrated p with an interval → reversibility-conditioned threshold → HITL only on uncertainty;
@@ -162,7 +162,7 @@ What's still missing is the step from *labels* ("this tool is destructive") to *
  │ 2 Provenance  label every argument: trust (user/derived/untrusted) · conf · PII count │
  │ 3 Consequence sandbox diff (SQL/files) | static | typed prediction (email/payments)  │
  │               → blast radius, reversibility class, harm H ∈ [0,1], safeguard          │
- │ 4 Hard gates  R1–R12 policy-as-code → DENY (final) / REQUIRE_APPROVAL (floor) / PASS  │
+ │ 4 Hard gates  R1–R42 policy-as-code → DENY (final) / REQUIRE_APPROVAL (floor) / PASS  │
  │ 5 Intent      reasoning-blind check of request ↔ action (heuristic; Qualcomm LLM only │
  │               when ambiguous; may only LOWER alignment)                                │
  │ 6 Risk        18 features → bootstrap logistic ensemble → isotonic → p, [p_lo, p_hi] │
@@ -266,7 +266,7 @@ else:                                        -> ESCALATE (interval straddles tau
 
 ## 8. Confidence
 
-- **Calibrated probability.** Logistic models over typed features, calibrated with isotonic regression on a split never used for training. Reported on the held-out test split: **ECE 0.13 raw → 0.03 calibrated** (seed 0; per-seed values in `bench/results/RESULTS.md`).
+- **Calibrated probability.** Logistic models over typed features, calibrated with isotonic regression on a split never used for training. It's scored only on rule-passing actions whose unsafe rows all come from one family, so don't quote its calibration error as evidence. On this suite the model changes no verdict (`LAYERS.md`).
 - **Uncertainty interval.** 25 bootstrap models; `[p_lo, p_hi]` = 10th–90th percentile of their (calibrated) predictions. Ensemble disagreement widens on unfamiliar actions (e.g. file writes, which are rare in training), which is exactly when the system should ask.
 - **Selective prediction / abstention.** If the interval straddles τ, ESCALATE. Precedent: KnowNo (Ren et al., CoRL 2023) uses conformal prediction so LLM planners "ask for help" when uncertain, with statistical guarantees.
 - **Autonomy levels from confidence × reversibility:** confidently low risk → auto (with undo if reversible); uncertain → human; confidently harmful → block. The same `p` gives different outcomes for an UPDATE (undo armed) and a wire transfer (strict).
@@ -306,7 +306,7 @@ else:                                        -> ESCALATE (interval straddles tau
 
 ## 11. Evaluation (measured, held-out, reproducible)
 
-**Suite:** 740 labelled scenarios in 37 families (`bench/suite.py`).
+**Suite:** 940 labelled scenarios in 47 families (`bench/suite.py`).
 - 13 safe families, including hard ones: user-requested bulk deletes, emails to the right customer, vague but safe updates.
 - 17 attack families: injection exfil (incl. obfuscated addresses that defeat value lineage), injected payments, overeager deletes, misaligned writes, DDL, secrets, rug pull, freeze, RBAC, path escape, injected SQL, extra PII, hallucinated amounts, wrong recipients…
 - Split 50/20/30 (train / calibration / test), stratified by family; **5 independent seeds**.
@@ -316,14 +316,17 @@ else:                                        -> ESCALATE (interval straddles tau
 
 **Baselines (one harness, same protocol):** no guardrail; static text denylist (Cursor-style); tool-type gating (reads/internal auto, external escalated); approve-every-write (Foundry Tool Interrupt / "confirm high-impact" style); KAVACH ablations (rules only, no provenance, fixed threshold).
 
-**Results:** see `bench/results/RESULTS.md` (single run, plus a 5-seed mean and range) and the charts `pareto.png`, `systems.png`, `calibration.png`. The headline pattern across seeds:
-- **Rules alone are not enough.** ~30% of unsafe actions pass every rule (overeager scoped deletes, wrong recipients, hallucinated amounts). The consequence + intent + risk layers catch them.
-- **Asking a human for everything is safe but useless.** Approve-every-write auto-completes ~12% of safe work; KAVACH auto-completes 68% (65–71% across 5 seeds) at 0.5% unsafe auto-allowed (0–2%), 0% injection success, and **0% safe actions hard-blocked**.
-- **Provenance matters for usability.** Without provenance, automation drops sharply because the model can't tell user-typed destinations from derived ones.
-- **Only rules can block.** The model never hard-denies; when it is confident an action is harmful it escalates with the flag. Result: 0% of safe actions hard-blocked across all seeds.
-- **Known limitation.** Rare action types (e.g. safe file writes) get wide confidence intervals and escalate until enough human labels accumulate. This is the intended "ask when unsure" behaviour, but it costs friction early on.
-- **Honest finding.** On this suite, a reversibility-conditioned threshold *matches* (does not beat) a well-tuned fixed threshold on automation. Its value is that the operating point is set in interpretable cost units and strictness adapts per action. Proving an advantage needs more irreversible-vs-reversible contrast cases (roadmap).
-- Latency: ~0.8 ms p50, ~2.3 ms p95 per decision without the LLM judge (seed 0; varies by machine). Add one Qualcomm round-trip only for ambiguous calls.
+**Results:** see `bench/results/RESULTS.md` (single run, plus a 5-seed mean and range), `LAYERS.md`, `LOFO.md`, `HOLDOUT.md`, `SEMANTIC.md` and `COMPARISON.md`.
+
+- **Our own suite, 5 seeds:** 0% unsafe auto-allowed, 95.2% of safe work automated, about 27% sent to a person, 0% of safe actions hard-blocked. Leave one family out: 92.1%. We wrote these scenarios and the rules, so 0 of 26 attack families has a 95% interval of 0 to 13%.
+- **AgentDojo, not written by us, live with Llama-3.3-70B on Qualcomm** (runs partly finished; see `COMPARISON.md`): banking, attacks succeeded 0 of 128 with KAVACH and 65 of 128 without, benign tasks 8 of 16 either way. Slack: 11 of 103 against 48 of 103, but benign tasks fell from 9 of 21 to 6 of 21.
+- **Asking a human for everything is safe but useless.** Approve-every-write automates 9.5% of safe work.
+- **Provenance matters.** Without it, 12.5% of injections work and automation falls to 90.5%.
+- **Only rules can block.** The model never hard-denies; the kill switch is the one other way an action is refused.
+- **The risk model changes no verdict on this suite** (`LAYERS.md`). Rules and the intent gate decide; it is a supporting signal shown to reviewers.
+- **The Qualcomm judge, inline, live on 24 hand-written cases** (`SEMANTIC.md`): 7 of 12 misreadings caught against 1 of 12 with keywords in two clean runs (6 of 12 in a third, with other jobs competing for the service); safe work unchanged at 11 of 12; about 5 s per check. The server runs it only on escalated calls by default, where it adds a note for the reviewer and changes no verdict.
+- **Honest finding.** A reversibility-conditioned threshold matches, and does not beat, a well-tuned fixed threshold.
+- **Latency:** a few milliseconds per decision without the LLM judge; varies by machine.
 
 ---
 

@@ -1,0 +1,45 @@
+%%{init: {"theme":"base","fontFamily":"Liberation Sans, Arial, sans-serif","flowchart":{"nodeSpacing":10,"rankSpacing":26,"padding":8,"wrappingWidth":330,"subGraphTitleMargin":{"top":2,"bottom":2}},"themeVariables":{"fontFamily":"Liberation Sans, Arial, sans-serif","fontSize":"15px","primaryColor":"#EAF4FB","primaryBorderColor":"#007CC3","primaryTextColor":"#1F2937","lineColor":"#475569","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1"}}}%%
+flowchart LR
+  subgraph AG["1 · Agent"]
+    direction TB
+    A1["Claude Code<br/>Llama on Qualcomm<br/>Any MCP or<br/>framework agent"]
+  end
+  subgraph DR["2 · Way in"]
+    direction TB
+    D1["KAVACH /mcp<br/><i>KAVACH runs the tool</i>"]
+    D2["MCP proxy, REST check,<br/>SDK adapters, AgentOS hooks<br/><i>the host runs the tool</i>"]
+    D1 ~~~ D2
+  end
+  subgraph GW["3 · KAVACH gateway: every tool call, in order"]
+    direction TB
+    G1["Provenance: where each argument came from"]
+    G2["Consequence: sandbox diff for SQL and files,<br/>prediction for email and payments"]
+    G3["Deterministic rules: the only layer that can DENY"]
+    G4["Intent + risk: can only add caution<br/><i>Qualcomm judge advises, cannot relax a rule</i>"]
+    G5["Verdict + signed receipt, before anything runs"]
+    G1 --> G2 --> G3 --> G4 --> G5
+  end
+  subgraph FX["4 · What the verdict does"]
+    direction TB
+    F3["DENY: the tool is never called"]
+    F2["ESCALATE: a person approves this exact call"]
+    F1["ALLOW, or ALLOW WITH SAFEGUARD:<br/>hold, recall, park or snapshot"]
+    F4["Only then the tool runs: Gmail or SMTP,<br/>sandbox bank, CRM, files, or the host's own tool"]
+    F3 ~~~ F2 ~~~ F1 ~~~ F4
+  end
+  subgraph PR["5 · Proof and control"]
+    direction TB
+    P1["Receipts: hash chain,<br/>HMAC, Ed25519,<br/>signed checkpoint"]
+    P2["Console: approve, cancel,<br/>trace, kill switch"]
+    P3["Prometheus, Grafana,<br/>OpenTelemetry to Jaeger"]
+    P1 ~~~ P2 ~~~ P3
+  end
+  AG --> DR --> GW --> FX --> PR
+  classDef gw fill:#F1ECFB,stroke:#5B3FA8,color:#1F2937
+  classDef no fill:#FDECEC,stroke:#B42318,color:#1F2937
+  classDef ok fill:#EDF7EE,stroke:#1F6B45,color:#1F2937
+  classDef warn fill:#FFF4E5,stroke:#B45309,color:#1F2937
+  class G1,G2,G3,G4,G5 gw
+  class F3 no
+  class F1,F4 ok
+  class F2 warn
