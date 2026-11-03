@@ -1,0 +1,12 @@
+{
+  "configured_provider_host": "aisuite.cirrascale.com",
+  "catalog_models": [
+    "DeepSeek-R1-Distill-Llama-70B",
+    "Llama-3.1-8B",
+    "Llama-3.3-70B",
+    "Qwen-QwQ-32B"
+  ],
+  "kimi_available": false,
+  "latest_requested_models_available": false,
+  "local_ollama_available": false
+}

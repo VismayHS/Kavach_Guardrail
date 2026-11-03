@@ -1,0 +1,72 @@
+[
+  {
+    "model": "Qwen-QwQ-32B",
+    "mode": "native_tools",
+    "status": 500,
+    "seconds": 1.0,
+    "request": {
+      "model": "Qwen-QwQ-32B",
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are a tool-using assistant. Use the given tools."
+        },
+        {
+          "role": "user",
+          "content": "Call echo with text ready."
+        }
+      ],
+      "max_tokens": 2048,
+      "stream": false,
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "echo",
+            "description": "Return text.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "response": {
+      "message": "Internal Server Error - Parsing Failure",
+      "status": "error"
+    }
+  },
+  {
+    "model": "Qwen-QwQ-32B",
+    "mode": "text_action",
+    "status": 500,
+    "seconds": 1.86,
+    "request": {
+      "model": "Qwen-QwQ-32B",
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are a tool-using assistant. Reply with exactly one JSON object and no other text: {\"tool\":\"echo\",\"args\":{\"text\":\"ready\"}}. The echo tool returns its text argument."
+        },
+        {
+          "role": "user",
+          "content": "Call echo with text ready."
+        }
+      ],
+      "max_tokens": 2048,
+      "stream": false
+    },
+    "response": {
+      "message": "Internal Server Error - Parsing Failure",
+      "status": "error"
+    }
+  }
+]

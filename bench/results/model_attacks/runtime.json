@@ -1,0 +1,15 @@
+{
+  "python": "3.12.3",
+  "packages": {
+    "httpx": "0.28.1",
+    "pydantic": "2.14.2",
+    "numpy": "2.5.4",
+    "scikit-learn": "1.9.1",
+    "python-dotenv": "1.2.4",
+    "pyyaml": "6.0.3",
+    "pytest": "9.2.0"
+  },
+  "source_files": 60,
+  "optional_llm_judge": false,
+  "real_mail_or_bank_connectors": false
+}

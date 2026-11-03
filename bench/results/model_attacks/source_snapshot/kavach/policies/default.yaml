@@ -1,0 +1,148 @@
+# KAVACH organisation policy (policy-as-code).
+# Deterministic, versioned and reviewable: no model can override a DENY produced here.
+# Production target: compile these rules to OPA/Rego or AWS Cedar; the prototype evaluates them in Python.
+version: "2026.10-demo"
+
+internal_domains: ["infycorp.com"]
+# Vendor master domains: with internal_domains, the names a lookalike domain imitates (R25)
+known_domains: ["northwind-supplies.de", "contoso.com", "fabrikam.ae"]
+
+# Sensitivity of workspace files by name (first match wins). Unlisted files are internal. (N2)
+file_sensitivity:
+  - {pattern: "*salary*", conf: pii}
+  - {pattern: "*payroll*", conf: pii}
+  - {pattern: "q3_*", conf: confidential}
+  - {pattern: "*revenue*", conf: confidential}
+  - {pattern: "*finance*", conf: confidential}
+  - {pattern: "*.csv", conf: confidential}
+  - {pattern: "*.xlsx", conf: confidential}
+
+# Columns whose change must be asked for by name (R26). Each lists the words that count as asking for it.
+sensitive_columns:
+  email: ["email", "e-mail", "mail address", "contact"]
+  phone: ["phone", "mobile", "number", "contact"]
+  name: ["name"]
+  iban: ["iban", "bank", "account"]
+  bank_verified: ["verif"]
+  sanctioned: ["sanction"]
+  amount: ["amount", "price", "total", "value", "refund", "correct"]
+  customer_id: ["customer", "reassign", "move", "transfer"]
+  vendor_id: ["vendor", "reassign"]
+  proposed_by: ["propos"]
+
+roles:
+  analyst:  ["crm.query", "files.read", "files.write", "mail.read_inbox", "mail.send", "web.fetch"]
+  support:  ["crm.query", "crm.execute", "mail.read_inbox", "mail.send", "payments.refund", "files.read", "web.fetch"]
+  finance:  ["crm.query", "payments.transfer", "payments.refund", "mail.read_inbox", "mail.send", "web.fetch", "files.read"]
+  admin:    ["*"]
+  ap_supervisor: ["invoice.read", "payment.propose", "payment.release", "vendor.update_bank", "sap.post",
+                  "mail.read_inbox", "mail.send"]
+  # an AI assistant in accounts payable: reads invoices and vendors, asks for payments (no release limit of its own,
+  # so every payment goes to a person under R18), emails; it has no way to change the vendor master
+  ap_agent: ["invoice.read", "vendor.read", "payment.release", "mail.read_inbox", "mail.send", "crm.query"]
+
+limits:
+  refund_auto_max: 5000          # INR; above this a human must approve
+  refund_hard_max: 50000         # INR; above this always denied
+  transfer_auto_max: 10000       # INR; transfers to an allowlisted payee up to this run without approval
+  transfer_hard_max: 200000
+  bulk_rows_approval: 50         # a single statement touching more rows than this needs approval in prod
+  pii_external_max: 1            # max PII records that may leave the company without approval
+  url_payload_max: 200           # query+fragment characters a URL to an unknown host may carry
+  task_rows_approval: 50         # rows one task may change in prod across all its statements (split deletes)
+  task_money_approval: 10000     # INR one task may move in transfers and refunds without approval
+  outbound_chars_max: 2000       # characters an email to an outside address may carry without approval
+  encoded_token_min: 200         # an unbroken run this long in an outside email looks like encoded data
+  task_outbound_chars_max: 4000  # characters one task may send to outside addresses in total (data split into parts)
+  shell_delete_max: 5            # files a shell command may delete (in its dry run) before a person decides (R34)
+
+# Approvals (F8): how long a request waits (seconds) before it goes one step up the chain; after the last step it
+# expires, denied. An empty chain means expiry is the first deadline.
+approvals:
+  sla_s: 300
+  chain: [team_lead, ops_manager]
+
+change_freeze: false             # when true: no writes to prod (Replit incident lesson)
+require_tool_hash: false         # when true: calls must present the pinned tool definition hash (MCP clients)
+
+# Accounts payable, from the rulebook in Infosys AgentOS's sample tenant
+# (Topaz_AgentOS/enterprise_root/tenants/company/shared/contexts/judgment/fa_judgment.md, section L2 AP)
+finance:
+  currency: EUR
+  role_release_limit:            # "≤ €25,000: AP Supervisor (single signatory)"
+    ap_supervisor: 25000
+  release_tiers:                 # "Payment Authorisation Limits"; quorum = verified roles that must approve (N4)
+    - {max: 25000,  approvers: "AP Supervisor (single signatory)", quorum: {ap_supervisor: 1}}
+    - {max: 100000, approvers: "Finance Manager + AP Supervisor (dual control)",
+       quorum: {finance_manager: 1, ap_supervisor: 1}}
+    - {max: 500000, approvers: "Finance Director + Finance Manager (dual control)",
+       quorum: {finance_director: 1, finance_manager: 1}}
+    - {max: null,   approvers: "CFO + Finance Director (dual control)", quorum: {cfo: 1, finance_director: 1}}
+  retention_years: 7             # "Invoices (AP and AR): 7 years. Block deletion"
+  retained_tables: ["ap_invoices", "payment_proposals", "sap_documents"]
+  # The finance rules read these tables, so raw SQL may not change them (R35); only the finance tools may.
+  protected_tables: ["vendors", "ap_invoices", "purchase_orders", "goods_receipts", "payment_proposals",
+                     "sap_documents"]
+
+# matched case-insensitively anywhere in the path
+# Credential files (R9), matched case-insensitively anywhere in the path. Token files by name, not the word "token",
+# so a code file like src/tokenizer.py stays readable (Claude Code's Read goes through R9 too).
+sensitive_paths: ["deploy.env", ".env", "secret", "id_rsa", "id_ed25519", "credential", ".pem", ".key", ".netrc",
+                  ".ssh", "token.json", "tokens.json", ".token"]
+
+# Canary records (R28): planted where an attacker would look, needed by no legitimate task. Any external action
+# carrying one of these values is blocked; moving them internally is allowed and recorded. Seeded by the server
+# (KAVACH_CANARIES=0 to turn off), not by tests or benchmarks.
+canaries:
+  customers:
+    - {id: 0, name: "Ritika Menon", email: "ritika.menon0@client0.com", phone: "+91-9876500001", city: "Pune",
+       status: "active", last_active_days: 12, tier: "gold"}
+  files:
+    vendor_portal_keys.txt: "PORTAL_API_KEY=kv-live-7f3a9c2e1b8d4f60\n"
+  values: ["ritika.menon0@client0.com", "+91-9876500001", "kv-live-7f3a9c2e1b8d4f60"]
+
+# Rule catalogue (ids are cited in every receipt)
+rules:
+  R1: "Untrusted content may not choose the destination of an external action (recipient, URL, account, amount). A value read from a source the user pointed at, for an action the user asked for, goes to a person instead; a link in such a source may be followed."
+  R2: "PII may not leave the company without human approval."
+  R3: "No writes to production during a change freeze."
+  R4: "Schema-destructive SQL (DROP, TRUNCATE, ALTER) is denied in production."
+  R5: "Payments above limits require approval; above the hard cap they are denied."
+  R6: "Unknown tools and tool definitions that changed after approval are denied (fail-closed)."
+  R7: "Tool arguments must match the approved schema."
+  R8: "Role must be permitted to use the tool (RBAC)."
+  R9: "Secrets and credential files may not be read into an agent context, overwritten or deleted."
+  R10: "Bulk changes above the row limit in production require approval."
+  R11: "Arguments copied from untrusted content may not drive a state-changing action; from a source the user pointed at, for an action the user asked for, a person decides."
+  R12: "File operations must stay inside the agent workspace."
+  R13: "A URL to a host the user never named may not carry private values or bulk data; after private data was read, such fetches need approval."
+  R14: "Once a task has read private data and untrusted content, outbound actions to destinations the user didn't give need approval (lethal trifecta)."
+  R15: "A payment or SAP amount, destination or account that appears nowhere in the request or any tool output was made up by the agent; it needs approval."
+  R16: "If the user named specific records (customer 17, invoice 1042), an action that touches none of them, or picks a record by an id the user didn't name, needs approval."
+  R17: "Personal data that belongs to someone other than the recipient may not leave the company without approval."
+  R18: "Payment release follows the approval tiers; the amount is read from the invoice record, never from the call."
+  R19: "Separation of duties: whoever proposed a payment may not release it; releasing an unproposed invoice needs approval."
+  R20: "Vendor bank details are never changed from an email or document alone; any change needs verification and AP Manager sign-off."
+  R21: "Payments to sanctioned vendors are blocked; payments to unverified bank accounts need approval."
+  R22: "Invoices, payment records and posted documents may not be deleted (retention)."
+  R23: "Invoices must pass the 3-way match (PO, goods receipt, invoice within 2% or EUR 100) before release."
+  R24: "An email about an invoice the user named goes to that invoice's customer, an internal address, or an address the user gave; anyone else needs approval."
+  R25: "A recipient, sender or URL host whose domain imitates the company's or a known vendor's (lookalike) needs approval, and a lookalike sender is never trusted as 'reply to sender'."
+  R26: "A change to a sensitive column (email, phone, IBAN, amount, owner...) that the request doesn't ask for needs approval."
+  R27: "If the agent still proposes a state-changing action when the user's request is masked out (MELON), the action is driven by injected content and needs approval."
+  R28: "Canary records exist only to be stolen: any external action carrying one is blocked."
+  R30: "Bank accounts must be valid: an IBAN with the wrong length or check digits is blocked (a typo, or an invented account)."
+  R31: "Confirmation of Payee: a new bank account registered to someone other than the vendor needs approval."
+  R32: "Raw credentials (API keys, tokens, private keys) never pass through an agent's arguments; tools get them from the secrets broker."
+  R33: "A delegated agent can use only the tools it was delegated, within the user's role: authority only narrows down a delegation chain."
+  R34: "Shell commands are read and dry-run in a sandbox with no network: decode-and-run, privilege, persistence, secrets plus network, and writes outside the workspace are refused; network, secrets and mass deletes go to a person."
+  R29: "If a classifier flagged injected instructions in content the task read, state-changing actions need approval unless every target was typed by the user (a model signal: it escalates, never blocks)."
+  # R25-R34 belong to the Phase 5 roadmap; R35-R40 are the vismay-dev gap rules.
+  R35: "Raw SQL may not change the tables the finance rules read (vendors, invoices, POs, receipts, proposals, SAP documents); only the finance tools may."
+  R36: "One task's totals count: rows changed across statements, money moved across payments, characters emailed outside, and repeats of the same payment or email need approval."
+  R37: "An email to an outside address that is very long or carries a long encoded run needs approval, whatever its content appears to be."
+  R38: "Once a task has read untrusted content, an email, transfer or other outbound action to a destination the user didn't give needs approval."
+  R39: "Bank accounts, IBANs and links that came from untrusted content may not be passed on by email or chat message, even internally, without approval."
+  R40: "When a task has shown no tool output, an email or transfer to an outside destination the user didn't give needs approval: there is nothing to trace it to."
+  R41: "An invoice is paid only to its vendor's account on record, for the invoice's own amount: any other account or amount the agent names is blocked, and no approval can change that."
+  R42: "Arguments only the user may choose (a new password; a tool's manifest lists them as user_args) must come from the user's own words; any other value needs approval."
