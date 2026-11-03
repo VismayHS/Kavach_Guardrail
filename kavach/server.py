@@ -741,6 +741,72 @@ def trace(corr: str, who: dict | None = Depends(caller)):
     return {**t, "chain": {"valid": chain["valid"], "reason": chain.get("reason"), "count": len(gw.receipts.items)}}
 
 
+def _status(t: dict, d: dict) -> dict:
+    """What became of one proposed action, in a word and a sentence, from its trace."""
+    c, types = t["connector"], [r["type"] for r in t["receipts"]]
+    approved = "human-approved-execution" in types or "human-approved" in types
+    o = c["outcome"]
+    if c["invoked"]:
+        word = {"sent": "executed", "settled": "executed", "ran": "executed", "failed": "failed",
+                "unknown": "unknown"}.get(o, "executed")
+        text = {"sent": "Executed: the email left through the mail server.", "settled": "Executed: the bank booked it.",
+                "ran": "Executed.", "failed": "Failed: the mail server refused it; nothing was sent.",
+                "unknown": "Not sure it arrived: the line broke mid-send; it is never sent twice."}.get(o, "Executed.")
+        if approved and word == "executed":
+            text = "Executed after a person approved it. " + text.split(": ", 1)[-1]
+        return {"word": word, "text": text, "approved": approved}
+    if o == "waiting":
+        return {"word": "held", "approved": approved,
+                "text": ("Approved; " if approved else "") + "waiting in its window: it can still be cancelled."}
+    if o == "waiting for a person":
+        return {"word": "awaiting approval", "text": "Not executed: waiting for a person to approve it.",
+                "approved": False}
+    return {"word": "not executed", "approved": approved,
+            "text": {"refused: the connector was never called": "Not executed: KAVACH refused it before the tool ran.",
+                     "cancelled before it went out": "Not executed: cancelled before it left.",
+                     "refused by a person": "Not executed: a person refused it.",
+                     "approval expired or closed": "Not executed: nobody approved it in time."}.get(o, "Not executed.")}
+
+
+@app.get("/api/activity")
+def activity(limit: int = 40, who: dict | None = Depends(caller)):
+    """Each action an agent proposed, newest first: who, the tool and its exact parameters, KAVACH's decision with
+    its rules, and what became of it (executed, not executed, held in its window, waiting for a person), with the
+    receipts that say so. The console's Activity page reads this."""
+    back = {ref: rid for rid, (_e, ref) in gw.recall.items()}
+    out = []
+    for r in reversed([x for x in gw.receipts.items if x["body"].get("type") == "decision"][-max(1, limit):]):
+        if not _sees(who, _rec_tenant(r)):
+            continue
+        b, d = r["body"], r["body"]["decision"]
+        corr = b.get("corr") or d["call"].get("call_id")
+        t = gw.trace(corr) if corr else None
+        if t is None:
+            continue
+        hold = t.get("hold")
+        hitl = gw.hitl.items.get(d.get("hitl_id")) if d.get("hitl_id") else None
+        ran = next((x["body"] for x in gw.receipts.items if x["body"].get("type") == "execution"
+                    and x["body"].get("decision_receipt") == r["id"]), None)
+        out.append({"corr": corr, "receipt": r["id"], "ts": r["ts"], "agent": b.get("principal"),
+                    "request": b.get("request"), "tool": d["call"]["tool"], "args": d["call"]["args"],
+                    "verdict": d["verdict"], "reason": d["reason"], "rules": t["rules"],
+                    "status": _status(t, d), "returned": (ran or {}).get("returned"),
+                    "hold": None if not hold else {**hold, "receipt": back.get(hold["id"])},
+                    "hitl": None if not hitl else {"id": hitl["id"], "status": hitl["status"],
+                                                   "expires": hitl.get("expires")},
+                    "receipts": t["receipts"]})
+    return out
+
+
+@app.get("/api/receipt/{rid}")
+def receipt_one(rid: str, who: dict | None = Depends(caller)):
+    """One whole receipt: body, its hash, the hash it links to, the HMAC and the Ed25519 signature."""
+    rec = gw.receipts.get(rid)
+    if rec is None or not _sees(who, _rec_tenant(rec)):
+        raise HTTPException(404, f"no receipt {rid}")
+    return rec
+
+
 @app.get("/api/receipts/export")
 def receipts_export(who: dict | None = Depends(caller)):
     """The whole chain as JSONL (a header with the public key, then every receipt), for an auditor:
@@ -1012,6 +1078,27 @@ def bench_file(name: str):
 
 # ---------------------------------------------------------------- MCP-style JSON-RPC front door
 MCP_TOOLS = {t for t in os.environ.get("KAVACH_MCP_TOOLS", "").split(",") if t}   # empty: every tool
+MCP_TEXT_MAX = int(os.environ.get("KAVACH_MCP_TEXT_MAX", "30000"))
+
+
+def fit_for_agent(result, limit: int | None = None) -> str:
+    """A tool's result as the agent receives it: always whole JSON. When it is too long, long email bodies are
+    shortened (and marked) until it fits, so every message's sender, subject and date still arrive. It used to be cut
+    at 4,000 characters, mid-string: with a real inbox the agent saw an email or two, then broken JSON."""
+    limit = limit or MCP_TEXT_MAX
+    text = json.dumps(result, default=str)
+    if len(text) <= limit:
+        return text
+    if isinstance(result, list) and result and all(isinstance(m, dict) for m in result):
+        cap = max(len(str(m.get("body", ""))) for m in result)
+        while cap > 120:
+            cap //= 2
+            short = [{**m, "body": m["body"][:cap] + " [shortened]"} if isinstance(m.get("body"), str)
+                     and len(m["body"]) > cap else m for m in result]
+            text = json.dumps(short, default=str)
+            if len(text) <= limit:
+                return text
+    return json.dumps({"truncated": True, "text": text[:limit - 200]})
 
 
 @app.post("/mcp")
@@ -1058,7 +1145,7 @@ def mcp(rpc: dict, who: dict | None = Depends(caller)):
                              "not run. Tell the user; don't say it was done."}], "isError": True,
                 "_meta": {"kavach/verdict": "ERROR", "kavach/correlation": call.call_id}}}
         allowed = d.verdict.value.startswith("ALLOW")
-        text = json.dumps(d.result, default=str)[:4000] if allowed else Kavach.agent_message(d)
+        text = fit_for_agent(d.result) if allowed else Kavach.agent_message(d)
         return {"jsonrpc": "2.0", "id": mid, "result": {
             "content": [{"type": "text", "text": text}], "isError": not allowed,
             "_meta": {"kavach/verdict": d.verdict.value, "kavach/receipt": d.receipt_id, "kavach/hitl": d.hitl_id,

@@ -870,8 +870,12 @@ class Kavach:
         if windowed:
             d.result = self._arm_window(d.receipt_id, d.call, d.effect, result)
         self.register_output(task_id, d.call, result)
+        returned = [{k: str(x[k])[:140] for k in ("id", "from", "subject") if k in x} for x in result[:10]
+                    if isinstance(x, dict)] if isinstance(result, list) else None
         self.receipts.append({"type": "execution", "task_id": task_id, "decision_receipt": d.receipt_id,
                               "corr": d.call.call_id,
+                              # what a read returned (which messages: id, sender, subject), so the evidence names them
+                              **({"returned": returned, "returned_count": len(result)} if returned else {}),
                               "result_preview": task.prov.mask(str(d.result))[:200]})   # mask before cutting
         return d
 
