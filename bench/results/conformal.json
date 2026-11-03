@@ -12,14 +12,14 @@
   "UAR_no_undo": 0.0,
   "OBR": 0.0,
   "safe_auto": 0.9524,
-  "escalation_rate": 0.2553,
+  "escalation_rate": 0.266,
   "safe_escalated": 0.0476,
-  "unsafe_blocked_auto": 0.5769,
+  "unsafe_blocked_auto": 0.5577,
   "ASR_injection": 0.0,
-  "automation_rate": 0.7447,
+  "automation_rate": 0.734,
   "undo_armed": 0.9444,
-  "latency_p50_ms": 0.8166,
-  "latency_p95_ms": 4.1008
+  "latency_p50_ms": 1.5898,
+  "latency_p95_ms": 5.3437
  },
  "alphas": [
   {
@@ -35,14 +35,14 @@
     "UAR_no_undo": 0.0,
     "OBR": 0.0,
     "safe_auto": 0.9524,
-    "escalation_rate": 0.2553,
+    "escalation_rate": 0.266,
     "safe_escalated": 0.0476,
-    "unsafe_blocked_auto": 0.5769,
+    "unsafe_blocked_auto": 0.5577,
     "ASR_injection": 0.0,
-    "automation_rate": 0.7447,
+    "automation_rate": 0.734,
     "undo_armed": 0.9444,
-    "latency_p50_ms": 0.8376,
-    "latency_p95_ms": 3.8797
+    "latency_p50_ms": 1.541,
+    "latency_p95_ms": 5.3497
    }
   },
   {
@@ -58,14 +58,14 @@
     "UAR_no_undo": 0.0,
     "OBR": 0.0,
     "safe_auto": 0.9524,
-    "escalation_rate": 0.2553,
+    "escalation_rate": 0.266,
     "safe_escalated": 0.0476,
-    "unsafe_blocked_auto": 0.5769,
+    "unsafe_blocked_auto": 0.5577,
     "ASR_injection": 0.0,
-    "automation_rate": 0.7447,
+    "automation_rate": 0.734,
     "undo_armed": 0.9444,
-    "latency_p50_ms": 0.8735,
-    "latency_p95_ms": 4.1235
+    "latency_p50_ms": 1.5055,
+    "latency_p95_ms": 5.8119
    }
   },
   {
@@ -81,14 +81,14 @@
     "UAR_no_undo": 0.0,
     "OBR": 0.0,
     "safe_auto": 0.9524,
-    "escalation_rate": 0.2553,
+    "escalation_rate": 0.266,
     "safe_escalated": 0.0476,
-    "unsafe_blocked_auto": 0.5769,
+    "unsafe_blocked_auto": 0.5577,
     "ASR_injection": 0.0,
-    "automation_rate": 0.7447,
+    "automation_rate": 0.734,
     "undo_armed": 0.9444,
-    "latency_p50_ms": 0.8763,
-    "latency_p95_ms": 4.5099
+    "latency_p50_ms": 1.4685,
+    "latency_p95_ms": 5.253
    }
   },
   {
@@ -104,14 +104,14 @@
     "UAR_no_undo": 0.0,
     "OBR": 0.0,
     "safe_auto": 0.9524,
-    "escalation_rate": 0.2553,
+    "escalation_rate": 0.266,
     "safe_escalated": 0.0476,
-    "unsafe_blocked_auto": 0.5769,
+    "unsafe_blocked_auto": 0.5577,
     "ASR_injection": 0.0,
-    "automation_rate": 0.7447,
+    "automation_rate": 0.734,
     "undo_armed": 0.9444,
-    "latency_p50_ms": 0.8797,
-    "latency_p95_ms": 4.2398
+    "latency_p50_ms": 1.5017,
+    "latency_p95_ms": 5.1963
    }
   }
  ]

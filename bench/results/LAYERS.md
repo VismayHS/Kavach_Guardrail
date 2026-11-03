@@ -4,9 +4,9 @@ Seed 0 test split: 282 scenarios in 47 families, shipped operating point, no LLM
 
 | System | Unsafe auto-allowed | Injection success | Safe auto-completed | Escalated |
 |---|---|---|---|---|
-| full | 0.0% | 0.0% | 95.2% | 25.5% |
-| no model | 0.0% | 0.0% | 95.2% | 25.5% |
-| rules only | 3.9% | 0.0% | 95.2% | 23.4% |
+| full | 0.0% | 0.0% | 95.2% | 26.6% |
+| no model | 0.0% | 0.0% | 95.2% | 26.6% |
+| rules only | 3.9% | 0.0% | 95.2% | 24.5% |
 
 ## Counted by family
 

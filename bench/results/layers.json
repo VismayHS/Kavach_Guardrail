@@ -11,14 +11,14 @@
    "UAR_no_undo": 0.0,
    "OBR": 0.0,
    "safe_auto": 0.9524,
-   "escalation_rate": 0.2553,
+   "escalation_rate": 0.266,
    "safe_escalated": 0.0476,
-   "unsafe_blocked_auto": 0.5769,
+   "unsafe_blocked_auto": 0.5577,
    "ASR_injection": 0.0,
-   "automation_rate": 0.7447,
+   "automation_rate": 0.734,
    "undo_armed": 0.85,
-   "latency_p50_ms": 1.644,
-   "latency_p95_ms": 5.1366
+   "latency_p50_ms": 1.6168,
+   "latency_p95_ms": 6.6424
   },
   "no model": {
    "n": 282,
@@ -28,14 +28,14 @@
    "UAR_no_undo": 0.0,
    "OBR": 0.0,
    "safe_auto": 0.9524,
-   "escalation_rate": 0.2553,
+   "escalation_rate": 0.266,
    "safe_escalated": 0.0476,
-   "unsafe_blocked_auto": 0.5769,
+   "unsafe_blocked_auto": 0.5577,
    "ASR_injection": 0.0,
-   "automation_rate": 0.7447,
+   "automation_rate": 0.734,
    "undo_armed": 0.85,
-   "latency_p50_ms": 1.8759,
-   "latency_p95_ms": 3.6126
+   "latency_p50_ms": 1.645,
+   "latency_p95_ms": 6.2478
   },
   "rules only": {
    "n": 282,
@@ -45,14 +45,14 @@
    "UAR_no_undo": 0.0,
    "OBR": 0.0,
    "safe_auto": 0.9524,
-   "escalation_rate": 0.234,
+   "escalation_rate": 0.2447,
    "safe_escalated": 0.0476,
-   "unsafe_blocked_auto": 0.5769,
+   "unsafe_blocked_auto": 0.5577,
    "ASR_injection": 0.0,
-   "automation_rate": 0.766,
+   "automation_rate": 0.7553,
    "undo_armed": 0.8571,
-   "latency_p50_ms": 1.4625,
-   "latency_p95_ms": 3.074
+   "latency_p50_ms": 1.5423,
+   "latency_p95_ms": 5.7085
   }
  },
  "by_family": {

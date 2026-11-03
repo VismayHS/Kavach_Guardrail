@@ -182,9 +182,9 @@
     "max": 0.0
    },
    "escalation_rate": {
-    "mean": 0.234,
-    "min": 0.234,
-    "max": 0.234
+    "mean": 0.2475,
+    "min": 0.2376,
+    "max": 0.2553
    },
    "undo_armed": {
     "mean": 0.9474,
@@ -293,9 +293,9 @@
     "max": 0.0
    },
    "escalation_rate": {
-    "mean": 0.2553,
-    "min": 0.2553,
-    "max": 0.2553
+    "mean": 0.2688,
+    "min": 0.2589,
+    "max": 0.2766
    },
    "undo_armed": {
     "mean": 0.9444,
@@ -330,9 +330,9 @@
     "max": 0.0
    },
    "escalation_rate": {
-    "mean": 0.2553,
-    "min": 0.2553,
-    "max": 0.2553
+    "mean": 0.2688,
+    "min": 0.2589,
+    "max": 0.2766
    },
    "undo_armed": {
     "mean": 0.3889,
@@ -367,9 +367,9 @@
     "max": 0.0
    },
    "escalation_rate": {
-    "mean": 0.2553,
-    "min": 0.2553,
-    "max": 0.2553
+    "mean": 0.2688,
+    "min": 0.2589,
+    "max": 0.2766
    },
    "undo_armed": {
     "mean": 0.9444,
