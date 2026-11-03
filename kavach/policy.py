@@ -44,6 +44,19 @@ def credential_path(cfg: dict, path) -> bool:
     return any(s in p for s in cfg["sensitive_paths"])
 
 
+# a negation shortly before a verb ("do not send", "don't email", "without sending", "never forward any"): up to three
+# words may sit between them ("do not under any circumstances send" is still negated)
+# words that are also nouns: "the email titled...", "my latest invoice email", "two emails" name a message, not an
+# action the user asks for
+NOUNISH = {"email", "mail", "reply", "message"}
+# ...so they count as a request only where a verb stands: the start of the request or of a clause, or after a word
+# that leads into one ("and email it", "then reply", "please email", "to email", "can you mail")
+VERB_POSITION = re.compile(r"(?:^\s*|[.;:!?,(]\s*|\b(?:and|then|please|pls|kindly|to|also|or|you|i|we|just|can|could|"
+                           r"would|will|now)\s+)$")
+NOUN_AFTER = re.compile(r"\W+(?:titled|from|about|with|that|which|called|named|subject|thread|address)\b")
+NEGATED = re.compile(r"(?:\bnot|\bnever|\bno|\bwithout|n't|\bnor|\bavoid|\brefrain from|\bstop)\W+(?:[\w'-]+\W+){0,3}$")
+
+
 class PolicyEngine:
     def __init__(self, path: str | Path | None = None):
         path = path or Path(__file__).parent / "policies" / "default.yaml"
@@ -413,7 +426,16 @@ class PolicyEngine:
         user typed (a file, an address: 'address-change.txt', .../pay/dec-2023) are not words of the request."""
         from .intent import TOOL_VERBS
         req = NAME_TOKEN.sub(" ", ctx.user_request.lower())
-        return any(re.search(rf"\b{re.escape(v)}", req) for v in (spec.intent_verbs or TOOL_VERBS.get(tool, [])))
+        for v in (spec.intent_verbs or TOOL_VERBS.get(tool, [])):
+            for m in re.finditer(rf"\b{re.escape(v)}", req):
+                before, after = req[max(0, m.start() - 48):m.start()], req[m.end():m.end() + 16]
+                if NEGATED.search(before):
+                    continue
+                if v in NOUNISH and (not VERB_POSITION.search(before) or after.startswith("s")
+                                     or NOUN_AFTER.match(after)):
+                    continue        # "the reconciliation email", "emails", "the email titled": a thing, not a request
+                return True
+        return False
 
     def _shell_rule(self, e: dict, add) -> None:
         """R34: a shell command is refused for what it reaches, and goes to a person for what it might do."""
