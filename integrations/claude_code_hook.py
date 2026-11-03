@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import os
 import sys
 import tempfile
@@ -82,7 +83,8 @@ def handle(event: dict, opts) -> dict:
     session = event.get("session_id", "default")
     if name == "UserPromptSubmit":
         st = load(session)
-        st["prompt"] = event.get("prompt", "")
+        # Claude Code wraps pasted text in <pasted_content id="..."> tags: what was pasted is what the user said
+        st["prompt"] = re.sub(r"</?pasted_content[^>]*>", "", event.get("prompt", "")).strip()
         save(session, st)
         if opts.mcp:
             state_request(st["prompt"], session, opts)
