@@ -1,0 +1,9 @@
+# Everything scripts/demo_up.sh, the stage demo and the test suite need, without the heavy extras (torch, AgentDojo...).
+-r requirements.txt
+sqlalchemy>=2.0             # KAVACH_DB_URL: receipts and waiting emails survive a restart
+cryptography>=43            # Ed25519-signed receipts, /oauth/token
+python-multipart>=0.0.9     # /oauth/token reads a form
+opentelemetry-sdk>=1.30     # traces in Jaeger
+opentelemetry-exporter-otlp-proto-http>=1.30
+mcp>=2.3                    # demo_claude.sh --without-kavach, the MCP proxy
+cedarpy>=4.0                # policy proofs (python -m kavach.policy_verify)

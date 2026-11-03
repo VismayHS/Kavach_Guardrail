@@ -24,8 +24,7 @@ own doing, not KAVACH's. Say so, then show the scripted agent for KAVACH's enfor
 
 ```bash
 cd Kavach_Guardrail
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # Python 3.11+
-.venv/bin/pip install -r requirements-extra.txt     # optional: OpenTelemetry, Cedar, Playwright...
+python3 -m venv .venv && .venv/bin/pip install -r requirements-demo.txt   # Python 3.11+
 npm i -g @anthropic-ai/claude-code                   # for the REAL stories (signed in to Claude)
 # Qualcomm key (optional; the judge's note on approval cards): put these two in .env (never commit it)
 #   INFERENCE_CLOUD_API_KEY=...   INFERENCE_CLOUD_ENDPOINT=https://aisuite.cirrascale.com/apis/v2
