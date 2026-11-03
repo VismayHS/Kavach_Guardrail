@@ -24,13 +24,36 @@ if curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1; then
   exit 1
 fi
 
+# Optional real Gmail: with KAVACH_GMAIL_USER and KAVACH_GMAIL_APP_PASSWORD (environment, or ../.env, which stays out
+# of git), Mailpit forwards the emails KAVACH lets out to real Gmail, but only those addressed to KAVACH_GMAIL_TO
+# (in ../.env; default: the sending account itself): an address a judge types reaches Mailpit only. A cancelled email never reaches
+# Mailpit, so it never reaches Gmail. The password goes only into .kavach/gmail-relay.yaml (owner-only), for Mailpit:
+# not into KAVACH's environment, and never into Claude's.
+ENV_FILE=${KAVACH_ENV_FILE:-../.env}
+envval() { [ -f "$ENV_FILE" ] && sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$ENV_FILE" | tail -1 | tr -d "\"'"; }
+GMAIL_USER=${KAVACH_GMAIL_USER:-$(envval KAVACH_GMAIL_USER || true)}
+GMAIL_PASS=${KAVACH_GMAIL_APP_PASSWORD:-$(envval KAVACH_GMAIL_APP_PASSWORD || true)}
+GMAIL_TO=${KAVACH_GMAIL_TO:-$(envval KAVACH_GMAIL_TO || true)}
+GMAIL_TO=${GMAIL_TO:-$GMAIL_USER}
+[ "${KAVACH_GMAIL:-on}" = "off" ] && GMAIL_USER=          # KAVACH_GMAIL=off: Mailpit only (no internet on stage)
+RELAY=()
+if [ -n "$GMAIL_USER" ] && [ -n "$GMAIL_PASS" ]; then
+  (umask 077; printf "host: smtp.gmail.com\nport: 587\nstarttls: true\nauth: plain\nusername: '%s'\npassword: '%s'\noverride-from: '%s'\nsubject-prefix: '[KAVACH demo] '\n" \
+    "$GMAIL_USER" "${GMAIL_PASS// /}" "$GMAIL_USER" > .kavach/gmail-relay.yaml)
+  RELAY=(--smtp-relay-config .kavach/gmail-relay.yaml --smtp-relay-matching "^${GMAIL_TO//./\\.}\$")
+  export KAVACH_DEMO_MAIL_TO=$GMAIL_TO            # the Live demo page suggests this address
+fi
+relay_on() { curl -sf http://127.0.0.1:8025/api/v1/webui | grep -q '"Enabled":true'; }
+if curl -sf http://127.0.0.1:8025/api/v1/info >/dev/null && [ ${#RELAY[@]} -gt 0 ] && ! relay_on; then
+  kill "$(lsof -nP -tiTCP:8025 -sTCP:LISTEN)" 2>/dev/null && sleep 1        # restart it with Gmail forwarding on
+fi
 if ! curl -sf http://127.0.0.1:8025/api/v1/info >/dev/null; then
   command -v mailpit >/dev/null || { echo "Mailpit is not installed (macOS: brew install mailpit)"; exit 1; }
   nohup mailpit --listen 127.0.0.1:8025 --smtp 127.0.0.1:1025 --api-cors "127.0.0.1:${PORT},localhost:${PORT}" \
-    > .kavach/mailpit.log 2>&1 &      # --api-cors: the console's Live demo page reads the inbox directly
+    ${RELAY[@]+"${RELAY[@]}"} > .kavach/mailpit.log 2>&1 &      # --api-cors: the Live demo page reads the inbox
   for _ in 1 2 3 4 5 6 7 8 9 10; do curl -sf http://127.0.0.1:8025/api/v1/info >/dev/null && break; sleep 0.5; done
 fi
-echo "Inbox:   http://127.0.0.1:8025"
+echo "Inbox:   http://127.0.0.1:8025$([ ${#RELAY[@]} -gt 0 ] && echo "   (emails to $GMAIL_TO also go to real Gmail, from $GMAIL_USER)")"
 
 PY=${PYTHON:-python3}
 [ -x .venv/bin/python ] && [ -z "${PYTHON:-}" ] && PY=.venv/bin/python
