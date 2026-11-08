@@ -1,150 +1,319 @@
-# KAVACH: pre-execution action firewall for AI agents
+<h1 align="center">KAVACH</h1>
 
-**ET-03 · Agentic AI Guardrail Validator** · Infosys IGNITE ENG NEXT 2026 Hack-AI-Thon
+<p align="center"><strong>A pre-execution security layer for AI agents</strong></p>
 
-Before an AI agent's tool call touches the real world, KAVACH works out:
-- **what it will actually do**: a sandbox diff where the effect can be staged, a typed prediction where it can't;
-- **where every argument came from**: the user, the agent, or untrusted content;
-- **whether it can be undone**.
+<p align="center">
+KAVACH evaluates every tool call an AI agent proposes, before the call can affect data, money or people.<br>
+Built for problem statement ET-03, Agentic AI Guardrail Validator, at Infosys ENG NEXT 2026.
+</p>
 
-It then **allows** the call, **allows it with undo armed**, **escalates it to a human**, or **blocks it** with a replan hint, and writes a tamper-evident receipt. Undo means a snapshot for SQL and file changes, a 60-minute hold for payments, a 5-minute recall window for emails, and parking for SAP postings (nothing is booked until a person posts them). When a held payment is about to go out, KAVACH checks it is still the one that was approved (same bank account, same amount) and cancels it if not. Authorization and provenance are deterministic code. A small calibrated model ranks the remaining risk. An LLM on Qualcomm Cloud AI is used only for ambiguous intent checks and plain-English explanations, and it can only make the system *stricter*.
+<p align="center">
+<a href="#overview">Overview</a> ·
+<a href="#how-a-decision-is-made">Decision pipeline</a> ·
+<a href="#the-console">Console</a> ·
+<a href="#getting-started">Getting started</a> ·
+<a href="#evaluation">Evaluation</a> ·
+<a href="#limitations">Limitations</a>
+</p>
 
-![architecture](docs/img/architecture.png)
+![KAVACH blocking a forged claim approval, with the reasoning for the decision](docs/img/console/forged-approval-blocked.png)
 
-## Quick start
+<sub>A claim email instructed the agent to tell the customer the claim was approved. The recipient was legitimate, so a recipient check would have passed. KAVACH refused the email because the approval wording came from the untrusted message and the user had withheld that authority.</sub>
+
+## Overview
+
+Agents now send email, change records and move money. A single wrong tool call can leak data or commit an organisation to something nobody approved, and the instruction behind that call may have arrived inside a document the agent was only asked to read.
+
+KAVACH sits between the agent and its tools. For each proposed call it determines:
+
+| Question | Mechanism |
+|---|---|
+| Is the call **safe**? | The effect is staged in a sandbox where possible and predicted from typed arguments where not. |
+| Is it **authorized**? | Deterministic policy rules, role checks, and the origin of every argument. |
+| Is it **explainable**? | Each decision carries a plain-language reason, the rules evaluated, and the evidence used. |
+| Is it **reversible**? | Snapshots, hold windows and cancellation, wherever the execution path allows them. |
+
+Each call receives one of four outcomes, and each outcome is written to a tamper-evident receipt:
+
+| Verdict | Meaning |
+|---|---|
+| `ALLOW` | The call runs. |
+| `ALLOW_WITH_SAFEGUARD` | The call runs with undo armed, for example a 30-second hold before an email leaves. |
+| `ESCALATE` | The call waits for a person, and approval is bound to that exact action. |
+| `DENY` | The call does not run. The agent receives the reason and a suggested alternative. |
+
+### Design principles
+
+- **Only deterministic rules can deny.** The risk model can only allow or escalate, and a language model can only make a decision stricter. A deceived model cannot release a blocked action.
+- **Provenance is tracked per value.** A recipient, amount or account is traced to the user, to KAVACH's records, or to untrusted content.
+- **Unknown means no.** Unknown tools, changed tool definitions, timeouts and model errors never become an allow.
+- **No record, no action.** If a receipt cannot be written durably, the call fails closed.
+- **Credentials stay out of the agent.** The agent holds no mailbox password or API secret; connectors run on KAVACH's side of the boundary.
+
+## How a decision is made
+
+```mermaid
+flowchart LR
+    A[Agent proposes<br>a tool call] --> B[Tool manifest<br>and schema check]
+    B --> C[Argument<br>provenance]
+    C --> D[Consequence<br>analysis]
+    D --> E[Policy rules<br>R1 to R45]
+    E --> F[Intent check and<br>calibrated risk model]
+    F --> G{Verdict}
+    G -->|ALLOW| H[Execute]
+    G -->|ALLOW_WITH_SAFEGUARD| I[Hold or snapshot,<br>then execute]
+    G -->|ESCALATE| J[Human approval]
+    G -->|DENY| K[Refuse with reason]
+    H --> L[(Signed, hash-chained<br>receipts)]
+    I --> L
+    J --> L
+    K --> L
+```
+
+| Stage | Purpose | Implementation |
+|---|---|---|
+| Manifest | Types each tool's effect, pins its definition by hash, and refuses changed definitions | `kavach/manifest.py` |
+| Provenance | Labels each argument as trusted, derived or untrusted, with its source | `kavach/provenance.py` |
+| Consequence | Measures or predicts the effect: rows changed, recipients, data leaving, reversibility | `kavach/consequence.py`, `kavach/sql.py`, `kavach/shell.py` |
+| Policy | Applies 45 rules defined as policy-as-code, with Cedar proofs and parity checks for the core rules | `kavach/policy.py`, `kavach/policies/` |
+| Intent and risk | Scores fit with the request and estimates the probability of harm, conditioned on reversibility | `kavach/intent.py`, `kavach/risk.py` |
+| Approval | Binds a human decision to a digest of the exact action; each approval is single-use and expires | `kavach/hitl.py`, `kavach/gateway.py` |
+| Record | Writes HMAC and Ed25519 signed receipts in a hash chain with a signed checkpoint | `kavach/receipts.py`, `kavach/signing.py` |
+
+### Representative rules
+
+| Rule | Protection | Outcome |
+|---|---|---|
+| R1 | Untrusted content cannot choose a recipient, URL, account or amount | Deny |
+| R45 | An email announcing a decision needs the authorised reviewer; wording copied from content the agent read is refused | Approval or deny |
+| R43 | A first email to a new outside address needs a person | Approval |
+| R44 | Content marked Internal Only or Confidential cannot be emailed outside | Deny |
+| R41 | An invoice is paid only to the vendor's account on record, for the invoice amount | Deny |
+| R3, R4 | No production writes during a change freeze; no destructive schema changes in production | Deny |
+| R36 | Totals across a task count: rows changed, money moved, data emailed, repeated actions | Approval |
+| R28 | Canary records exist only to be stolen; any external action carrying one is blocked | Deny |
+
+The complete catalogue is in [`kavach/policies/default.yaml`](kavach/policies/default.yaml) and on the console's Rulebook page.
+
+### Use of language models
+
+Language models are advisory and are not on the path that blocks or releases an action.
+
+| Component | Role | If unavailable |
+|---|---|---|
+| Intent judge | Sees only the user's request and the proposed action, never the agent's reasoning or raw tool output. By default it adds a note for the reviewer on escalated calls. | Heuristic score; the decision is unaffected |
+| Explainer (optional) | Rewrites the explanation in plain language; rejected if it adds numbers absent from the evidence | Template explanation |
+| Planner (optional) | Writes a plan from the request alone, before any untrusted content is read | Planner mode unavailable |
+
+Hosted models run on Qualcomm Cloud AI through an OpenAI-compatible API.
+
+## The console
+
+The console shows each action an agent requests, the decision, and what happened afterwards.
+
+![Activity page](docs/img/console/activity.png)
+
+<table>
+<tr>
+<td width="50%"><img src="docs/img/console/injection-blocked.png" alt="Prompt injection blocked"><br><strong>Prompt injection.</strong> The recipient is traced to an email the agent read, not to the user.</td>
+<td width="50%"><img src="docs/img/console/confidential-blocked.png" alt="Confidential content blocked"><br><strong>Data policy.</strong> The auditor is a trusted address, but content marked Internal Only may not leave.</td>
+</tr>
+<tr>
+<td><img src="docs/img/console/approval-required.png" alt="Approval required"><br><strong>Human approval.</strong> The reviewer sees the exact recipient and content; nothing runs until they decide.</td>
+<td><img src="docs/img/console/cancelled-before-delivery.png" alt="Cancelled before delivery"><br><strong>Cancel before delivery.</strong> An allowed email waits in a hold window and can be cancelled before it leaves.</td>
+</tr>
+</table>
+
+| Trace of a single action | Evaluation summary |
+|---|---|
+| ![Trace page](docs/img/console/trace.png) | ![Results page](docs/img/console/results.png) |
+
+| Policy rulebook | Operations dashboard (Grafana) |
+|---|---|
+| ![Rulebook page](docs/img/console/rulebook.png) | ![Grafana dashboard](docs/img/console/grafana.png) |
+
+<sub>Captured from KAVACH connected to a real mailbox, using synthetic content. The tool calls were issued by a test harness, so the agent names are labels. Email addresses were replaced with placeholders.</sub>
+
+## Getting started
+
+### Requirements
+
+- Python 3.11 or later
+- Docker, for the optional observability stack
+- Optional: a Qualcomm Cloud AI key, a Gmail App Password, Claude Code
+
+### Install and run
 
 ```bash
+git clone https://github.com/VismayHS/Kavach_Guardrail.git
+cd Kavach_Guardrail
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python -m pytest -q                       # all tests (see the count it prints)
-python -m bench.run                       # trains the risk model, benchmarks vs baselines (5 seeds)
-python -m bench.lofo                      # each family judged by a model trained without it
-python -m bench.holdout                   # families written after the rules, never trained on
-python -m bench.layers                    # what each layer decides (rules, intent gate, risk model), counted by family
-python -m bench.semantic_eval --offline   # 24 cases only meaning can decide; drop --offline to run the Qualcomm judge
-python -m uvicorn kavach.server:app --port 8000   # then open http://localhost:8000
+
+python -m pytest -q
+python -m uvicorn kavach.server:app --port 8000
 ```
 
-### Run the console UI
+Open <http://127.0.0.1:8000>. The scripted scenarios, action checker, approvals, undo windows, receipts, results and rulebook work without any external key.
 
-The FastAPI server serves the console at `/`. Start it from the repository root:
+### Connect a real agent to a real mailbox
+
+Add the mailbox credentials to a local `.env` file, which is ignored by Git. Never commit this file.
 
 ```bash
-python -m uvicorn kavach.server:app --host 127.0.0.1 --port 8011
+KAVACH_GMAIL_USER=you@example.com
+KAVACH_GMAIL_APP_PASSWORD=your-app-password
+KAVACH_MAIL_TRUSTED=auditor@example.com    # optional: addresses exempt from first-contact approval
 ```
 
-Open <http://127.0.0.1:8011>. If that port is occupied, choose another free port and use it in both the command and URL. The console, scripted scenarios, action checker, approvals, undo windows, receipts, results and rulebook work without a Qualcomm key. The **Run both agents** button is disabled until the server has Qualcomm Cloud AI credentials.
-
-### Enable the live agent (you provide the key)
-
-Get an API key for your Qualcomm Inference Cloud account from the [Qualcomm AI Developer Network](https://aisuite.cirrascale.com). The key is account-specific: KAVACH does not include one. Keep it on your machine; do not paste it into chat, commit it, or publish it in an issue.
-
-Copy the safe template and edit `.env` locally, replacing the placeholder with your own key:
+Start KAVACH, then start an agent in a second terminal:
 
 ```bash
-cp .env.example .env
-# Edit .env and set IMAGINE_API_KEY to the key from your account.
+scripts/gmail_up.sh       # KAVACH on the mailbox; console at http://127.0.0.1:8000/#/activity
+scripts/demo_claude.sh    # Claude Code, restricted to KAVACH's MCP endpoint
 ```
 
-Then start the server with that file loaded:
+The demo script starts Claude Code with built-in tools disabled and KAVACH as its only MCP server. Mailbox reading is read-only, and every outgoing email waits in a 30-second hold.
+
+`scripts/llama_agent.py` runs Llama 3.3 70B on Qualcomm Cloud AI against the same endpoint. `scripts/hijacked_agent.py` is a test harness with no model that obeys injected instructions, for exercising KAVACH when a model resists them.
+
+### Observability
 
 ```bash
-python -m uvicorn kavach.server:app --host 127.0.0.1 --port 8011 --env-file .env
+docker compose up -d otel-collector prometheus grafana jaeger
 ```
 
-The template sets the Inference Cloud endpoint. `python-dotenv` is included in `requirements.txt` for Uvicorn's `--env-file` support. Restart the server after changing the file. The top bar should then say **Qualcomm AI on**, and **Run both agents** becomes available. You can alternatively export `IMAGINE_API_KEY` and `IMAGINE_API_ENDPOINT` in the server's environment before starting it. Supported aliases are `INFERENCE_CLOUD_API_KEY` and `INFERENCE_CLOUD_ENDPOINT`.
+| Service | Address |
+|---|---|
+| Grafana | <http://localhost:3000> |
+| Prometheus | <http://localhost:9090> |
+| Jaeger | <http://localhost:16686> (service `kavach-gmail`) |
 
-Optional, Qualcomm Cloud AI (Imagine API on Cirrascale's Inference Cloud, OpenAI-compatible; key from https://aisuite.cirrascale.com):
+The dashboard covers decisions by verdict, rule activity, latency, approvals, holds, delivery outcomes, receipt-chain health, and model usage. Model cost is an estimate from a versioned table of reference prices in [`kavach/model_prices.json`](kavach/model_prices.json); those are not prices published by Qualcomm.
 
-```bash
-export IMAGINE_API_KEY=...                                    # key from your account; or INFERENCE_CLOUD_API_KEY
-export IMAGINE_API_ENDPOINT=https://aisuite.cirrascale.com/apis/v2   # or INFERENCE_CLOUD_ENDPOINT
-python -m uvicorn kavach.server:app --port 8000 --env-file .env     # or use the local .env steps above
-export KAVACH_AGENT_MODEL=Llama-3.3-70B                       # the protected agent's model; check GET /models
-python -m agent.llm_agent "Summarise my unread emails."               # live agent, guarded
-python -m agent.llm_agent "Summarise my unread emails." --no-guard    # same agent, unguarded
-python -m bench.judge_eval                                    # judge on vs off: verdict changes and latency
-python -m bench.semantic_eval                                 # does the judge catch what rules and keywords miss?
-python -m bench.explain_eval                                  # LLM-written explanations: kept, rejected, latency
-python -m agent.llm_agent "..." --both --save-log             # both runs, full transcripts in bench/results/live/
-```
-
-With the key loaded by the server, the console's **Live agent** screen takes plain English: a real agent (Llama-3.3-70B on Qualcomm Cloud AI) works on it twice, without and with KAVACH, each on a fresh copy of the demo company, and both columns fill in live (`POST /api/agent/run`). About a minute per request; models don't behave the same every time.
-
-The intent judge runs in two stages: the smallest model in `GET /models` triages every state-changing call (told to flag when in doubt), and only flagged calls go to the largest. Verdicts are cached. `KAVACH_JUDGE_MODEL` / `KAVACH_JUDGE_STRONG_MODEL` override the choice. The judge can only lower a call's alignment, never lift a rule. It asks for plain-text answers (`FLAG`/`PASS`, `ALIGNMENT:`/`REASON:`) because the Inference Cloud turns JSON answers into an empty tool call; thinking models (DeepSeek-R1, QwQ) are never picked.
-
-Offline rehearsal of the Qualcomm path: `python -m uvicorn scripts.fake_imagine:app --port 9100`, then set `IMAGINE_API_ENDPOINT=http://localhost:9100 IMAGINE_API_KEY=x`.
-
-## Live demo with real effects
-
-The stage demo proves outcomes with services KAVACH doesn't own: a real inbox (Mailpit, optionally forwarding to
-Gmail) and a local sandbox bank, each with its own page. Claude reaches the tools only through KAVACH's `/mcp`.
-
-```bash
-brew install mailpit                 # once (macOS); any Mailpit binary works
-scripts/demo_up.sh                   # Mailpit + sandbox bank + KAVACH; console http://127.0.0.1:8000/#/demo
-scripts/demo_claude.sh               # Claude Code locked to KAVACH (no shell, files, browser or other MCP server)
-scripts/demo_claude.sh --without-kavach   # the same Claude and tools with no KAVACH, for the comparison
-scripts/demo_replay.py               # labelled replay of a fooled agent paying the scam account
-scripts/demo_reset.sh                # clean start: empty inbox and bank, no receipts or approvals
-```
-
-The **Live demo** page tells three stories with the proof beside them: *Stop the email* (held 30 s, cancel before
-delivery; side by side with sending it without KAVACH), *The invoice scam* (only the vendor's account on record is
-paid, R41; a person approves; held 60 s), and *The poisoned email* (an email asks for the customer list; refused
-by R1). Real Claude runs with and without KAVACH are recorded in
-[`bench/results/CLAUDE_WITH_WITHOUT.md`](bench/results/CLAUDE_WITH_WITHOUT.md). Steps, guarantees and settings:
-[`docs/LIVE_DEMO.md`](docs/LIVE_DEMO.md).
-
-## API
+## Integration
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/v1/check` | Raw action input → decision, scorecard, explanation, receipt (the PS's "agent action input → approve/block → explanation"); `safeguard_armed` says whether a hold or snapshot really exists, `outputs_seen` how much context provenance had |
-| `POST /api/v1/session` | The orchestrator opens a session: the user's request and the tool outputs so far (agent tokens can't) |
-| `POST /api/v1/plan` | Validate a whole plan before step one |
-| `POST /mcp` | MCP JSON-RPC (`initialize`, `tools/list`, `tools/call`): put KAVACH between any MCP client and the tools |
-| `POST /api/demo/{scenario}` | Replay a scripted attack or benign scenario |
-| `GET/POST /api/hitl[/{id}]` | Human approvals (approve / approve-as-draft / deny) |
-| `POST /api/undo/{receipt}` | Take back a safeguarded action: restore its snapshot, or cancel its hold, recall window or parked document |
-| `POST /api/settle?advance_s=` | Let held payments and queued emails whose window has passed go out (`advance_s` fast-forwards for the demo) |
-| `GET /api/receipts/verify` | Verify the hash chain and its signed checkpoint |
-| `GET /api/autonomy` | Changes that ran without a human this session, priced at AgentOS's own $35–75 per human exception |
-| `GET /api/policy` | Rules, roles, limits, payment tiers and tools shown in the console rulebook |
+| `POST /mcp` | MCP JSON-RPC (`initialize`, `tools/list`, `tools/call`), placing KAVACH between any MCP client and its tools |
+| `POST /api/v1/check` | Evaluate a raw action and return the decision, scorecard, explanation and receipt |
+| `POST /api/v1/session` | Open a session with the user's request and tool outputs (orchestrator tokens only) |
+| `POST /api/v1/plan` | Validate a whole plan before its first step |
+| `GET`, `POST /api/hitl[/{id}]` | List and resolve human approvals |
+| `POST /api/undo/{receipt}` | Restore a snapshot or cancel a hold |
+| `POST /api/release/{receipt}` | Release a held action early, recorded as a manual override |
+| `GET /api/trace/{correlation}` | The full record of one action |
+| `GET /api/receipts/verify` | Verify the hash chain and signed checkpoint |
+| `GET /metrics`, `GET /readyz` | Prometheus metrics and readiness |
 
-Auth: set `KAVACH_AUTH_SECRET` (32+ random bytes) and the API requires `Authorization: Bearer <token>`; user and role come from the token (`python -m kavach.auth mint <user> <role> [hours] [tenant] [orchestrator|agent]`), never from the request body. An orchestrator token (the harness that talks to the user) states the request and supplies tool outputs; an agent token may only check calls inside a session the orchestrator opened. Tokens without a kind count as orchestrator tokens. Without a secret the server runs in dev mode and every receipt records `authenticated: false`.
+[`integrations/agentos_hook.py`](integrations/agentos_hook.py) runs KAVACH as Infosys Topaz AgentOS hooks. See [`docs/MCP_PROXY.md`](docs/MCP_PROXY.md) for the MCP proxy and [`docs/DEPLOY.md`](docs/DEPLOY.md) for deployment.
 
-Environment: the server guards `KAVACH_ENV` (default `prod`); a request's `env` field is ignored.
+### Configuration
 
-State: by default everything is in memory. `KAVACH_DB_URL=sqlite:////path/kavach.db` (or a Postgres URL) keeps receipts, kill-switch pauses, undo windows, tool pins and reviewers' decisions across restarts (`kavach/store.py`), with the receipt chain's signed checkpoint in a separate file (`<db>.checkpoint.json`, or `KAVACH_CHECKPOINT_FILE` for Postgres) so a log cut short fails `/readyz`; the learning loop (`kavach/learning.py`, `POST /api/learning/retrain`) retrains the risk model on reviewers' decisions behind a no-regression gate. `KAVACH_PROFILE=prod` refuses to start without real signing and auth keys.
+| Variable | Purpose |
+|---|---|
+| `KAVACH_AUTH_SECRET` | Enables signed-token authentication; user and role then come from the token |
+| `KAVACH_DB_URL` | Durable store for receipts, holds, pins and kill-switch state (SQLite or Postgres) |
+| `KAVACH_ENV` | Server-set environment; a request cannot override it |
+| `KAVACH_MAIL` | `gmail` enables the real mailbox connector and its policy additions |
+| `KAVACH_MAIL_HOLD_S` | Length of the email hold window, in seconds |
+| `KAVACH_MCP_TOOLS` | Restricts the tools offered over MCP |
+| `IMAGINE_API_KEY`, `IMAGINE_API_ENDPOINT` | Qualcomm Cloud AI access (or `INFERENCE_CLOUD_*`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Sends decision spans to an OpenTelemetry collector |
 
-## Layout
+## Evaluation
 
-```
-kavach/   models · manifest · provenance · consequence · policy (+ policies/default.yaml) · intent · risk · sql
-          gateway · hitl · receipts · store · auth · explain · plan · qualcomm · environment · scenarios · server · static/
-bench/    suite.py (labelled scenarios) · run.py (train, calibrate, baselines, Pareto, multi-seed) · lofo.py · holdout.py
-          layers.py · semantic_eval.py · judge_eval.py · explain_eval.py · infosys_compare.py · results/
-agent/    llm_agent.py: real tool-using agent on Qualcomm Cloud AI behind KAVACH
-scripts/  demo_up.sh · demo_reset.sh · demo_claude.sh · demo_replay.py · sandbox_bank.py · plain_mail_mcp.py ·
-          record_claude_comparison.py · preflight.py · record_live_agent.py
-integrations/  agentos_hook.py: KAVACH as Infosys Topaz AgentOS hooks
-docs/     BLUEPRINT.md (end-to-end design + research) · INFOSYS_GAP_ANALYSIS.md · AUDIT_OF_EXISTING_DOCS.md · img/
-deliverables/  KAVACH_Solution_Deck.pptx (filled Hack-AI-Thon template + appendix)
-```
+Evidence is reported in separate categories because they support different claims.
 
-## Plugging into Infosys Topaz AgentOS
+### Independent benchmark: AgentDojo
 
-`integrations/agentos_hook.py` runs KAVACH as AgentOS `PostToolUse` / `PreToolUse` hooks: DENY blocks the call, ESCALATE becomes an AgentOS approval request carrying KAVACH's explanation, everything else runs. Copy it into the tenant tree (`enterprise_root/tenants/<tenant>/shared/hooks/kavach_hook.py`), set `mode: blocking` and `fail_policy: closed`, and pass `--role` / `--url` as arguments (AgentOS passes hooks only `IAF_*` variables). The config snippet is in the file header. Verified on 2 Nov 2026 against Topaz AgentOS 1.0.0 through its own governance code: [`bench/results/AGENTOS_LIVE.md`](bench/results/AGENTOS_LIVE.md) (`integrations/agentos_live_check.py`).
+AgentDojo v1.2.2 with the `important_instructions` attack and Llama 3.3 70B on Qualcomm Cloud AI. The tasks and attacks were not written by this team. Results are paired on the tasks both configurations finished, and an escalation is counted as a block.
 
-We read and ran Infosys's own guardrails (PromptGuard, RAI moderation proxy, AgentOS pre-tool gate) on our suite:
+| Suite | Configuration | Attack success | Utility under attack | Benign utility |
+|---|---|---|---|---|
+| Banking (144 of 160 tasks) | No guardrail | 65/128 (50.8%) | 53/128 (41.4%) | 8/16 (50.0%) |
+| | KAVACH | 0/128 (0.0%) | 62/128 (48.4%) | 8/16 (50.0%) |
+| Slack (124 of 126 tasks) | No guardrail | 48/103 (46.6%) | 36/103 (35.0%) | 9/21 (42.9%) |
+| | KAVACH | 11/103 (10.7%) | 21/103 (20.4%) | 6/21 (28.6%) |
+
+The Slack result shows a real cost: utility fell, and some attacks still succeeded. Full tables are in [`bench/results/COMPARISON.md`](bench/results/COMPARISON.md).
+
+### Internal synthetic suite
+
+940 labelled scenarios in 47 families; figures are from the held-out test split.
+
+| System | Unsafe auto-allowed | Injection success | Safe actions auto-completed | Escalation rate |
+|---|---|---|---|---|
+| No guardrail | 100.0% | 100.0% | 100.0% | 0.0% |
+| Static denylist | 87.2% | 100.0% | 100.0% | 0.0% |
+| Tool-type gating | 38.5% | 25.0% | 47.6% | 57.5% |
+| Approve every write | 3.9% | 0.0% | 9.5% | 93.6% |
+| **KAVACH** | **0.0%** | **0.0%** | **95.2%** | **25.5%** |
+
+Median decision latency is about 2.2 ms and p95 about 8.6 ms, excluding the optional language-model judge. When the judge runs on an escalated call, that call can take several seconds.
+
+**These figures are prototype results and not a guarantee of production safety.** The same team wrote the suite and the rules, so this table works mainly as a regression check and is not comparable with published benchmarks. Leaving each family out of training gives 0.0% unsafe auto-allowed and 92.1% safe auto-completion ([`LOFO.md`](bench/results/LOFO.md)).
+
+### Further checks
+
+| Check | Result | Report |
+|---|---|---|
+| Automated red team, with an attacker controlling one email and a fully obedient agent | 1,178 attempts, 0 bypasses | [`REDTEAM.md`](bench/results/REDTEAM.md) |
+| Formal properties of the Cedar policies and parity with the Python rules | Proofs and parity results listed | [`CEDAR.md`](bench/results/CEDAR.md) |
+| Conformal risk control on the calibration split | Stated finite-sample bound | [`CONFORMAL.md`](bench/results/CONFORMAL.md) |
+| Infosys Agentic Foundry guardrails on the same suite | Side-by-side comparison | [`INFOSYS_COMPARISON.md`](bench/results/INFOSYS_COMPARISON.md) |
+
+To reproduce:
 
 ```bash
-git clone --depth 1 https://github.com/Infosys/Infosys-Agentic-Foundry ../iaf
-python bench/infosys_compare.py ../iaf          # writes bench/results/INFOSYS_COMPARISON.md
+python -m bench.run          # train, calibrate and benchmark over 5 seeds
+python -m bench.conformal    # restore calibration rows and write the conformal report
+python -m bench.lofo
+python -m bench.holdout
+python -m bench.redteam fuzz
+python -m kavach.policy_verify
 ```
 
-Findings and the gaps they show: [`docs/INFOSYS_GAP_ANALYSIS.md`](docs/INFOSYS_GAP_ANALYSIS.md).
+## Limitations
 
-## Results
+- KAVACH is a research prototype and has not been deployed in production or independently audited.
+- Protection applies only to actions routed through KAVACH. An agent with another route to a tool is outside its control.
+- Provenance is inferred by default. A value that a model composes from untrusted text can evade tracing unless planner mode is used.
+- Rule R45 matches decision language and can produce false positives. A brief stating that it "is approved for external distribution" is currently refused when copied from an email.
+- R44 depends on messages carrying an explicit classification marker, and a paraphrase without copied content may not be detected.
+- An email cannot be recalled after delivery. The hold window permits cancellation before delivery only.
+- The AgentDojo runs are partial, as shown above, and were recorded before the most recent rule additions.
+- Cost figures are estimates based on reference prices.
 
-See [`bench/results/RESULTS.md`](bench/results/RESULTS.md), [`LOFO.md`](bench/results/LOFO.md) (leave one family out) and [`HOLDOUT.md`](bench/results/HOLDOUT.md); the Qualcomm judge on vs off in [`JUDGE.md`](bench/results/JUDGE.md); a live Llama agent on Qualcomm Cloud AI, attacked through its inbox, with and without KAVACH in [`LIVE_AGENT.md`](bench/results/LIVE_AGENT.md); real Claude with and without KAVACH on the live demo's tools in [`CLAUDE_WITH_WITHOUT.md`](bench/results/CLAUDE_WITH_WITHOUT.md). The suite is synthetic: its scenario families mirror the axes of AgentDojo and AmPermBench, but the numbers are **not** comparable with results published on those benchmarks.
+See [`THREAT_MODEL.md`](THREAT_MODEL.md) for the threat model and [`RELEASE_ACCEPTANCE.md`](RELEASE_ACCEPTANCE.md) for feature-level verification status.
+
+## Repository structure
+
+```
+kavach/          Gateway, policy, provenance, consequence analysis, risk model, receipts, connectors, console
+  policies/      Policy-as-code and Cedar policies
+  manifests/     Typed tool manifests
+agent/           Tool-using agent on Qualcomm Cloud AI
+bench/           Benchmarks, baselines, red team and generated results
+integrations/    Claude Code hook and Infosys Topaz AgentOS hooks
+scripts/         Startup, demonstration and verification tooling
+deploy/          Prometheus, Grafana, OpenTelemetry and Helm configuration
+tests/           Test suite
+docs/            Design, research, deployment and operational documentation
+deliverables/    Solution deck
+```
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md) | End-to-end design and research |
+| [`THREAT_MODEL.md`](THREAT_MODEL.md) | Assets, adversaries and trust boundaries |
+| [`RELEASE_ACCEPTANCE.md`](RELEASE_ACCEPTANCE.md) | What works, how it was verified, and what remains |
+| [`docs/INFOSYS_GAP_ANALYSIS.md`](docs/INFOSYS_GAP_ANALYSIS.md) | Comparison with existing Infosys guardrails |
+| [`docs/DEPLOY.md`](docs/DEPLOY.md) | Deployment |
+| [`DEMO.md`](DEMO.md) | Demonstration guide |
+
+## Acknowledgements
+
+Developed for Infosys ENG NEXT 2026. KAVACH draws on published work including AgentDojo, CaMeL, FIDES, MELON and Conformal Risk Control. References are in [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md).
