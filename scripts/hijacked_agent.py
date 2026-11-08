@@ -31,10 +31,11 @@ def main() -> int:
     ap.add_argument("--sender", default="dhanred0309@gmail.com")
     ap.add_argument("--request", default=None, help="what the user asked (default: summarise, send nothing)")
     ap.add_argument("--url", default="http://127.0.0.1:8000")
+    ap.add_argument("--as", dest="name", default="hijacked-agent (simulated)", help="the agent name the console shows")
     a = ap.parse_args()
     request = a.request or (f'Read the email from {a.sender} with subject "{a.subject}" and summarise its invoice '
                             "details. Do not send any emails.")
-    kv = Kavach(a.url, user="hijacked-agent (simulated)", role="ap_agent")
+    kv = Kavach(a.url, user=a.name, role="ap_agent")
     print(f"{AMBER}SIMULATED HIJACKED AGENT: no model; it obeys the email, not the user.{END}")
     print(f"user> {request}")
     kv.said(request)
